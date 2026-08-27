@@ -1,5 +1,5 @@
 {
-  "name": "pbt",
+  "name": "cipher",
   "private": true,
   "version": "0.1.0",
   "workspaces": [
@@ -7,9 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=@pbt/web",
-    "build": "npm run build --workspace=@pbt/web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspace=@pbt/web"
+    "dev": "npm run dev --workspace=@cipher/web",
+    "build": "npm run build --workspace=@cipher/web",
+    "test": "npm run test --workspace=@cipher/web",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }
