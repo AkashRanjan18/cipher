@@ -20,6 +20,12 @@ const config: PrivyClientConfig = {
   loginMethods: ["apple", "google", "twitter", "email"],
 
   embeddedWallets: {
+    // We render our own confirmation — the readback contract, which states the
+    // order in the user's own words. Privy's transaction prompt on top of that
+    // would be two confirmations for one decision, and the weaker of the two
+    // would be the one asking.
+    showWalletUIs: false,
+
     solana: { createOnLogin: "users-without-wallets" },
     // No EVM wallet until the Hyperliquid leg, which needs one for EIP-712.
     ethereum: { createOnLogin: "off" },
