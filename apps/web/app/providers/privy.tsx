@@ -17,7 +17,10 @@ import type { ReactNode } from "react";
  *   in the marketing, and export is what makes it checkable.
  */
 const config: PrivyClientConfig = {
-  loginMethods: ["apple", "google", "twitter", "email"],
+  // Apple and Google only. Both are one tap and both carry a verified
+  // identity. X stays available as a *linked* account after signup — it is
+  // how the social graph gets seeded — but it is not a way in.
+  loginMethods: ["apple", "google"],
 
   embeddedWallets: {
     // We render our own confirmation — the readback contract, which states the
@@ -35,7 +38,7 @@ const config: PrivyClientConfig = {
     theme: "dark",
     accentColor: "#e2a445",
     landingHeader: "Continue",
-    loginMessage: "One tap. Wallet included.",
+    loginMessage: "One tap. Wallet included, no seed phrase.",
     showWalletLoginFirst: false,
   },
 };
