@@ -17,7 +17,7 @@ import type { ReactNode } from "react";
  *   in the marketing, and export is what makes it checkable.
  */
 const config: PrivyClientConfig = {
-  loginMethods: ["email", "google", "apple", "twitter"],
+  loginMethods: ["apple", "google", "twitter", "email"],
 
   embeddedWallets: {
     solana: { createOnLogin: "users-without-wallets" },
@@ -28,8 +28,8 @@ const config: PrivyClientConfig = {
   appearance: {
     theme: "dark",
     accentColor: "#e2a445",
-    landingHeader: "Sign in to cipher",
-    loginMessage: "From thought to trade.",
+    landingHeader: "Continue",
+    loginMessage: "One tap. Wallet included.",
     showWalletLoginFirst: false,
   },
 };
