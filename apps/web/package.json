@@ -11,6 +11,8 @@
     "test": "node --experimental-strip-types --test \"lib/**/__tests__/*.test.ts\""
   },
   "dependencies": {
+    "@privy-io/react-auth": "^3.38.0",
+    "@privy-io/server-auth": "^1.32.5",
     "next": "^16.3.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
