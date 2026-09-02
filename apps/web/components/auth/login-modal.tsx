@@ -9,9 +9,9 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { usePrivy, useLoginWithOAuth } from "@privy-io/react-auth";
+import { usePrivy, useLoginWithOAuth, useConnectWallet } from "@privy-io/react-auth";
 import { GoogleIcon } from "./google-icon";
-import { AppleIcon } from "./apple-icon";
+import { WalletIcon } from "./wallet-icon";
 
 /**
  * Our own login modal, replacing Privy's.
@@ -48,6 +48,7 @@ function Modal({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const { authenticated } = usePrivy();
   const { initOAuth, loading } = useLoginWithOAuth();
+  const { connectWallet } = useConnectWallet();
   const [error, setError] = useState<string | null>(null);
 
   // Inlined at build time. Without it Privy cannot start an OAuth flow, so
@@ -84,19 +85,37 @@ function Modal({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  async function signIn(provider: "apple" | "google") {
-    setError(null);
+  function guard() {
     if (!configured) {
       setError("Auth isn't connected yet — set NEXT_PUBLIC_PRIVY_APP_ID.");
-      return;
+      return false;
     }
+    return true;
+  }
+
+  async function signInWithGoogle() {
+    setError(null);
+    if (!guard()) return;
     try {
-      await initOAuth({ provider });
+      await initOAuth({ provider: "google" });
     } catch {
-      setError(
-        `Couldn't reach ${provider === "apple" ? "Apple" : "Google"}. Try again.`,
-      );
+      setError("Couldn't reach Google. Try again.");
     }
+  }
+
+  /*
+   * Opens Privy's wallet picker — Phantom, Solflare, Backpack, whatever is
+   * installed. A user arriving this way keeps their own wallet and gets no
+   * embedded one, which is the point: they already hold funds.
+   *
+   * The cost is that every signature afterwards raises their wallet's own
+   * popup, which we cannot silence the way we silence the embedded wallet.
+   * That only goes away once they grant delegate authority.
+   */
+  function signInWithWallet() {
+    setError(null);
+    if (!guard()) return;
+    connectWallet();
   }
 
   return (
@@ -130,28 +149,26 @@ function Modal({ onClose }: { onClose: () => void }) {
         </p>
 
         <div className="mt-8 space-y-3">
-          {/*
-            Apple needs a Team ID, Service ID, Key ID and signing key set in
-            the Privy dashboard, all of which require a paid Apple Developer
-            account. Until that exists this button will error — the message
-            below names the provider so it's obvious which one isn't wired.
-          */}
+          {/* Google is primary and filled: it is the path that provisions a
+              wallet, needs no extension, and keeps signing silent. */}
           <button
-            onClick={() => signIn("apple")}
+            onClick={signInWithGoogle}
             disabled={loading}
             className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 font-sans text-base font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne"
           >
-            <AppleIcon />
-            Continue with Apple
+            <GoogleIcon />
+            Continue with Google
           </button>
 
+          {/* Wallet is secondary and outlined — for people who already hold
+              funds somewhere and would rather not move them. */}
           <button
-            onClick={() => signIn("google")}
+            onClick={signInWithWallet}
             disabled={loading}
             className="flex w-full items-center justify-center gap-3 rounded-2xl border border-champagne/15 bg-ink/60 px-5 py-4 font-sans text-base font-medium text-champagne transition-colors hover:bg-ink disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne"
           >
-            <GoogleIcon />
-            Continue with Google
+            <WalletIcon />
+            Continue with a wallet
           </button>
         </div>
 
