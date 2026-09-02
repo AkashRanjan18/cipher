@@ -4,9 +4,13 @@ import { PrivyProvider, type PrivyClientConfig } from "@privy-io/react-auth";
 import type { ReactNode } from "react";
 
 const config: PrivyClientConfig = {
-  // Two options only, as specified. Privy renders the modal; this array is
-  // what decides which buttons appear in it and in what order.
-  loginMethods: ["apple", "google"],
+  // We render our own modal (components/auth/login-modal.tsx), so this array
+  // only declares which methods the SDK may use — Privy's own UI is never
+  // shown. Apple is absent because Sign in with Apple needs a Team ID,
+  // Service ID, Key ID and signing key, all of which require a paid Apple
+  // Developer account, which requires a legal entity. It slots back in here
+  // with no UI change once that exists.
+  loginMethods: ["google", "email"],
 
   embeddedWallets: {
     showWalletUIs: false,

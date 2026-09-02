@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import localFont from "next/font/local";
 import { IBM_Plex_Sans } from "next/font/google";
 import { Privy } from "./providers/privy";
+import { LoginModalProvider } from "@/components/auth/login-modal";
 import "./globals.css";
 
 /*
@@ -37,7 +38,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${sans.variable} h-full`}>
       <body className="min-h-full antialiased">
-        <Privy>{children}</Privy>
+        <Privy>
+          <LoginModalProvider>{children}</LoginModalProvider>
+        </Privy>
       </body>
     </html>
   );

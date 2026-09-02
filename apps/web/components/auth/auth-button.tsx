@@ -1,6 +1,7 @@
 "use client";
 
-import { usePrivy, useLogin } from "@privy-io/react-auth";
+import { usePrivy } from "@privy-io/react-auth";
+import { useLoginModal } from "./login-modal";
 
 type Variant = "ghost" | "primary";
 
@@ -25,7 +26,7 @@ export function AuthButton({
   labelAuthenticated?: string;
 }) {
   const { ready, authenticated } = usePrivy();
-  const { login } = useLogin();
+  const { open } = useLoginModal();
 
   // Inlined at build time, so a client component can read it.
   const configured = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
@@ -53,8 +54,7 @@ export function AuthButton({
 
   return (
     <button
-      onClick={() => configured && login()}
-      title={configured ? undefined : "Set NEXT_PUBLIC_PRIVY_APP_ID to enable"}
+      onClick={open}
       className={`${styles[variant]} font-sans transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne`}
     >
       {authenticated ? (labelAuthenticated ?? label) : label}
