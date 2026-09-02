@@ -25,7 +25,7 @@ const sans = IBM_Plex_Sans({
 
 export const metadata: Metadata = {
   title: "cipher",
-  description: "From thought to trade.",
+  description: "From thoughts to trade.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

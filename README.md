@@ -1,6 +1,6 @@
 # cipher
 
-**cipher.family — from thought to trade**
+**cipher.family — from thoughts to trade**
 
 A rules engine for crypto positions. You decide the exit once, while calm.
 The system executes it while you're not.
