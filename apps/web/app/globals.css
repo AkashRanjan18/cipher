@@ -1,19 +1,22 @@
 @import "tailwindcss";
 
 /*
- * Tailwind 4 has no JS config file. The design system lives here, in CSS,
- * and every token below becomes a utility class automatically:
- * --color-ink → text-ink, bg-ink, border-ink.
+ * Tailwind 4 has no JS config. The design system lives here, and every token
+ * becomes a utility automatically: --color-champagne → text-champagne.
  */
 @theme {
-  /* Champagne is a warm off-white, not pure white. Pure white over video
-     glares; this sits back into the image. */
+  /* Warm off-white, not pure white. Pure white glares over video and floats
+     off dark grounds; this sits into them. */
   --color-champagne: #f3e9d8;
-  --color-ink: #0a0a0b;
-  --color-ash: #8b8b93;
+  --color-ink: #08080a;
+  /* One step up from ink, for card surfaces. Any lighter and the cards
+     start to look like a different page. */
+  --color-slate: #101014;
+  --color-ash: #6f6f78;
 
   --font-display: var(--font-display), "Jost", system-ui, sans-serif;
   --font-sans: var(--font-sans), system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
 }
 
 html,
@@ -22,9 +25,24 @@ body {
   color: var(--color-champagne);
 }
 
-/* Anyone who has asked their OS to stop moving things gets a still frame
-   instead of a loop. This is a CSS-only solution so the video needs no
-   client component. */
+/*
+ * Wide tracking pushes trailing space onto the right of the last letter, so a
+ * centred wordmark reads as sitting left of centre. Compensating with an
+ * equal indent puts the optical centre back where the eye expects it.
+ * This is why the Tesla and SpaceX wordmarks look balanced and naive
+ * letter-spaced type does not.
+ */
+.tracked {
+  letter-spacing: 0.32em;
+  text-indent: 0.32em;
+}
+
+.tracked-sm {
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+}
+
+/* Someone who asked their OS to stop moving things gets the poster frame. */
 @media (prefers-reduced-motion: reduce) {
   .hero-video {
     display: none;
