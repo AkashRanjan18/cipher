@@ -1,7 +1,6 @@
 "use client";
 
 import { usePrivy } from "@privy-io/react-auth";
-import { useWallets } from "@privy-io/react-auth/solana";
 
 /**
  * PLACEHOLDER. Where login lands, so the redirect has a real destination.
@@ -16,8 +15,21 @@ import { useWallets } from "@privy-io/react-auth/solana";
  */
 export default function Trade() {
   const { ready, authenticated, user } = usePrivy();
-  const { wallets } = useWallets();
-  const wallet = wallets[0];
+
+  /*
+   * Read the wallet off the user record rather than through
+   * useWallets() from @privy-io/react-auth/solana.
+   *
+   * That hook depends on the external-wallet connector config, which was
+   * removed when wallet login went away — calling it now throws
+   * "Cannot read properties of null (reading 'connectors')". It exists to
+   * manage connections to Phantom and friends, and we have none: every user
+   * gets an embedded wallet, and its address is already on the user object.
+   */
+  const wallet = user?.linkedAccounts.find(
+    (a) => a.type === "wallet" && a.chainType === "solana",
+  );
+  const address = wallet && "address" in wallet ? wallet.address : null;
 
   if (!ready) {
     return (
@@ -31,7 +43,10 @@ export default function Trade() {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
         <p className="font-display text-2xl">You&rsquo;re signed out.</p>
-        <a href="/" className="font-sans text-sm text-ash underline hover:text-champagne">
+        <a
+          href="/"
+          className="font-sans text-sm text-ash underline hover:text-champagne"
+        >
           Back to the homepage
         </a>
       </main>
@@ -52,7 +67,7 @@ export default function Trade() {
         <div className="flex flex-wrap gap-x-4">
           <dt className="w-28 shrink-0 text-ash">solana wallet</dt>
           <dd className="break-all text-champagne">
-            {wallet?.address ?? "provisioning…"}
+            {address ?? "provisioning…"}
           </dd>
         </div>
       </dl>
