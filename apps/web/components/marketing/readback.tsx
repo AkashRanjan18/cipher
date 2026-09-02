@@ -1,64 +1,50 @@
 /**
- * The single visual that explains what cipher is.
+ * The one block that shows what cipher actually does.
  *
- * Everything else on the page is a claim; this is the claim demonstrated —
- * one sentence of English on top, the compiled order underneath. If a
- * visitor reads nothing else, this block should tell them what the product
- * does and why it isn't another buy button.
+ * Kept deliberately light: a chat-style bubble of what you type, then what
+ * happens. The earlier version was a monospace spec table with fields like
+ * SLIPPAGE and ROUTE — accurate, and it read like a config file. A trader
+ * skimming this should feel "oh, that's easy", not "I need to learn this".
  *
- * Server component. No state, no interactivity — just typography.
+ * Server component. No state.
  */
 
-const compiled = [
-  { k: "BUY", v: "$500 BONK", note: null },
-  { k: "SLIPPAGE", v: "max 3%", note: "aborts above" },
-  { k: "ROUTE", v: "private submission", note: "no sandwich" },
-  { k: "THEN", v: "sell 33% at 2×", note: null },
-  { k: "STOP", v: "remainder at −50%", note: "depth-checked" },
+const outcome = [
+  "bought $500 of BONK",
+  "selling a third at 2×",
+  "stopping the rest at −50%",
 ];
 
 export function Readback() {
   return (
-    <div className="mx-auto w-full max-w-2xl">
-      {/* What the user types. Quoted and in the reading face, so it reads as
-          human speech rather than as configuration. */}
-      <p className="font-sans text-lg leading-relaxed text-champagne/90 sm:text-xl">
-        <span className="text-ash">“</span>
-        buy $500 of BONK, max 3% slippage, private, sell a third at 2×, stop
-        the rest at −50%
-        <span className="text-ash">”</span>
-      </p>
-
-      <div className="my-7 flex items-center gap-4" aria-hidden>
-        <div className="h-px flex-1 bg-champagne/15" />
-        <span className="font-mono text-[10px] tracking-[0.3em] text-ash">
-          COMPILES TO
-        </span>
-        <div className="h-px flex-1 bg-champagne/15" />
+    <div className="mx-auto w-full max-w-xl">
+      {/* What you type. Right-aligned bubble, like a message you sent. */}
+      <div className="flex justify-end">
+        <p className="max-w-md rounded-3xl rounded-br-lg bg-champagne px-6 py-4 font-sans text-base leading-relaxed text-ink">
+          buy me $500 of bonk, sell a third at 2x and stop the rest at -50%
+        </p>
       </div>
 
-      {/* What the machine will actually do. Monospace and tabular, because
-          this is the contract the user approves before anything arms — it
-          has to read as precise, not as prose. */}
-      <dl className="rounded-lg border border-champagne/12 bg-slate p-5 font-mono text-sm sm:p-6">
-        {compiled.map((row) => (
-          <div
-            key={row.k}
-            className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-1.5"
-          >
-            <dt className="w-24 shrink-0 text-[11px] tracking-[0.15em] text-ash">
-              {row.k}
-            </dt>
-            <dd className="text-champagne tabular-nums">{row.v}</dd>
-            {row.note && (
-              <dd className="text-xs text-ash">— {row.note}</dd>
-            )}
-          </div>
-        ))}
-      </dl>
+      {/* What happens. Left-aligned, like the reply. */}
+      <div className="mt-4 flex justify-start">
+        <div className="max-w-md rounded-3xl rounded-bl-lg bg-slate px-6 py-5">
+          <p className="font-sans text-sm text-ash">done — here&rsquo;s what&rsquo;s live:</p>
+          <ul className="mt-3 space-y-2">
+            {outcome.map((line) => (
+              <li
+                key={line}
+                className="flex items-start gap-3 font-sans text-base text-champagne"
+              >
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-champagne/60" />
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
 
-      <p className="mt-5 text-center font-sans text-sm text-ash">
-        You approve this once. It runs whether or not you are watching.
+      <p className="mt-10 text-center font-display text-xl text-ash">
+        no menus. no settings. no leverage sliders.
       </p>
     </div>
   );

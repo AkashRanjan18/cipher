@@ -8,13 +8,13 @@
   /* Warm off-white, not pure white. Pure white glares over video and floats
      off dark grounds; this sits into them. */
   --color-champagne: #f3e9d8;
-  --color-ink: #08080a;
+  --color-ink: #0b0910;
   /* One step up from ink, for card surfaces. Any lighter and the cards
      start to look like a different page. */
-  --color-slate: #101014;
-  --color-ash: #6f6f78;
+  --color-slate: #15121c;
+  --color-ash: #8b8598;
 
-  --font-display: var(--font-display), "Jost", system-ui, sans-serif;
+  --font-display: var(--font-display), system-ui, sans-serif;
   --font-sans: var(--font-sans), system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, monospace;
 }

@@ -1,20 +1,25 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Jost, IBM_Plex_Sans } from "next/font/google";
+import localFont from "next/font/local";
+import { IBM_Plex_Sans } from "next/font/google";
 import { Privy } from "./providers/privy";
 import "./globals.css";
 
 /*
- * Jost stands in for Champagne & Limousines, which isn't on Google Fonts.
- * Both are thin geometric sans faces with wide, open letterforms. To swap:
- * drop the .ttf into app/fonts/, replace this with next/font/local, and
- * nothing else in the codebase changes because everything reads the
- * --font-display variable rather than the family name.
+ * Caacupé One by Magdalena Alonso Rebollo, OFL.
+ *
+ * Self-hosted rather than pulled from next/font/google, because Next 16's
+ * font list predates this family and the import does not exist. The woff2
+ * is the same file Google serves; self-hosting is what next/font does
+ * internally anyway, and it removes a runtime request to a third party.
+ *
+ * SINGLE WEIGHT. There is no light or bold — never put font-light or
+ * font-bold on display text or the browser synthesises one and it looks wrong.
  */
-const display = Jost({
+const display = localFont({
+  src: "./fonts/CaacupeOne.woff2",
   variable: "--font-display",
-  weight: ["200", "300"],
-  subsets: ["latin"],
+  display: "swap",
 });
 
 const sans = IBM_Plex_Sans({
