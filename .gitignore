@@ -9,7 +9,4 @@ target/
 *.log
 .turbo/
 
-# Next 16 generates these per-directory; the root CLAUDE.md is authoritative
-apps/*/CLAUDE.md
-apps/*/AGENTS.md
 apps/*/tsconfig.tsbuildinfo

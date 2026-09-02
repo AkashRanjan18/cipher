@@ -1,10 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Next 16 writes its own CLAUDE.md and AGENTS.md into this directory on
-  // every dev start. The project already has one at the repo root and a
-  // second file in a subdirectory would load alongside it and dilute it with
-  // generic framework guidance.
+  // Next 16 writes per-directory agent instruction files on every dev start.
+  // This project keeps its own documentation at the repo root; a generated
+  // second copy in a subdirectory only dilutes it.
   agentRules: false,
 };
 

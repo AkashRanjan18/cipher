@@ -5,8 +5,7 @@
  *
  * There is no App Store listing — Apple guideline 3.1.5(b) requires an
  * organisation developer account for wallet apps, which requires a legal
- * entity and a D-U-N-S number. The plan in CLAUDE.md is Telegram and a PWA
- * instead.
+ * entity and a D-U-N-S number. The plan is Telegram and a PWA instead.
  *
  * Once decided, this becomes one of:
  *   - PWA install  (beforeinstallprompt on Android/Chrome, "Add to Home
