@@ -1,15 +1,7 @@
 "use client";
 
 import { PrivyProvider, type PrivyClientConfig } from "@privy-io/react-auth";
-import { toSolanaWalletConnectors } from "@privy-io/react-auth/solana";
 import type { ReactNode } from "react";
-
-/*
- * Connectors are built once at module scope, not inside the component.
- * Rebuilding them on every render remounts the wallet adapters and drops
- * an in-flight connection.
- */
-const solanaConnectors = toSolanaWalletConnectors();
 
 const config: PrivyClientConfig = {
   /*
@@ -21,11 +13,7 @@ const config: PrivyClientConfig = {
    * and signing key, all of which require a paid Apple Developer account,
    * which requires a legal entity. It slots back in with no UI change.
    */
-  loginMethods: ["google", "wallet"],
-
-  externalWallets: {
-    solana: { connectors: solanaConnectors },
-  },
+  loginMethods: ["google"],
 
   embeddedWallets: {
     /*
@@ -34,19 +22,11 @@ const config: PrivyClientConfig = {
      * confirmations for one decision, and the weaker of the two would be the
      * one asking.
      *
-     * NOTE: this only silences the EMBEDDED wallet. A user who signed in with
-     * Phantom still gets Phantom's own popup on every signature, because that
-     * wallet is not ours to quiet. That gap closes only once they grant
-     * delegate authority.
+     * Every user gets an embedded wallet, so this holds for everyone — there
+     * is no external wallet whose popup we cannot silence.
      */
     showWalletUIs: false,
 
-    /*
-     * "users-without-wallets" means someone arriving with Phantom keeps
-     * Phantom and gets no embedded wallet. That is the intent — provisioning a
-     * second, empty wallet for someone who already holds funds elsewhere is
-     * how you make a user transfer money before they can do anything.
-     */
     solana: { createOnLogin: "users-without-wallets" },
     ethereum: { createOnLogin: "off" },
   },
