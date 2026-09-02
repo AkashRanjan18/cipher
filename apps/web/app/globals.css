@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind 4 has no JS config file. The design system lives here, in CSS,
+ * and every token below becomes a utility class automatically:
+ * --color-ink → text-ink, bg-ink, border-ink.
+ */
+@theme {
+  /* Champagne is a warm off-white, not pure white. Pure white over video
+     glares; this sits back into the image. */
+  --color-champagne: #f3e9d8;
+  --color-ink: #0a0a0b;
+  --color-ash: #8b8b93;
+
+  --font-display: var(--font-display), "Jost", system-ui, sans-serif;
+  --font-sans: var(--font-sans), system-ui, sans-serif;
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: var(--color-champagne);
+}
+
+/* Anyone who has asked their OS to stop moving things gets a still frame
+   instead of a loop. This is a CSS-only solution so the video needs no
+   client component. */
+@media (prefers-reduced-motion: reduce) {
+  .hero-video {
+    display: none;
+  }
+}
