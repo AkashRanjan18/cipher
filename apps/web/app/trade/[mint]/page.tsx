@@ -79,9 +79,15 @@ export default async function TokenPage({
           <TokenHeader socials={stats.socials} />
         </header>
 
-        {/* Rail, chart, side panel, order entry. Stacks on a phone, where a
-            four-pane terminal is unusable anyway. */}
-        <main className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[200px_1fr_280px_320px] lg:overflow-hidden">
+        {/*
+          Three columns: rail, the token itself, order entry.
+          
+          The tape and holders sit UNDER the chart rather than beside it,
+          because both are wide tables — a 280px column truncated the wallet
+          and age fields and forced the price into two lines. Same reason
+          fomo puts them there.
+        */}
+        <main className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[220px_1fr_340px] lg:overflow-hidden">
           <div className="order-2 min-h-[280px] lg:order-none lg:min-h-0">
             <TokenRail
               majors={rail?.[2] ?? []}
@@ -91,21 +97,25 @@ export default async function TokenPage({
             />
           </div>
 
-          <div className="order-1 min-h-[380px] lg:order-none lg:min-h-0">
-            <ChartPanel
-              pair={stats.pairAddress}
-              initial={candles}
-              initialInterval="1h"
-            />
-          </div>
+          {/* Chart takes the space that is left; the panel below it is fixed,
+              so an arriving trade never resizes the chart. */}
+          <div className="order-1 flex min-h-0 flex-col gap-2 lg:order-none">
+            <div className="min-h-[340px] flex-1">
+              <ChartPanel
+                pair={stats.pairAddress}
+                initial={candles}
+                initialInterval="1h"
+              />
+            </div>
 
-          <div className="order-3 min-h-[300px] lg:order-none lg:min-h-0">
-            <SidePanel
-              pair={stats.pairAddress}
-              trades={trades}
-              security={security}
-              socials={stats.socials}
-            />
+            <div className="h-[240px] shrink-0">
+              <SidePanel
+                pair={stats.pairAddress}
+                trades={trades}
+                security={security}
+                socials={stats.socials}
+              />
+            </div>
           </div>
 
           {/* The only column that scrolls on its own — order entry, the About
@@ -116,6 +126,7 @@ export default async function TokenPage({
             <PromptPanel />
           </div>
         </main>
+
       </LivePrice>
 
       <TickerBar majors={rail?.[2] ?? []} />

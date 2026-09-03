@@ -28,6 +28,20 @@ const ASH = "#8b8598";
 const UP = "#4ade80";
 const DOWN = "#f87171";
 
+/**
+ * How many decimals this series needs.
+ *
+ * A memecoin at 3e-6 needs nine or every candle collapses onto one flat line;
+ * the same token viewed as a $278M market cap needs none, and nine would
+ * render "278,840,192.000000000". The axis has to follow the magnitude.
+ */
+function precisionFor(candles: Candle[]): number {
+  const last = candles[candles.length - 1]?.close ?? 0;
+  if (last >= 1000) return 2;
+  if (last >= 1) return 4;
+  return 9;
+}
+
 const volumeColor = (c: Candle) =>
   c.close >= c.open ? "rgba(34,201,138,0.3)" : "rgba(255,84,112,0.3)";
 
@@ -58,6 +72,19 @@ export function PriceChart({
   const [legend, setLegend] = useState<Candle | null>(null);
 
   /*
+   * Bumped every time a chart instance is built, and listed in the LOAD
+   * effect's dependencies.
+   *
+   * Without it the two effects can desynchronise: React runs effects twice in
+   * development, so CREATE builds a chart, the cleanup destroys it, and CREATE
+   * builds a second one — but LOAD does not re-run, because `candles` never
+   * changed. setData then landed on the destroyed instance and the visible
+   * chart stayed empty. Anything that remounts this component in production
+   * hits the same path.
+   */
+  const [generation, setGeneration] = useState(0);
+
+  /*
    * CREATE. Empty deps: the chart is built once and outlives every data
    * change. Rebuilding it per update — which is what listing `candles` here
    * would do — throws away zoom and pan on every poll, and on a live chart
@@ -78,6 +105,20 @@ export function PriceChart({
         horzLines: { color: "rgba(243,233,216,0.04)" },
       },
       crosshair: { mode: CrosshairMode.Normal },
+      localization: {
+        /*
+         * The axis is a few characters wide. A market cap printed in full is
+         * "310000000.00" — technically correct and unreadable at a glance,
+         * which is the only way an axis is ever read.
+         */
+        priceFormatter: (p: number) => {
+          if (p >= 1_000_000_000) return `${(p / 1_000_000_000).toFixed(2)}B`;
+          if (p >= 1_000_000) return `${(p / 1_000_000).toFixed(1)}M`;
+          if (p >= 1_000) return `${(p / 1_000).toFixed(1)}k`;
+          if (p >= 1) return p.toFixed(2);
+          return p.toPrecision(3);
+        },
+      },
       rightPriceScale: { borderColor: "rgba(243,233,216,0.10)" },
       timeScale: { borderColor: "rgba(243,233,216,0.10)", timeVisible: true },
       autoSize: true,
@@ -89,10 +130,7 @@ export function PriceChart({
       borderVisible: false,
       wickUpColor: UP,
       wickDownColor: DOWN,
-      /*
-       * Memecoins trade around 3e-6. The default formatter rounds that to
-       * 0.00 and every candle collapses onto a single flat line.
-       */
+      // Replaced on every load — see the LOAD effect.
       priceFormat: { type: "price", precision: 9, minMove: 0.000000001 },
     });
 
@@ -126,6 +164,8 @@ export function PriceChart({
     chart.current = c;
     priceSeries.current = price;
     volumeSeries.current = volume;
+    // Tells LOAD there is a new, empty chart waiting for data.
+    setGeneration((n) => n + 1);
 
     // Without this the canvas leaks on every navigation.
     return () => {
@@ -146,6 +186,16 @@ export function PriceChart({
     const volume = volumeSeries.current;
     if (!price || !volume || candles.length === 0) return;
 
+    /*
+     * Reapply the format before the data. Switching Price -> MCap moves the
+     * series by eight orders of magnitude, and the axis built for one is
+     * unreadable for the other.
+     */
+    const p = precisionFor(candles);
+    price.applyOptions({
+      priceFormat: { type: "price", precision: p, minMove: 10 ** -p },
+    });
+
     price.setData(candles as never);
     volume.setData(
       candles.map((d) => ({
@@ -159,7 +209,7 @@ export function PriceChart({
     // The newest bar from the server becomes the one live prices extend.
     forming.current = candles[candles.length - 1] ?? null;
     setLegend(forming.current);
-  }, [candles]);
+  }, [candles, generation]);
 
   /*
    * TICK. Folds the polled price into the forming bar — the same arithmetic
@@ -215,7 +265,9 @@ export function PriceChart({
                     : "text-down"
                 }
               >
-                {v.toPrecision(4)}
+                {v >= 1000
+                  ? v.toLocaleString("en-US", { maximumFractionDigits: 0 })
+                  : v.toPrecision(4)}
               </span>
             </span>
           ))}
