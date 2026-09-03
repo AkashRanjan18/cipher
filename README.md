@@ -48,7 +48,8 @@ Leaders earn 10% of copier profit, above a per-pair high-water mark.
 
 ## Non-negotiables
 
-    - US geoblock from day one
+    - OFAC jurisdictions blocked everywhere; US blocked from perps
+      and event markets only — spot is non-custodial and open
     - non-custodial, always
     - the LLM never touches the execution path — it compiles once, at
       arm time, into a deterministic spec

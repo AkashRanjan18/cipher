@@ -1,25 +1,33 @@
 /**
  * Jurisdiction gating.
  *
- * This is a compliance control, not a security control. IP geolocation is
- * defeatable with a VPN and everyone knows it. The standard it has to meet is
- * "reasonable measures to prevent access", which means: block on IP, ask the
- * user to attest, log the result, and don't market into the blocked market.
+ * Two different rules, for two different reasons:
  *
- * The thing that cannot be fixed retroactively is having served restricted
- * users for a year. Polymarket paid $1.4M and three years of US exclusion.
+ *   OFAC jurisdictions    blocked everywhere, always. Not a business
+ *                         decision — sanctions apply to the whole product.
+ *
+ *   US persons            allowed on spot. Blocked only from leveraged
+ *                         derivatives and event markets.
+ *
+ * Non-custodial spot swaps are not a regulated activity for a front end:
+ * the user holds their own keys, we never take custody, and money
+ * transmitter licensing turns on control of funds. Jupiter, Photon, BullX,
+ * Axiom and fomo all serve US users on spot. fomo's "not available to US
+ * persons" is specific to perps, which are leveraged derivatives requiring a
+ * CFTC-registered venue.
+ *
+ * This is a compliance control, not a security control. IP geolocation is
+ * defeatable and everyone knows it. The standard it meets is "reasonable
+ * measures": block on IP, ask the user to attest, log it, don't market in.
  */
 
-/** ISO 3166-1 alpha-2. */
 export type CountryCode = string;
 
 /**
- * The US is blocked because trading is the regulated activity and we hold no
- * licence. The rest are OFAC-sanctioned and are table stakes for any crypto
- * product.
+ * Sanctioned. Blocked on every gated path, no exceptions, no surface where
+ * this is negotiable.
  */
-export const RESTRICTED_COUNTRIES: ReadonlySet<CountryCode> = new Set([
-  "US", // no broker-dealer / MSB registration; the whole reason for this file
+export const OFAC_COUNTRIES: ReadonlySet<CountryCode> = new Set([
   "KP", // North Korea
   "IR", // Iran
   "SY", // Syria
@@ -27,25 +35,39 @@ export const RESTRICTED_COUNTRIES: ReadonlySet<CountryCode> = new Set([
 ]);
 
 /** Occupied Ukrainian regions, which carry their own sanctions programmes. */
-export const RESTRICTED_REGIONS: ReadonlySet<string> = new Set([
+export const OFAC_REGIONS: ReadonlySet<string> = new Set([
   "UA-43", // Crimea
   "UA-14", // Donetsk
   "UA-09", // Luhansk
 ]);
 
 /**
- * Paths that stay open everywhere.
+ * Surfaces US persons may not reach.
  *
- * The scanner is deliberately public: it reads public chain history and gives
- * back an analysis. That is not a regulated activity, and it is the top of the
- * funnel — a US visitor who sees their number and shares the card is still
- * worth having. We gate the trading, not the arithmetic.
+ * Perps are leveraged derivatives and require a CFTC-registered venue we do
+ * not have. Event markets are CFTC event contracts — the category Polymarket
+ * was fined $1.4M over and excluded from the US for three years.
+ *
+ * Spot is deliberately absent.
+ */
+const US_RESTRICTED_PREFIXES = [
+  "/perps",
+  "/api/perps",
+  "/markets", // event tokens, when they land
+  "/api/markets",
+] as const;
+
+/**
+ * Paths open to everyone, everywhere.
+ *
+ * The scanner reads public chain history and does arithmetic on it. That is
+ * not a regulated activity anywhere, and it is the top of the funnel.
  */
 const OPEN_PREFIXES = [
-  "/",              // landing
-  "/w/",            // scanner results + share cards
-  "/api/scan",      // scanner API
-  "/restricted",    // the page we send blocked users to
+  "/",
+  "/w/",
+  "/api/scan",
+  "/restricted",
   "/legal",
   "/_next",
   "/favicon",
@@ -57,6 +79,11 @@ export function isOpenPath(pathname: string): boolean {
   return OPEN_PREFIXES.some((p) => p !== "/" && pathname.startsWith(p));
 }
 
+/** True when this path is one US persons may not reach. */
+export function isUsRestrictedPath(pathname: string): boolean {
+  return US_RESTRICTED_PREFIXES.some((p) => pathname.startsWith(p));
+}
+
 export interface GeoSignal {
   country?: string | null;
   region?: string | null;
@@ -64,51 +91,63 @@ export interface GeoSignal {
 
 export type GateDecision =
   | { allow: true }
-  | { allow: false; reason: "restricted-country" | "restricted-region" | "unknown-origin"; code?: string };
+  | {
+      allow: false;
+      reason: "sanctioned-country" | "sanctioned-region" | "us-derivatives" | "unknown-origin";
+      code?: string;
+    };
 
 /**
  * Decide whether a request may reach a gated path.
  *
  * `failClosed` should be true in production and false locally, where no CDN
  * sets geo headers and every request would otherwise look like an unknown
- * origin. Failing open in production would make the whole control decorative.
+ * origin. Failing open in production would make the control decorative.
  */
-export function gate(signal: GeoSignal, failClosed: boolean): GateDecision {
+export function gate(
+  signal: GeoSignal,
+  pathname: string,
+  failClosed: boolean,
+): GateDecision {
   const country = signal.country?.trim().toUpperCase();
   const region = signal.region?.trim().toUpperCase();
 
   if (!country) {
-    return failClosed
+    // Unknown origin can only be refused where the restriction is real.
+    // Failing closed on spot would block every request behind a CDN that
+    // does not set the header — a much larger group than US persons.
+    if (!failClosed) return { allow: true };
+    return isUsRestrictedPath(pathname)
       ? { allow: false, reason: "unknown-origin" }
       : { allow: true };
   }
 
-  if (RESTRICTED_COUNTRIES.has(country)) {
-    return { allow: false, reason: "restricted-country", code: country };
+  if (OFAC_COUNTRIES.has(country)) {
+    return { allow: false, reason: "sanctioned-country", code: country };
   }
 
-  if (country === "UA" && region && RESTRICTED_REGIONS.has(`UA-${region}`)) {
-    return { allow: false, reason: "restricted-region", code: `UA-${region}` };
+  if (country === "UA" && region && OFAC_REGIONS.has(`UA-${region}`)) {
+    return { allow: false, reason: "sanctioned-region", code: `UA-${region}` };
+  }
+
+  if (country === "US" && isUsRestrictedPath(pathname)) {
+    return { allow: false, reason: "us-derivatives", code: "US" };
   }
 
   return { allow: true };
 }
 
 /**
- * Pull a country out of whatever CDN we happen to be behind.
- * Vercel and Cloudflare use different headers; check both so the control keeps
- * working if hosting changes.
+ * Pull a country out of whatever CDN we are behind. Vercel and Cloudflare use
+ * different headers; check both so the control survives a hosting change.
  */
-export function readGeo(headers: {
-  get(name: string): string | null;
-}): GeoSignal {
+export function readGeo(headers: { get(name: string): string | null }): GeoSignal {
   return {
     country:
       headers.get("x-vercel-ip-country") ??
       headers.get("cf-ipcountry") ??
       headers.get("x-country-code"),
     region:
-      headers.get("x-vercel-ip-country-region") ??
-      headers.get("cf-region-code"),
+      headers.get("x-vercel-ip-country-region") ?? headers.get("cf-region-code"),
   };
 }
