@@ -1,6 +1,7 @@
 "use client";
 
 import { usePrivy } from "@privy-io/react-auth";
+import { TradePanel } from "@/components/trade/trade-panel";
 import { PromptPanel } from "@/components/trade/prompt-panel";
 
 /**
@@ -54,6 +55,22 @@ export default function Trade() {
             </div>
           </dl>
         )}
+      </div>
+
+      {/*
+        Buttons first, prompt second. The conventional panel is what people
+        arrive expecting; the prompt is the thing they discover. Leading with
+        the prompt asks a new user to learn an interface before they can do
+        the simple thing.
+      */}
+      <TradePanel />
+
+      <div className="flex items-center gap-3">
+        <div className="h-px flex-1 bg-champagne/12" />
+        <span className="font-mono text-[10px] tracking-[0.25em] text-ash">
+          OR JUST SAY IT
+        </span>
+        <div className="h-px flex-1 bg-champagne/12" />
       </div>
 
       <PromptPanel />

@@ -6,15 +6,14 @@ import { readback, readbackText } from "../readback.ts";
 const compile = (s: string) => readback(parseWithGrammar(s)!);
 const line = (s: string, label: string) => compile(s).find((l) => l.label === label)!;
 
-test("the canonical sentence renders every leg", () => {
+test("the canonical sentence renders only what matters", () => {
   const out = compile("buy me $500 of bonk, sell a third at 2x and stop the rest at -50%");
-  assert.deepEqual(
-    out.map((l) => l.label),
-    ["BUY", "SLIPPAGE", "ROUTING", "THEN", "STOP"],
-  );
+  // No SLIPPAGE or ROUTING: both are at their defaults and the user never
+  // mentioned them, so a line about them is noise.
+  assert.deepEqual(out.map((l) => l.label), ["BUY", "THEN", "STOP"]);
   assert.equal(out[0].value, "$500 of BONK");
-  assert.equal(out[3].value, "sell a third at 2× your entry");
-  assert.equal(out[4].value, "sell everything if it falls 50% below your entry");
+  assert.equal(out[1].value, "sell a third at 2× your entry");
+  assert.equal(out[2].value, "sell everything if it falls 50% below your entry");
 });
 
 test("word fractions come back as words", () => {
@@ -23,16 +22,21 @@ test("word fractions come back as words", () => {
   assert.match(line("sell 40% at 2x", "THEN").value, /sell 40%/);
 });
 
-test("slippage is stated as a consequence, not a setting", () => {
-  const l = line("buy $100 of wif", "SLIPPAGE");
-  assert.equal(l.value, "up to 3%");
+test("slippage appears only when the user set it, as a consequence", () => {
+  // Default: absent entirely.
+  assert.equal(compile("buy $100 of wif").some((l) => l.label === "SLIPPAGE"), false);
+
+  const l = line("buy $100 of wif, max 1% slippage", "SLIPPAGE");
+  assert.equal(l.value, "up to 1%");
   assert.match(l.note!, /abandoned rather than filled worse/);
   // never raw basis points — nobody approves "300 bps" meaningfully
   assert.doesNotMatch(l.value + l.note!, /bps|basis point/i);
 });
 
-test("public routing warns, private reassures", () => {
-  assert.match(line("buy $100 of wif", "ROUTING").note!, /cannot be front-run/);
+test("routing is silent when private, loud when public", () => {
+  // Private is the default and the safe case — no line.
+  assert.equal(compile("buy $100 of wif").some((l) => l.label === "ROUTING"), false);
+  // Going public is a real downgrade; silence would hide it.
   assert.match(
     line("buy $100 of wif with public mempool", "ROUTING").note!,
     /you can be front-run/,
@@ -67,7 +71,7 @@ test("large numbers are grouped", () => {
 });
 
 test("text form is loggable — it is what the user approved", () => {
-  const t = readbackText(parseWithGrammar("buy $100 of wif")!);
+  const t = readbackText(parseWithGrammar("buy $100 of wif, max 2% slippage")!);
   assert.match(t, /^BUY \$100 of WIF/);
-  assert.match(t, /SLIPPAGE up to 3%/);
+  assert.match(t, /SLIPPAGE up to 2%/);
 });

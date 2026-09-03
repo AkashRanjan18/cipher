@@ -1,4 +1,4 @@
-import type { Amount, ExitRule, OrderSpec, Trigger } from "@cipher/shared";
+import { DEFAULTS, type Amount, type ExitRule, type OrderSpec, type Trigger } from "@cipher/shared";
 
 /**
  * Spec → plain English.
@@ -112,20 +112,31 @@ export function readback(spec: OrderSpec): ReadbackLine[] {
       note: spec.entry.mint ? undefined : "token not confirmed yet",
     });
 
-    // Consequence, not setting. Nobody approves "300 bps" meaningfully.
-    lines.push({
-      label: "SLIPPAGE",
-      value: `up to ${slippageBps / 100}%`,
-      note: "the order is abandoned rather than filled worse than this",
-    });
+    /*
+     * Slippage and routing only appear when the user actually said something.
+     * At their defaults they are noise: a reader who did not mention slippage
+     * cannot meaningfully approve a slippage line, and every line they skim
+     * past makes the lines that matter cheaper.
+     *
+     * The capability stays — "max 1% slippage" still parses and still shows.
+     * Non-default routing always shows, because going public is a real
+     * downgrade and silence would hide it.
+     */
+    if (slippageBps !== DEFAULTS.slippageBps) {
+      lines.push({
+        label: "SLIPPAGE",
+        value: `up to ${slippageBps / 100}%`,
+        note: "the order is abandoned rather than filled worse than this",
+      });
+    }
 
-    lines.push({
-      label: "ROUTING",
-      value: privateSubmission ? "private" : "public",
-      note: privateSubmission
-        ? "submitted privately, so it cannot be front-run"
-        : "visible in the public mempool before it lands — you can be front-run",
-    });
+    if (!privateSubmission) {
+      lines.push({
+        label: "ROUTING",
+        value: "public",
+        note: "visible in the public mempool before it lands — you can be front-run",
+      });
+    }
   }
 
   for (const rule of spec.exits) lines.push(exitLine(rule, token));
