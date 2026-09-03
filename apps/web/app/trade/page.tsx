@@ -1,79 +1,42 @@
-"use client";
-
-import { usePrivy } from "@privy-io/react-auth";
-import { TradePanel } from "@/components/trade/trade-panel";
-import { PromptPanel } from "@/components/trade/prompt-panel";
+import { fetchTrending, fetchNewPools } from "@/lib/market";
+import { DiscoverGrid } from "@/components/trade/discover-grid";
 
 /**
- * The trading screen.
+ * The discovery home at /trade — what a signed-in user lands on.
  *
- * Deliberately NOT gated on authentication. Composing an order and reading
- * back what it will do costs nothing and commits nothing — gating that
- * behind a login is the friction the product exists to remove. Auth is
- * required to *arm* an order, which is the point where something real
- * happens, and the panel raises it there.
+ * A SERVER component: both lists are fetched here so the page arrives
+ * populated, with no spinner and no client waterfall.
  *
- * Jurisdiction gating still applies via middleware.ts.
+ * Deliberately NOT gated on authentication. Browsing tokens and reading
+ * their safety data costs nothing and commits nothing; gating it behind a
+ * login is exactly the friction this product exists to remove. Auth is
+ * required to ARM an order, which is where something real happens.
  */
-export default function Trade() {
-  const { ready, authenticated, user } = usePrivy();
-
+export default async function Discover() {
   /*
-   * Read the wallet off the user record rather than through useWallets()
-   * from @privy-io/react-auth/solana. That hook depends on the external
-   * wallet connector config, which went away with wallet login — calling it
-   * now throws "Cannot read properties of null (reading 'connectors')".
-   * The embedded wallet's address is already here.
+   * Allowed to fail without taking the page down — the grid renders an
+   * explicit "rate limited" state rather than an empty market.
    */
-  const wallet = user?.linkedAccounts.find(
-    (a) => a.type === "wallet" && a.chainType === "solana",
+  const rail = await Promise.all([fetchTrending(), fetchNewPools()]).catch(
+    () => null,
   );
-  const address = wallet && "address" in wallet ? wallet.address : null;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col justify-center gap-8 px-6 py-16">
-      <div className="flex flex-col gap-2">
-        <p className="font-display text-4xl lowercase">
-          {authenticated ? "you’re in." : "say what you want."}
+    <main className="mx-auto flex min-h-dvh max-w-7xl flex-col gap-8 px-6 py-10">
+      <div className="flex flex-col gap-1">
+        <h1 className="font-display text-3xl lowercase text-champagne">
+          what are you trading
+        </h1>
+        <p className="font-sans text-sm text-ash">
+          Pick a token, or say what you want in a sentence.
         </p>
-
-        {/* Only meaningful once signed in, so it stays out of the way until
-            then rather than showing an empty row. */}
-        {ready && authenticated && (
-          <dl className="mt-2 space-y-2 font-mono text-xs">
-            <div className="flex flex-wrap gap-x-4">
-              <dt className="w-24 shrink-0 text-ash">signed in as</dt>
-              <dd className="break-all text-champagne">
-                {user?.google?.email ?? user?.email?.address ?? user?.id}
-              </dd>
-            </div>
-            <div className="flex flex-wrap gap-x-4">
-              <dt className="w-24 shrink-0 text-ash">wallet</dt>
-              <dd className="break-all text-champagne">
-                {address ?? "provisioning…"}
-              </dd>
-            </div>
-          </dl>
-        )}
       </div>
 
-      {/*
-        Buttons first, prompt second. The conventional panel is what people
-        arrive expecting; the prompt is the thing they discover. Leading with
-        the prompt asks a new user to learn an interface before they can do
-        the simple thing.
-      */}
-      <TradePanel />
-
-      <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-champagne/12" />
-        <span className="font-mono text-[10px] tracking-[0.25em] text-ash">
-          OR JUST SAY IT
-        </span>
-        <div className="h-px flex-1 bg-champagne/12" />
-      </div>
-
-      <PromptPanel />
+      <DiscoverGrid
+        trending={rail?.[0] ?? []}
+        fresh={rail?.[1] ?? []}
+        unavailable={rail === null}
+      />
     </main>
   );
 }
