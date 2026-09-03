@@ -41,6 +41,7 @@ export async function GET(req: Request) {
         change24h: stats.windows.h24.change,
         volume24h: stats.windows.h24.volume,
         liquidityUsd: stats.liquidityUsd,
+        fdv: stats.fdv,
         createdAt: null,
       };
       return NextResponse.json({ results: [row] });

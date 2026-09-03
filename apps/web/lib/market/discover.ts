@@ -1,4 +1,11 @@
 import type { PoolSummary } from "./types";
+/*
+ * Explicit .ts extension. Turbopack resolves an extensionless relative import
+ * fine, but the Node test runner does not — and this is the only VALUE import
+ * between files in lib/market, so it is the only one that breaks. Every other
+ * cross-file import here is `import type`, which is erased before Node sees it.
+ */
+import { isBonding } from "./bonding.ts";
 
 /**
  * Discovery — trending, new, and search.
@@ -22,6 +29,7 @@ interface GeckoPool {
     name: string;
     pool_created_at: string | null;
     base_token_price_usd: string;
+    fdv_usd?: string;
     price_change_percentage: Record<string, string>;
     volume_usd: Record<string, string>;
     reserve_in_usd: string;
@@ -96,6 +104,7 @@ export function toPoolSummaries(
       change24h: numOrNull(a.price_change_percentage?.h24),
       volume24h: num(a.volume_usd?.h24),
       liquidityUsd: num(a.reserve_in_usd),
+      fdv: numOrNull(a.fdv_usd),
       createdAt: a.pool_created_at
         ? Math.floor(new Date(a.pool_created_at).getTime() / 1000)
         : null,
@@ -113,6 +122,25 @@ export function toPoolSummaries(
  * Until then the defence is cache windows wide enough that upstream traffic
  * is bounded by revalidate, not by user count.
  */
+/**
+ * One row per TOKEN, keeping its deepest pool.
+ *
+ * A token commonly has several pools — new_pools returned DEBTCOIN three
+ * times — and three identical rows read as a rendering bug while pushing
+ * other tokens off the list. The deepest pool is also the one /trade/[mint]
+ * will resolve to, so the row matches the page it opens.
+ */
+export function dedupeByMint(pools: PoolSummary[]): PoolSummary[] {
+  const best = new Map<string, PoolSummary>();
+
+  for (const p of pools) {
+    const held = best.get(p.mint);
+    if (!held || p.liquidityUsd > held.liquidityUsd) best.set(p.mint, p);
+  }
+  // Map preserves insertion order, so upstream ranking survives.
+  return [...best.values()];
+}
+
 async function geckoList(path: string): Promise<PoolSummary[]> {
   const res = await fetch(`${GECKO}/${path}`, {
     headers: { Accept: "application/json" },
@@ -130,7 +158,7 @@ async function geckoList(path: string): Promise<PoolSummary[]> {
     data?: GeckoPool[];
     included?: GeckoToken[];
   };
-  return toPoolSummaries(data.data ?? [], data.included ?? []);
+  return dedupeByMint(toPoolSummaries(data.data ?? [], data.included ?? []));
 }
 
 export function fetchTrending(): Promise<PoolSummary[]> {
@@ -139,6 +167,19 @@ export function fetchTrending(): Promise<PoolSummary[]> {
 
 export function fetchNewPools(): Promise<PoolSummary[]> {
   return geckoList("new_pools?include=base_token");
+}
+
+/**
+ * Tokens still on a bonding curve.
+ *
+ * GeckoTerminal has no dedicated launchpad endpoint, so this filters the
+ * newest pools down to the curve DEXes. That is the right source anyway:
+ * a token that has been on a curve for a week without graduating is not the
+ * one anybody is looking for.
+ */
+export async function fetchBonding(): Promise<PoolSummary[]> {
+  const pools = await geckoList("new_pools?include=base_token");
+  return pools.filter((p) => isBonding(p.dex));
 }
 
 /* --------------------------------------------------------------- search -- */
@@ -183,7 +224,7 @@ export async function searchPools(query: string): Promise<PoolSummary[]> {
     included?: GeckoToken[];
   };
   return (
-    toPoolSummaries(data.data ?? [], data.included ?? [])
+    dedupeByMint(toPoolSummaries(data.data ?? [], data.included ?? []))
       /*
        * A memecoin ticker is not unique — "wif" matches WIFE, KWIF, SWIF and
        * a dozen deliberate clones. Ranking by liquidity puts the token a

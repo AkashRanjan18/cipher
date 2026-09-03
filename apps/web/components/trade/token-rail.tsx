@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import type { PoolSummary, Major } from "@/lib/market";
 import { useNow } from "./use-now";
 import { usd, compact, compactUsd, pct, since } from "@/lib/format";
+import { graduationProgress } from "@/lib/market";
 
 /**
  * The discovery rail — blue chips, trending, new, and search in one column.
@@ -24,7 +25,7 @@ import { usd, compact, compactUsd, pct, since } from "@/lib/format";
  * what make a row scannable without reading it.
  */
 
-type Tab = "crypto" | "trending" | "new";
+type Tab = "crypto" | "trending" | "bonding" | "new";
 
 function Logo({ src, symbol }: { src: string | null; symbol: string }) {
   if (src) {
@@ -94,10 +95,12 @@ function PoolRow({
   pool,
   active,
   now,
+  showGraduation = false,
 }: {
   pool: PoolSummary;
   active: boolean;
   now: number | null;
+  showGraduation?: boolean;
 }) {
   return (
     <Link
@@ -127,14 +130,43 @@ function PoolRow({
   );
 }
 
+/**
+ * How far a bonding-curve token is from graduating.
+ *
+ * The one number that matters on a launchpad token: a curve at 4% just
+ * launched, one at 90% is about to migrate to a real pool and is being
+ * front-run by everyone watching. Nothing else on the row conveys that.
+ */
+function Graduation({ fdv }: { fdv: number | null }) {
+  const p = graduationProgress(fdv);
+  if (p === null) return null;
+
+  return (
+    <div className="mt-1 flex items-center gap-1.5">
+      <div className="h-1 flex-1 overflow-hidden rounded-full bg-champagne/10">
+        <div
+          className={p >= 80 ? "h-full bg-up" : "h-full bg-champagne/50"}
+          style={{ width: `${p}%` }}
+          aria-hidden
+        />
+      </div>
+      <span className="font-mono text-[10px] tabular-nums text-ash">
+        {p.toFixed(0)}%
+      </span>
+    </div>
+  );
+}
+
 export function TokenRail({
   majors,
   trending,
+  bonding,
   fresh,
   unavailable = false,
 }: {
   majors: Major[];
   trending: PoolSummary[];
+  bonding: PoolSummary[];
   fresh: PoolSummary[];
   /** The upstream list failed — usually a rate limit, not an empty market. */
   unavailable?: boolean;
@@ -187,7 +219,9 @@ export function TokenRail({
     };
   }, [query]);
 
-  const list = results ?? (tab === "trending" ? trending : fresh);
+  const list =
+    results ??
+    (tab === "trending" ? trending : tab === "bonding" ? bonding : fresh);
   // Searching replaces whatever tab is active, blue chips included.
   const showMajors = !results && tab === "crypto";
 
@@ -206,15 +240,15 @@ export function TokenRail({
       {/* Tabs hide while searching — they control a list that is not on
           screen, and a live control that does nothing is worse than none. */}
       {!results && (
-        <div className="flex shrink-0 gap-4 border-b border-line px-3">
-          {(["crypto", "trending", "new"] as const).map((t) => (
+        <div className="no-scrollbar flex shrink-0 gap-3 overflow-x-auto border-b border-line px-3">
+          {(["crypto", "trending", "bonding", "new"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               aria-pressed={tab === t}
               /* Underline rather than a pill: tabs that change the list below
                  should look attached to it. */
-              className={`-mb-px border-b-2 pb-2 pt-1 font-sans text-sm capitalize transition-colors ${
+              className={`-mb-px shrink-0 border-b-2 pb-2 pt-1 font-sans text-xs capitalize transition-colors ${
                 tab === t
                   ? "border-champagne text-champagne"
                   : "border-transparent text-ash hover:text-champagne"
@@ -243,12 +277,20 @@ export function TokenRail({
           </p>
         ) : (
           list.map((p) => (
-            <PoolRow
-              key={p.pairAddress}
-              pool={p}
-              active={pathname === `/trade/${p.mint}`}
-              now={now}
-            />
+            <div key={p.pairAddress}>
+              <PoolRow
+                pool={p}
+                active={pathname === `/trade/${p.mint}`}
+                now={now}
+              />
+              {/* Only on the bonding tab — a graduated token has no curve
+                  left to complete, so the bar would be meaningless. */}
+              {tab === "bonding" && !results && (
+                <div className="border-b border-hairline px-3 pb-2">
+                  <Graduation fdv={p.fdv} />
+                </div>
+              )}
+            </div>
           ))
         )}
       </div>

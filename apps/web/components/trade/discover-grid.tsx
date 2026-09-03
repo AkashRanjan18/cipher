@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { PoolSummary } from "@/lib/market";
 import { useNow } from "./use-now";
 import { compactUsd, pct, since } from "@/lib/format";
+import { graduationProgress } from "@/lib/market";
 
 /**
  * The discovery home — the front door to the terminal.
@@ -18,7 +19,34 @@ import { compactUsd, pct, since } from "@/lib/format";
  * room for the numbers that actually drive the choice.
  */
 
-function Card({ pool, now }: { pool: PoolSummary; now: number | null }) {
+function Graduation({ fdv }: { fdv: number | null }) {
+  const p = graduationProgress(fdv);
+  if (p === null) return null;
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1 flex-1 overflow-hidden rounded-full bg-champagne/10">
+        <div
+          className={p >= 80 ? "h-full bg-up" : "h-full bg-champagne/50"}
+          style={{ width: `${p}%` }}
+          aria-hidden
+        />
+      </div>
+      <span className="font-mono text-[11px] tabular-nums text-ash">
+        {p.toFixed(0)}% to graduation
+      </span>
+    </div>
+  );
+}
+
+function Card({
+  pool,
+  now,
+  showGraduation = false,
+}: {
+  pool: PoolSummary;
+  now: number | null;
+  showGraduation?: boolean;
+}) {
   const c = pool.change24h;
   return (
     <Link
@@ -37,6 +65,9 @@ function Card({ pool, now }: { pool: PoolSummary; now: number | null }) {
           {pct(c)}
         </span>
       </div>
+
+      {/* Only meaningful pre-graduation; a migrated token has no curve left. */}
+      {showGraduation && <Graduation fdv={pool.fdv} />}
 
       <div className="grid grid-cols-2 gap-y-1.5 font-mono text-[11px]">
         <span className="text-ash">liquidity</span>
@@ -58,14 +89,16 @@ function Card({ pool, now }: { pool: PoolSummary; now: number | null }) {
 
 export function DiscoverGrid({
   trending,
+  bonding,
   fresh,
   unavailable = false,
 }: {
   trending: PoolSummary[];
+  bonding: PoolSummary[];
   fresh: PoolSummary[];
   unavailable?: boolean;
 }) {
-  const [tab, setTab] = useState<"trending" | "new">("trending");
+  const [tab, setTab] = useState<"trending" | "bonding" | "new">("trending");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PoolSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -106,7 +139,9 @@ export function DiscoverGrid({
     };
   }, [query]);
 
-  const list = results ?? (tab === "trending" ? trending : fresh);
+  const list =
+    results ??
+    (tab === "trending" ? trending : tab === "bonding" ? bonding : fresh);
 
   return (
     <div className="flex flex-col gap-6">
@@ -120,7 +155,7 @@ export function DiscoverGrid({
 
       {!results && (
         <div className="flex gap-1">
-          {(["trending", "new"] as const).map((t) => (
+          {(["trending", "bonding", "new"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -151,7 +186,12 @@ export function DiscoverGrid({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {list.map((p) => (
-            <Card key={p.pairAddress} pool={p} now={now} />
+            <Card
+              key={p.pairAddress}
+              pool={p}
+              now={now}
+              showGraduation={tab === "bonding" && !results}
+            />
           ))}
         </div>
       )}

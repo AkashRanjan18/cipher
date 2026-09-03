@@ -71,3 +71,18 @@ body {
     display: none;
   }
 }
+
+/*
+ * A scrollable strip that does not advertise it.
+ *
+ * The tab row overflows at narrow widths and must stay swipeable, but a
+ * visible scrollbar under four tabs reads as a broken layout rather than an
+ * affordance.
+ */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

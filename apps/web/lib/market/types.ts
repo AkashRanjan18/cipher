@@ -154,6 +154,8 @@ export interface PoolSummary {
   change24h: number | null;
   volume24h: number;
   liquidityUsd: number;
+  /** Fully diluted value. Drives the bonding-curve graduation bar. */
+  fdv: number | null;
   /** Unix seconds. Null when the source does not report pool age. */
   createdAt: number | null;
 }

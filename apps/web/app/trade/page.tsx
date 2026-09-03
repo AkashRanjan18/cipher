@@ -1,4 +1,4 @@
-import { fetchTrending, fetchNewPools } from "@/lib/market";
+import { fetchTrending, fetchNewPools, fetchBonding } from "@/lib/market";
 import { DiscoverGrid } from "@/components/trade/discover-grid";
 
 /**
@@ -17,9 +17,11 @@ export default async function Discover() {
    * Allowed to fail without taking the page down — the grid renders an
    * explicit "rate limited" state rather than an empty market.
    */
-  const rail = await Promise.all([fetchTrending(), fetchNewPools()]).catch(
-    () => null,
-  );
+  const rail = await Promise.all([
+    fetchTrending(),
+    fetchNewPools(),
+    fetchBonding(),
+  ]).catch(() => null);
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-7xl flex-col gap-8 px-6 py-10">
@@ -35,6 +37,7 @@ export default async function Discover() {
       <DiscoverGrid
         trending={rail?.[0] ?? []}
         fresh={rail?.[1] ?? []}
+        bonding={rail?.[2] ?? []}
         unavailable={rail === null}
       />
     </main>

@@ -7,6 +7,7 @@ import {
   fetchNewPools,
   fetchSecurity,
   fetchMajors,
+  fetchBonding,
 } from "@/lib/market";
 import { TopBar } from "@/components/shell/top-bar";
 import { TickerBar } from "@/components/shell/ticker-bar";
@@ -48,6 +49,7 @@ export default async function TokenPage({
     fetchTrending(),
     fetchNewPools(),
     fetchMajors(),
+    fetchBonding(),
   ]).catch(() => null);
 
   const stats = await fetchTokenStats(mint);
@@ -93,6 +95,7 @@ export default async function TokenPage({
               majors={rail?.[2] ?? []}
               trending={rail?.[0] ?? []}
               fresh={rail?.[1] ?? []}
+              bonding={rail?.[3] ?? []}
               unavailable={rail === null}
             />
           </div>

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { pickDeepestPair, normalise } from "../dexscreener.ts";
 import { toCandles } from "../geckoterminal.ts";
 import { toTrades } from "../trades.ts";
-import { toPoolSummaries, isMintAddress } from "../discover.ts";
+import { toPoolSummaries, isMintAddress, dedupeByMint } from "../discover.ts";
 import { foldLivePrice } from "../live.ts";
 import { toSecurity } from "../security.ts";
 
@@ -330,4 +330,40 @@ test("the freshest read of a repeated bar wins", () => {
   ]);
   assert.equal(out.length, 1);
   assert.equal(out[0].close, 9);
+});
+
+const summary = (mint: string, liq: number, pair = mint + liq) => ({
+  pairAddress: pair,
+  imageUrl: null,
+  mint,
+  symbol: "X",
+  dex: "pump-fun",
+  priceUsd: 1,
+  change1h: null,
+  change24h: null,
+  volume24h: 0,
+  liquidityUsd: liq,
+  fdv: null,
+  createdAt: null,
+});
+
+test("a token appears once, at its deepest pool", () => {
+  /*
+   * new_pools returned DEBTCOIN three times. Three identical rows read as a
+   * rendering bug and push other tokens off the list.
+   */
+  const out = dedupeByMint([
+    summary("A", 100),
+    summary("A", 9000),
+    summary("B", 50),
+    summary("A", 20),
+  ]);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].liquidityUsd, 9000);
+});
+
+test("dedupe preserves upstream ranking", () => {
+  // Trending order is the signal; re-sorting here would discard it.
+  const out = dedupeByMint([summary("B", 1), summary("A", 1)]);
+  assert.deepEqual(out.map((p) => p.mint), ["B", "A"]);
 });
