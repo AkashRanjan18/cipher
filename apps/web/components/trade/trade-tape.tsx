@@ -53,7 +53,9 @@ export function TradeTape({
       }
     };
 
-    const id = setInterval(tick, 6000);
+    // Matched to the server cache window; polling faster only re-reads
+    // the same cached response while spending the shared upstream budget.
+    const id = setInterval(tick, 15000);
     return () => {
       alive = false;
       clearInterval(id);

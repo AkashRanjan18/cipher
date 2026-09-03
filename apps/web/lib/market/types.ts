@@ -62,3 +62,27 @@ export interface Trade {
   wallet: string;
   txHash: string;
 }
+
+/**
+ * One row in the discovery rail.
+ *
+ * Deliberately NOT TokenStats. A rail row is a pool the user has not chosen
+ * yet — it needs the mint to navigate to and enough numbers to decide, but
+ * none of the depth the token page fetches. Reusing TokenStats here would
+ * force every list endpoint to fill fields no list can supply.
+ */
+export interface PoolSummary {
+  pairAddress: string;
+  /** Base token mint — the id /trade/[mint] routes on. */
+  mint: string;
+  symbol: string;
+  dex: string;
+  priceUsd: number;
+  /** Null means the source did not report the window — not that price was flat. */
+  change1h: number | null;
+  change24h: number | null;
+  volume24h: number;
+  liquidityUsd: number;
+  /** Unix seconds. Null when the source does not report pool age. */
+  createdAt: number | null;
+}

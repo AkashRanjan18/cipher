@@ -63,8 +63,12 @@ export function toTrades(rows: RawTrade[]): Trade[] {
 export async function fetchTrades(pairAddress: string): Promise<Trade[]> {
   const res = await fetch(`${ENDPOINT}/${pairAddress}/trades`, {
     headers: { Accept: "application/json" },
-    // The tape is the fastest-moving panel; anything longer looks frozen.
-    next: { revalidate: 10 },
+    /*
+     * The tape is the fastest-moving panel; longer than this looks frozen.
+     * It is also the single biggest consumer of the shared rate limit, since
+     * it is the one panel that polls — see the ceiling note in discover.ts.
+     */
+    next: { revalidate: 15 },
   });
   if (!res.ok) return [];
 

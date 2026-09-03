@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { pickDeepestPair, normalise } from "../dexscreener.ts";
 import { toCandles } from "../geckoterminal.ts";
 import { toTrades } from "../trades.ts";
+import { toPoolSummaries, isMintAddress } from "../discover.ts";
 
 const pair = (over: Record<string, unknown> = {}) => ({
   pairAddress: "P1",
@@ -144,4 +145,57 @@ test("an unrecognised kind is treated as a sell, never a buy", () => {
     },
   ]);
   assert.equal(t.side, "sell");
+});
+
+const gpool = (over: Record<string, unknown> = {}) => ({
+  attributes: {
+    address: "P9",
+    name: "BEN / USDC",
+    pool_created_at: "2026-09-03T08:41:22Z",
+    base_token_price_usd: "0.00043955",
+    price_change_percentage: { h1: "16.893", h24: "648.48" },
+    volume_usd: { h24: "3269338.6" },
+    reserve_in_usd: "72431.43",
+    ...over,
+  },
+  relationships: {
+    base_token: { data: { id: "solana_43uJZGxfZcsiL29k1vpwd7H6up5qgMAoU1aMb5Rmpump" } },
+    dex: { data: { id: "pumpswap" } },
+  },
+});
+
+test("the network prefix is stripped off the base token id", () => {
+  // /trade/[mint] routes on the bare mint; "solana_<mint>" would 404.
+  const [p] = toPoolSummaries([gpool()]);
+  assert.equal(p.mint, "43uJZGxfZcsiL29k1vpwd7H6up5qgMAoU1aMb5Rmpump");
+});
+
+test("the base symbol is the left half of the pool name", () => {
+  const [p] = toPoolSummaries([gpool()]);
+  assert.equal(p.symbol, "BEN");
+});
+
+test("unparseable numbers become zero, never NaN", () => {
+  // NaN reaches the DOM as the string "NaN" and reads as a crash.
+  const [p] = toPoolSummaries([gpool({ reserve_in_usd: "" })]);
+  assert.equal(p.liquidityUsd, 0);
+});
+
+test("a pool with no creation time has a null age, not epoch zero", () => {
+  const [p] = toPoolSummaries([gpool({ pool_created_at: null })]);
+  assert.equal(p.createdAt, null);
+});
+
+test("a pasted mint is recognised, a ticker is not", () => {
+  // A ticker goes to text search; a mint is resolved directly, because text
+  // search on an address returns nothing.
+  assert.ok(isMintAddress("DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"));
+  assert.ok(!isMintAddress("bonk"));
+});
+
+test("base58 excludes the ambiguous glyphs", () => {
+  // 0/O and I/l are absent from the alphabet so a mispaste fails here rather
+  // than resolving to a different account — i.e. buying the wrong token.
+  assert.ok(!isMintAddress("0ezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"));
+  assert.ok(!isMintAddress("IezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"));
 });
