@@ -15,3 +15,4 @@ export {
 } from "./discover";
 export { foldLivePrice } from "./live";
 export { fetchSecurity } from "./security";
+export { fetchMajors } from "./majors";

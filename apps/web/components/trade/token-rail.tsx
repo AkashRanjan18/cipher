@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { PoolSummary } from "@/lib/market";
+import type { PoolSummary, Major } from "@/lib/market";
 import { useNow } from "./use-now";
 
 /**
@@ -19,7 +19,7 @@ import { useNow } from "./use-now";
  * people glance at.
  */
 
-type Tab = "trending" | "new";
+type Tab = "crypto" | "trending" | "new";
 
 /** Null is "the source did not say", which is not the same as "flat". */
 function pct(n: number | null): string {
@@ -36,7 +36,14 @@ function age(unix: number | null, nowMs: number | null): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
+/*
+ * Spans nine orders of magnitude on one list: a $4k memecoin pool and BTC's
+ * $1.6T cap sit in the same column. Stopping at millions printed
+ * "$1635553.0M", which is unreadable and looks like a bug.
+ */
 function compact(n: number): string {
+  if (n >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
   return n.toFixed(0);
@@ -87,11 +94,54 @@ function Row({
   );
 }
 
+/**
+ * A blue chip row.
+ *
+ * Deliberately NOT a link. BTC and ETH do not trade on a Solana AMM, so a
+ * /trade/[mint] route for them would 404 or, worse, land on a wrapped
+ * imitation. They are here for orientation — when SOL is down 6%, a memecoin
+ * flat on the day is actually strong, and nothing else on screen says so.
+ */
+function MajorRow({ m }: { m: Major }) {
+  const up = m.change24h >= 0;
+  return (
+    <div className="flex items-center gap-2 border-b border-champagne/5 px-3 py-2">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {m.imageUrl && (
+        <img src={m.imageUrl} alt="" className="h-5 w-5 rounded-full" />
+      )}
+      <div className="flex min-w-0 flex-col">
+        <span className="font-mono text-xs text-champagne">{m.symbol}</span>
+        <span className="font-mono text-[10px] text-ash">
+          {m.marketCap ? `$${compact(m.marketCap)} MC` : ""}
+        </span>
+      </div>
+      <div className="ml-auto flex flex-col items-end">
+        <span className="font-mono text-xs tabular-nums text-champagne">
+          {m.priceUsd >= 1
+            ? `$${m.priceUsd.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
+            : `$${m.priceUsd.toPrecision(3)}`}
+        </span>
+        <span
+          className={`font-mono text-[10px] tabular-nums ${
+            up ? "text-green-400" : "text-red-400"
+          }`}
+        >
+          {up ? "▲" : "▼"}
+          {Math.abs(m.change24h).toFixed(2)}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function TokenRail({
+  majors,
   trending,
   fresh,
   unavailable = false,
 }: {
+  majors: Major[];
   trending: PoolSummary[];
   fresh: PoolSummary[];
   /** The upstream list failed — usually a shared rate limit, not an empty market. */
@@ -146,6 +196,8 @@ export function TokenRail({
   }, [query]);
 
   const list = results ?? (tab === "trending" ? trending : fresh);
+  // Searching replaces whatever tab is active, blue chips included.
+  const showMajors = !results && tab === "crypto";
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-champagne/10 bg-slate">
@@ -163,7 +215,7 @@ export function TokenRail({
           screen, and a live control that does nothing is worse than none. */}
       {!results && (
         <div className="flex shrink-0 gap-1 border-b border-champagne/10 px-2 py-1.5">
-          {(["trending", "new"] as const).map((t) => (
+          {(["crypto", "trending", "new"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -181,7 +233,9 @@ export function TokenRail({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {list.length === 0 ? (
+        {showMajors ? (
+          majors.map((m) => <MajorRow key={m.id} m={m} />)
+        ) : list.length === 0 ? (
           <p className="p-3 font-mono text-[11px] leading-relaxed text-ash">
             {/* Never say "nothing is trending" when the truth is "we could
                 not ask" — that is a claim about the market. */}

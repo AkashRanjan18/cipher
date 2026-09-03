@@ -20,14 +20,28 @@ export interface TokenStats {
   marketCap: number | null;
   fdv: number | null;
   liquidityUsd: number;
-  volume24h: number;
-  /** Percent. Negative is a fall. */
-  change24h: number;
-  buys24h: number;
-  sells24h: number;
+  /**
+   * The same four numbers over four windows. The terminal shows all of them
+   * side by side, because a token up 48% on the day and down 0.6% in the last
+   * five minutes is a different trade from one still climbing.
+   */
+  windows: Record<WindowKey, MarketWindow>;
+  /** Unix seconds the pool was created. Pool age, not token age. */
+  createdAt: number | null;
   /** Token logo. Null when the pool has no metadata attached. */
   imageUrl: string | null;
   socials: Social[];
+}
+
+/** The windows every DEX source reports: 5 minutes, 1 hour, 6 hours, 1 day. */
+export type WindowKey = "m5" | "h1" | "h6" | "h24";
+
+export interface MarketWindow {
+  /** Percent. Null means the source did not report the window, not flat. */
+  change: number | null;
+  volume: number;
+  buys: number;
+  sells: number;
 }
 
 export interface Social {
@@ -83,6 +97,16 @@ export interface Candle {
 }
 
 export type Timeframe = "minute" | "hour" | "day";
+
+/** One blue-chip row for the sidebar and the bottom ticker. */
+export interface Major {
+  id: string;
+  symbol: string;
+  imageUrl: string | null;
+  priceUsd: number;
+  change24h: number;
+  marketCap: number | null;
+}
 
 /**
  * Chart intervals the UI offers.

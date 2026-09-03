@@ -37,8 +37,8 @@ export async function GET(req: Request) {
         dex: stats.dex,
         priceUsd: stats.priceUsd,
         change1h: null,
-        change24h: stats.change24h,
-        volume24h: stats.volume24h,
+        change24h: stats.windows.h24.change,
+        volume24h: stats.windows.h24.volume,
         liquidityUsd: stats.liquidityUsd,
         createdAt: null,
       };

@@ -2,24 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLive } from "./live-price";
+import { useNow } from "./use-now";
+import type { Social } from "@/lib/market";
 
 /**
- * The terminal's top strip: identity, then the stats as one dense row.
+ * The token identity strip and the five headline stats.
  *
  * A client component, because these are the numbers that move. It reads the
  * shared poll from <LivePrice> rather than fetching, so the header and the
  * chart cost one request between them instead of two.
  *
- * Shape matters here. On a terminal this bar is glanced at, not read: it has
- * to stay one line deep so the chart keeps the vertical space. That is why
- * the stats are inline labels rather than the stacked cards a marketing page
- * would use.
+ * Stats sit in bordered boxes rather than a plain row: on a dense screen the
+ * eye needs an anchor per number, and a run of five bare figures reads as one
+ * paragraph.
  */
 
-/**
- * Memecoin prices run to 3e-6 and market caps to nine figures, so one
- * formatter cannot serve both.
- */
 function money(n: number | null): string {
   if (n === null) return "—";
   if (n === 0) return "$0";
@@ -35,7 +32,17 @@ function money(n: number | null): string {
   return `$${n.toPrecision(3)}`;
 }
 
-function Stat({
+/** Pool age, in the coarse units a trader actually reasons in. */
+function age(unix: number | null, nowMs: number | null): string {
+  if (unix === null || nowMs === null) return "";
+  const s = Math.max(0, Math.floor(nowMs / 1000) - unix);
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 2_592_000) return `${Math.floor(s / 86400)}d`;
+  return `${Math.floor(s / 2_592_000)}mo`;
+}
+
+function Box({
   label,
   value,
   tone,
@@ -45,12 +52,12 @@ function Stat({
   tone?: "up" | "down";
 }) {
   return (
-    <div className="flex items-baseline gap-1.5">
-      <span className="font-mono text-[10px] tracking-[0.12em] text-ash">
+    <div className="flex min-w-[92px] flex-col gap-0.5 rounded-lg border border-champagne/10 bg-slate px-3 py-1.5">
+      <span className="font-mono text-[9px] tracking-[0.12em] text-ash">
         {label}
       </span>
       <span
-        className={`font-mono text-xs tabular-nums ${
+        className={`font-mono text-sm tabular-nums ${
           tone === "up"
             ? "text-green-400"
             : tone === "down"
@@ -64,14 +71,39 @@ function Stat({
   );
 }
 
-/**
- * The price, flashing on change.
- *
- * The flash is not decoration. On a static number a trader cannot tell a
- * quiet market from a broken feed; the flash is the proof the feed is alive,
- * which is exactly what the staleness dot next to it withdraws when it isn't.
- */
-function LivePriceCell({ price, fresh }: { price: number; fresh: boolean }) {
+/** Copy the mint — the action a memecoin trader takes constantly. */
+function CopyMint({ mint }: { mint: string }) {
+  const [done, setDone] = useState(false);
+
+  return (
+    <button
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(mint);
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        } catch {
+          // Clipboard is permission-gated and can simply refuse. Saying
+          // nothing beats claiming a copy that did not happen.
+        }
+      }}
+      title={mint}
+      className="flex items-center gap-1 rounded border border-champagne/12 px-1.5 py-0.5 font-mono text-[10px] text-ash transition-colors hover:border-champagne/30 hover:text-champagne"
+    >
+      {mint.slice(0, 4)}…{mint.slice(-4)}
+      <span className={done ? "text-green-400" : ""}>{done ? "✓" : "⧉"}</span>
+    </button>
+  );
+}
+
+const SOCIAL_LABEL: Record<string, string> = {
+  website: "web",
+  twitter: "X",
+  telegram: "TG",
+  discord: "DC",
+};
+
+function LivePriceBox({ price, fresh }: { price: number; fresh: boolean }) {
   const [flash, setFlash] = useState<"up" | "down" | null>(null);
   const prev = useRef(price);
 
@@ -84,12 +116,20 @@ function LivePriceCell({ price, fresh }: { price: number; fresh: boolean }) {
   }, [price]);
 
   return (
-    <div className="flex items-baseline gap-1.5">
-      <span className="font-mono text-[10px] tracking-[0.12em] text-ash">
+    <div className="flex min-w-[92px] flex-col gap-0.5 rounded-lg border border-champagne/10 bg-slate px-3 py-1.5">
+      <span className="flex items-center gap-1 font-mono text-[9px] tracking-[0.12em] text-ash">
         PRICE
+        {/* Absence of the dot is the "live" signal; its presence means the
+            last poll failed and the number is the last one we trusted. */}
+        {!fresh && (
+          <span
+            title="price feed stale — showing last known"
+            className="h-1 w-1 rounded-full bg-amber-400/80"
+          />
+        )}
       </span>
       <span
-        className={`rounded px-1 font-mono text-xs tabular-nums transition-colors duration-500 ${
+        className={`rounded font-mono text-sm tabular-nums transition-colors duration-500 ${
           flash === "up"
             ? "bg-green-400/25 text-green-300"
             : flash === "down"
@@ -99,81 +139,81 @@ function LivePriceCell({ price, fresh }: { price: number; fresh: boolean }) {
       >
         {money(price)}
       </span>
-      {/* Absence of the dot is the "live" signal; its presence means the last
-          poll failed and the number beside it is the last one we trusted. */}
-      {!fresh && (
-        <span
-          title="price feed stale — showing last known"
-          className="h-1.5 w-1.5 rounded-full bg-amber-400/80"
-        />
-      )}
     </div>
   );
 }
 
-export function TokenHeader() {
+export function TokenHeader({ socials }: { socials: Social[] }) {
   const { stats, fresh } = useLive();
-  const up = stats.change24h >= 0;
-  const total = stats.buys24h + stats.sells24h;
-  // Guard the divide: a brand-new pool has no transactions at all.
-  const buyShare = total > 0 ? (stats.buys24h / total) * 100 : 50;
+  const now = useNow(60_000);
+  const day = stats.windows.h24;
+  const up = (day.change ?? 0) >= 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <div className="flex items-center gap-2">
         {/* eslint-disable-next-line @next/next/no-img-element --
-            next/image would need every token CDN in next.config, and the
-            hosts are whatever DexScreener happens to use per token. */}
+            next/image would need every token CDN listed in next.config, and
+            the hosts are whatever DexScreener happens to use per token. */}
         {stats.imageUrl && (
           <img
             src={stats.imageUrl}
             alt=""
-            className="h-7 w-7 rounded-full border border-champagne/15 object-cover"
+            className="h-8 w-8 rounded-full border border-champagne/15 object-cover"
           />
         )}
-        <h1 className="font-display text-2xl lowercase leading-none text-champagne">
-          {stats.symbol}
-        </h1>
-        {/* Many tokens report an identical symbol and name; printing both
-            then reads as a bug. */}
-        {stats.name.toLowerCase() !== stats.symbol.toLowerCase() && (
-          <span className="font-sans text-xs text-ash">{stats.name}</span>
-        )}
-        <span className="rounded border border-champagne/15 px-1.5 py-0.5 font-mono text-[9px] uppercase text-ash">
-          {stats.dex}
-        </span>
+
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-baseline gap-2">
+            <h1 className="font-display text-xl lowercase leading-none text-champagne">
+              {stats.symbol}
+            </h1>
+            {/* Many tokens report an identical symbol and name; printing both
+                then reads as a bug. */}
+            {stats.name.toLowerCase() !== stats.symbol.toLowerCase() && (
+              <span className="font-sans text-xs text-ash">{stats.name}</span>
+            )}
+            <span className="rounded border border-champagne/15 px-1.5 py-0.5 font-mono text-[9px] uppercase text-ash">
+              {stats.dex}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <CopyMint mint={stats.mint} />
+            {stats.createdAt && (
+              <span title="pool age" className="font-mono text-[10px] text-ash">
+                {age(stats.createdAt, now)}
+              </span>
+            )}
+            {socials.map((s) => (
+              <a
+                key={s.url}
+                href={s.url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded border border-champagne/12 px-1.5 py-0.5 font-mono text-[10px] text-ash hover:border-champagne/30 hover:text-champagne"
+              >
+                {SOCIAL_LABEL[s.type] ?? s.type}
+              </a>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <LivePriceCell price={stats.priceUsd} fresh={fresh} />
-        <Stat
-          label="24H"
-          value={`${up ? "+" : ""}${stats.change24h.toFixed(2)}%`}
-          tone={up ? "up" : "down"}
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        <Box label="MARKET CAP" value={money(stats.marketCap)} />
+        <LivePriceBox price={stats.priceUsd} fresh={fresh} />
+        <Box
+          label="24H CHANGE"
+          value={
+            day.change === null
+              ? "—"
+              : `${up ? "+" : ""}${day.change.toFixed(2)}%`
+          }
+          tone={day.change === null ? undefined : up ? "up" : "down"}
         />
-        <Stat label="MCAP" value={money(stats.marketCap)} />
-        <Stat label="VOL" value={money(stats.volume24h)} />
-        <Stat label="LIQ" value={money(stats.liquidityUsd)} />
-      </div>
-
-      {/*
-        Buy/sell pressure. A bar rather than two numbers because the ratio is
-        the information — 5,337 and 7,403 mean nothing until you see that
-        sells are winning. ml-auto pins it right so it does not shove the
-        stats around when the counts change width.
-      */}
-      <div className="ml-auto flex w-40 flex-col gap-1">
-        <div className="flex justify-between font-mono text-[10px] tabular-nums">
-          <span className="text-green-400">{stats.buys24h.toLocaleString()}</span>
-          <span className="text-red-400">{stats.sells24h.toLocaleString()}</span>
-        </div>
-        <div className="flex h-1 overflow-hidden rounded-full bg-red-400/40">
-          <div
-            className="bg-green-400/70"
-            style={{ width: `${buyShare}%` }}
-            aria-hidden
-          />
-        </div>
+        <Box label="24H VOL" value={money(day.volume)} />
+        <Box label="LIQUIDITY" value={money(stats.liquidityUsd)} />
       </div>
     </div>
   );

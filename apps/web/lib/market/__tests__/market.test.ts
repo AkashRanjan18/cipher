@@ -47,9 +47,10 @@ test("absent market cap is null, never zero", () => {
   const s = normalise("MINT", pair());
   assert.equal(s.marketCap, null);
   assert.equal(s.fdv, null);
-  // Counters genuinely are zero when absent.
-  assert.equal(s.volume24h, 0);
-  assert.equal(s.buys24h, 0);
+  // Counters genuinely are zero when absent; a change is not.
+  assert.equal(s.windows.h24.volume, 0);
+  assert.equal(s.windows.h24.buys, 0);
+  assert.equal(s.windows.h24.change, null);
 });
 
 test("normalise maps every field", () => {
@@ -64,9 +65,18 @@ test("normalise maps every field", () => {
   assert.equal(s.symbol, "BONK");
   assert.equal(s.dex, "orca");
   assert.equal(s.marketCap, 264_974_787);
-  assert.equal(s.change24h, 3.47);
-  assert.equal(s.buys24h, 5337);
-  assert.equal(s.sells24h, 7387);
+  assert.equal(s.windows.h24.change, 3.47);
+  assert.equal(s.windows.h24.buys, 5337);
+  assert.equal(s.windows.h24.sells, 7387);
+});
+
+test("every window is present even when the source reports only one", () => {
+  // The About panel renders all four; a missing key would crash the row
+  // rather than render an unknown.
+  const s = normalise("MINT", pair({ priceChange: { h24: 3.47 } }));
+  assert.deepEqual(Object.keys(s.windows), ["m5", "h1", "h6", "h24"]);
+  assert.equal(s.windows.m5.change, null);
+  assert.equal(s.windows.h24.change, 3.47);
 });
 
 test("candles are sorted ascending — the API returns newest first", () => {

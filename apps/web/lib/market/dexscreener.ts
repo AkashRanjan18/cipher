@@ -1,4 +1,4 @@
-import type { TokenStats } from "./types";
+import type { TokenStats, WindowKey, MarketWindow } from "./types";
 
 /**
  * Token stats from DexScreener. Free, keyless, no signup.
@@ -19,9 +19,10 @@ interface DsPair {
   marketCap?: number;
   fdv?: number;
   liquidity?: { usd?: number };
-  volume?: { h24?: number };
-  priceChange?: { h24?: number };
-  txns?: { h24?: { buys: number; sells: number } };
+  volume?: Partial<Record<WindowKey, number>>;
+  priceChange?: Partial<Record<WindowKey, number>>;
+  txns?: Partial<Record<WindowKey, { buys: number; sells: number }>>;
+  pairCreatedAt?: number;
   info?: {
     imageUrl?: string;
     websites?: { url: string; label?: string }[];
@@ -37,6 +38,23 @@ export function pickDeepestPair(pairs: DsPair[]): DsPair | null {
   );
 }
 
+const WINDOWS: WindowKey[] = ["m5", "h1", "h6", "h24"];
+
+function readWindows(pair: DsPair): Record<WindowKey, MarketWindow> {
+  return Object.fromEntries(
+    WINDOWS.map((k): [WindowKey, MarketWindow] => [
+      k,
+      {
+        // Absent stays null: "we were not told" is not "it did not move".
+        change: pair.priceChange?.[k] ?? null,
+        volume: pair.volume?.[k] ?? 0,
+        buys: pair.txns?.[k]?.buys ?? 0,
+        sells: pair.txns?.[k]?.sells ?? 0,
+      },
+    ]),
+  ) as Record<WindowKey, MarketWindow>;
+}
+
 export function normalise(mint: string, pair: DsPair): TokenStats {
   return {
     mint,
@@ -50,10 +68,11 @@ export function normalise(mint: string, pair: DsPair): TokenStats {
     marketCap: pair.marketCap ?? null,
     fdv: pair.fdv ?? null,
     liquidityUsd: pair.liquidity?.usd ?? 0,
-    volume24h: pair.volume?.h24 ?? 0,
-    change24h: pair.priceChange?.h24 ?? 0,
-    buys24h: pair.txns?.h24?.buys ?? 0,
-    sells24h: pair.txns?.h24?.sells ?? 0,
+    windows: readWindows(pair),
+    // DexScreener reports creation in milliseconds, unlike everything else.
+    createdAt: pair.pairCreatedAt
+      ? Math.floor(pair.pairCreatedAt / 1000)
+      : null,
     imageUrl: pair.info?.imageUrl ?? null,
     /*
      * Websites and socials arrive as separate arrays with different shapes;
