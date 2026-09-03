@@ -59,12 +59,12 @@ function Versus({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex justify-between font-mono text-[11px] tabular-nums">
-        <span className="text-green-400">{leftLabel}</span>
-        <span className="text-red-400">{rightLabel}</span>
+        <span className="text-up">{leftLabel}</span>
+        <span className="text-down">{rightLabel}</span>
       </div>
       <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full">
-        <div className="bg-green-400/70" style={{ width: `${leftPct}%` }} aria-hidden />
-        <div className="flex-1 bg-red-400/50" aria-hidden />
+        <div className="bg-up/70" style={{ width: `${leftPct}%` }} aria-hidden />
+        <div className="flex-1 bg-down/50" aria-hidden />
       </div>
     </div>
   );
@@ -73,11 +73,11 @@ function Versus({
 function WindowBox({ k, w }: { k: WindowKey; w: MarketWindow }) {
   const c = w.change;
   return (
-    <div className="flex flex-col items-center gap-0.5 rounded-lg border border-champagne/10 bg-ink px-2 py-1.5">
-      <span className="font-mono text-[10px] text-ash">{LABELS[k]}</span>
+    <div className="flex flex-col items-center gap-0.5 rounded-lg border border-line bg-ink px-2 py-1.5">
+      <span className="font-sans text-[11px] text-ash">{LABELS[k]}</span>
       <span
         className={`font-mono text-xs tabular-nums ${
-          c === null ? "text-ash" : c >= 0 ? "text-green-400" : "text-red-400"
+          c === null ? "text-ash" : c >= 0 ? "text-up" : "text-down"
         }`}
       >
         {/* Null is "the source did not say", which is not the same as flat. */}
@@ -109,7 +109,7 @@ export function AboutCard({ trades }: { trades: Trade[] }) {
   );
 
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-champagne/10 bg-slate p-4">
+    <div className="flex flex-col gap-4 rounded-2xl border border-line bg-panel p-4">
       <h2 className="font-sans text-sm text-champagne">
         About {stats.symbol}
       </h2>
@@ -140,7 +140,7 @@ export function AboutCard({ trades }: { trades: Trade[] }) {
               leftLabel={`$${compact(buyVol)} bought`}
               rightLabel={`$${compact(sellVol)} sold`}
             />
-            <span className="font-mono text-[9px] text-ash">
+            <span className="font-mono text-[11px] text-ash">
               last {trades.length} trades
             </span>
           </div>

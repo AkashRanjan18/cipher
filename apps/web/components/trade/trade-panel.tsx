@@ -9,6 +9,11 @@ import { useState } from "react";
  * a side toggle, an amount, four presets, one button. fomo's panel is the
  * same shape because the shape is solved.
  *
+ * The one thing that is not negotiable is scale. This is the primary action
+ * on the screen, so the amount field is the largest type on the page and the
+ * button is full width. A trading panel built at the density of the data
+ * around it reads as another readout rather than the thing you came to do.
+ *
  * What is NOT here, and why:
  *
  *   short   there is nothing to borrow on spot. Shorting is a perps
@@ -32,12 +37,15 @@ export function TradePanel({ token = "BONK" }: { token?: string }) {
   const [amount, setAmount] = useState("");
 
   const presets = side === "buy" ? BUY_PRESETS : SELL_PRESETS;
-  const unit = side === "buy" ? "$" : "%";
+  const buying = side === "buy";
 
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-champagne/10 bg-slate p-5">
-      {/* Side toggle. Sell is red-tinted only when active — a permanently
-          red control reads as a warning rather than a choice. */}
+    <div className="flex flex-col gap-4 rounded-2xl border border-line bg-panel p-4">
+      {/*
+        Side toggle. The active side carries its market colour; the inactive
+        one stays neutral. A permanently red Sell reads as a warning rather
+        than a choice, and two lit buttons read as neither being selected.
+      */}
       <div className="grid grid-cols-2 gap-1 rounded-xl bg-ink p-1">
         {(["buy", "sell"] as const).map((s) => (
           <button
@@ -47,11 +55,11 @@ export function TradePanel({ token = "BONK" }: { token?: string }) {
               setAmount("");
             }}
             aria-pressed={side === s}
-            className={`rounded-lg px-4 py-2.5 font-sans text-sm font-medium capitalize transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-champagne ${
+            className={`rounded-lg py-2.5 font-sans text-sm font-semibold capitalize transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-champagne ${
               side === s
                 ? s === "buy"
-                  ? "bg-champagne text-ink"
-                  : "bg-red-400/90 text-ink"
+                  ? "bg-up/15 text-up"
+                  : "bg-down/15 text-down"
                 : "text-ash hover:text-champagne"
             }`}
           >
@@ -60,8 +68,12 @@ export function TradePanel({ token = "BONK" }: { token?: string }) {
         ))}
       </div>
 
-      <div className="flex items-baseline gap-2 rounded-xl border border-champagne/15 bg-ink px-4 py-3">
-        <span className="font-mono text-lg text-ash">{unit}</span>
+      {/* The amount field is the headline of this panel, so it is sized like
+          one — 30px, against 12px labels everywhere else. */}
+      <div className="flex items-center gap-2 rounded-xl border border-line bg-ink px-4 py-3">
+        <span className="font-mono text-3xl text-ash">
+          {buying ? "$" : ""}
+        </span>
         <input
           type="text"
           inputMode="decimal"
@@ -73,9 +85,12 @@ export function TradePanel({ token = "BONK" }: { token?: string }) {
             if (v === "" || /^\d*\.?\d*$/.test(v)) setAmount(v);
           }}
           placeholder="0"
-          aria-label={side === "buy" ? "Amount in dollars" : "Percent of position"}
-          className="w-full bg-transparent font-mono text-lg tabular-nums text-champagne placeholder:text-ash/50 focus:outline-none"
+          aria-label={buying ? "Amount in dollars" : "Percent of position"}
+          className="w-full min-w-0 bg-transparent font-mono text-3xl tabular-nums text-champagne placeholder:text-ash/40 focus:outline-none"
         />
+        <span className="shrink-0 font-sans text-xs text-ash">
+          {buying ? "" : "%"}
+        </span>
       </div>
 
       <div className="grid grid-cols-4 gap-2">
@@ -83,25 +98,35 @@ export function TradePanel({ token = "BONK" }: { token?: string }) {
           <button
             key={p}
             onClick={() => setAmount(String(p))}
-            className="rounded-lg border border-champagne/12 py-2 font-mono text-xs text-ash transition-colors hover:border-champagne/40 hover:text-champagne focus-visible:outline focus-visible:outline-2 focus-visible:outline-champagne"
+            className="rounded-lg border border-line py-2 font-mono text-xs text-ash transition-colors hover:border-champagne/40 hover:text-champagne focus-visible:outline focus-visible:outline-2 focus-visible:outline-champagne"
           >
-            {side === "buy" ? `$${p}` : `${p}%`}
+            {buying ? `$${p}` : `${p}%`}
           </button>
         ))}
       </div>
 
-      <div className="flex items-baseline justify-between font-mono text-xs text-ash">
-        <span>available</span>
-        <span className="tabular-nums">$0.00</span>
+      <div className="flex items-baseline justify-between font-sans text-xs">
+        <span className="text-ash">available</span>
+        {/* Not "$0.00" — see top-bar. Claiming a zero balance we never
+            looked up is worse than admitting we have not looked. */}
+        <span className="font-mono text-champagne">—</span>
       </div>
 
       <button
         disabled
         title="Execution is not wired up yet"
-        className="rounded-xl border border-champagne/20 py-3 font-sans text-sm text-ash disabled:cursor-not-allowed"
+        className={`rounded-xl py-3.5 font-sans text-sm font-semibold transition-colors disabled:cursor-not-allowed ${
+          buying
+            ? "bg-up/20 text-up disabled:bg-up/10 disabled:text-up/50"
+            : "bg-down/20 text-down disabled:bg-down/10 disabled:text-down/50"
+        }`}
       >
-        {side === "buy" ? `Buy ${token}` : `Sell ${token}`} — not connected yet
+        {buying ? `Buy ${token}` : `Sell ${token}`}
       </button>
+
+      <p className="text-center font-sans text-[11px] text-ash">
+        Execution needs a wallet — not connected yet
+      </p>
     </div>
   );
 }

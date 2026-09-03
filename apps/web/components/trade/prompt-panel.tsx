@@ -49,7 +49,7 @@ export function PromptPanel() {
   }
 
   return (
-    <div className="flex flex-col gap-5 rounded-2xl border border-champagne/10 bg-slate p-5">
+    <div className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-5">
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <label htmlFor="prompt" className="font-sans text-sm text-champagne/80">
           What do you want to do?
@@ -83,7 +83,7 @@ export function PromptPanel() {
 
       {!lines && !unparsed && (
         <div className="flex flex-col gap-2">
-          <p className="font-mono text-[10px] tracking-[0.2em] text-ash">TRY</p>
+          <p className="font-mono text-[11px] tracking-[0.2em] text-ash">TRY</p>
           {EXAMPLES.map((ex) => (
             <button
               key={ex}
@@ -91,7 +91,7 @@ export function PromptPanel() {
                 setInput(ex);
                 compile(ex);
               }}
-              className="rounded-lg border border-champagne/10 px-3 py-2 text-left font-sans text-xs leading-relaxed text-ash transition-colors hover:border-champagne/30 hover:text-champagne"
+              className="rounded-lg border border-line px-3 py-2 text-left font-sans text-xs leading-relaxed text-ash transition-colors hover:border-champagne/30 hover:text-champagne"
             >
               {ex}
             </button>
@@ -110,7 +110,7 @@ export function PromptPanel() {
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <div className="h-px flex-1 bg-champagne/12" />
-            <span className="font-mono text-[10px] tracking-[0.25em] text-ash">
+            <span className="font-mono text-[11px] tracking-[0.25em] text-ash">
               THIS IS WHAT WILL HAPPEN
             </span>
             <div className="h-px flex-1 bg-champagne/12" />

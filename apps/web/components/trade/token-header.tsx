@@ -52,16 +52,14 @@ function Box({
   tone?: "up" | "down";
 }) {
   return (
-    <div className="flex min-w-[92px] flex-col gap-0.5 rounded-lg border border-champagne/10 bg-slate px-3 py-1.5">
-      <span className="font-mono text-[9px] tracking-[0.12em] text-ash">
-        {label}
-      </span>
+    <div className="flex min-w-[104px] flex-col gap-1 rounded-xl border border-line bg-panel px-3.5 py-2">
+      <span className="font-sans text-[11px] text-ash">{label}</span>
       <span
-        className={`font-mono text-sm tabular-nums ${
+        className={`font-mono text-base tabular-nums ${
           tone === "up"
-            ? "text-green-400"
+            ? "text-up"
             : tone === "down"
-              ? "text-red-400"
+              ? "text-down"
               : "text-champagne"
         }`}
       >
@@ -88,10 +86,10 @@ function CopyMint({ mint }: { mint: string }) {
         }
       }}
       title={mint}
-      className="flex items-center gap-1 rounded border border-champagne/12 px-1.5 py-0.5 font-mono text-[10px] text-ash transition-colors hover:border-champagne/30 hover:text-champagne"
+      className="flex items-center gap-1 rounded border border-line px-1.5 py-0.5 font-mono text-[11px] text-ash transition-colors hover:border-champagne/30 hover:text-champagne"
     >
       {mint.slice(0, 4)}…{mint.slice(-4)}
-      <span className={done ? "text-green-400" : ""}>{done ? "✓" : "⧉"}</span>
+      <span className={done ? "text-up" : ""}>{done ? "✓" : "⧉"}</span>
     </button>
   );
 }
@@ -116,9 +114,9 @@ function LivePriceBox({ price, fresh }: { price: number; fresh: boolean }) {
   }, [price]);
 
   return (
-    <div className="flex min-w-[92px] flex-col gap-0.5 rounded-lg border border-champagne/10 bg-slate px-3 py-1.5">
-      <span className="flex items-center gap-1 font-mono text-[9px] tracking-[0.12em] text-ash">
-        PRICE
+    <div className="flex min-w-[104px] flex-col gap-1 rounded-xl border border-line bg-panel px-3.5 py-2">
+      <span className="flex items-center gap-1 font-sans text-[11px] text-ash">
+        Price
         {/* Absence of the dot is the "live" signal; its presence means the
             last poll failed and the number is the last one we trusted. */}
         {!fresh && (
@@ -129,11 +127,11 @@ function LivePriceBox({ price, fresh }: { price: number; fresh: boolean }) {
         )}
       </span>
       <span
-        className={`rounded font-mono text-sm tabular-nums transition-colors duration-500 ${
+        className={`rounded font-mono text-base tabular-nums transition-colors duration-500 ${
           flash === "up"
-            ? "bg-green-400/25 text-green-300"
+            ? "bg-up/25 text-up"
             : flash === "down"
-              ? "bg-red-400/25 text-red-300"
+              ? "bg-down/25 text-down"
               : "text-champagne"
         }`}
       >
@@ -159,13 +157,13 @@ export function TokenHeader({ socials }: { socials: Social[] }) {
           <img
             src={stats.imageUrl}
             alt=""
-            className="h-8 w-8 rounded-full border border-champagne/15 object-cover"
+            className="h-10 w-10 rounded-full border border-line object-cover"
           />
         )}
 
         <div className="flex flex-col gap-0.5">
           <div className="flex items-baseline gap-2">
-            <h1 className="font-display text-xl lowercase leading-none text-champagne">
+            <h1 className="font-display text-2xl lowercase leading-none text-champagne">
               {stats.symbol}
             </h1>
             {/* Many tokens report an identical symbol and name; printing both
@@ -173,7 +171,7 @@ export function TokenHeader({ socials }: { socials: Social[] }) {
             {stats.name.toLowerCase() !== stats.symbol.toLowerCase() && (
               <span className="font-sans text-xs text-ash">{stats.name}</span>
             )}
-            <span className="rounded border border-champagne/15 px-1.5 py-0.5 font-mono text-[9px] uppercase text-ash">
+            <span className="rounded border border-champagne/15 px-1.5 py-0.5 font-mono text-[11px] uppercase text-ash">
               {stats.dex}
             </span>
           </div>
@@ -181,7 +179,7 @@ export function TokenHeader({ socials }: { socials: Social[] }) {
           <div className="flex items-center gap-1.5">
             <CopyMint mint={stats.mint} />
             {stats.createdAt && (
-              <span title="pool age" className="font-mono text-[10px] text-ash">
+              <span title="pool age" className="font-mono text-[11px] text-ash">
                 {age(stats.createdAt, now)}
               </span>
             )}
@@ -191,7 +189,7 @@ export function TokenHeader({ socials }: { socials: Social[] }) {
                 href={s.url}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded border border-champagne/12 px-1.5 py-0.5 font-mono text-[10px] text-ash hover:border-champagne/30 hover:text-champagne"
+                className="rounded border border-line px-1.5 py-0.5 font-mono text-[11px] text-ash hover:border-champagne/30 hover:text-champagne"
               >
                 {SOCIAL_LABEL[s.type] ?? s.type}
               </a>
@@ -201,10 +199,10 @@ export function TokenHeader({ socials }: { socials: Social[] }) {
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        <Box label="MARKET CAP" value={money(stats.marketCap)} />
+        <Box label="Market cap" value={money(stats.marketCap)} />
         <LivePriceBox price={stats.priceUsd} fresh={fresh} />
         <Box
-          label="24H CHANGE"
+          label="24h change"
           value={
             day.change === null
               ? "—"
@@ -212,8 +210,8 @@ export function TokenHeader({ socials }: { socials: Social[] }) {
           }
           tone={day.change === null ? undefined : up ? "up" : "down"}
         />
-        <Box label="24H VOL" value={money(day.volume)} />
-        <Box label="LIQUIDITY" value={money(stats.liquidityUsd)} />
+        <Box label="24h vol" value={money(day.volume)} />
+        <Box label="Liquidity" value={money(stats.liquidityUsd)} />
       </div>
     </div>
   );

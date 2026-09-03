@@ -142,6 +142,8 @@ export interface Trade {
  */
 export interface PoolSummary {
   pairAddress: string;
+  /** Token logo. Null when the source carries no metadata for it. */
+  imageUrl: string | null;
   /** Base token mint — the id /trade/[mint] routes on. */
   mint: string;
   symbol: string;

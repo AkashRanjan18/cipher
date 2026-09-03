@@ -23,7 +23,7 @@ function pctBar(pct: number) {
 
 function Holders({ security }: { security: TokenSecurity | null }) {
   if (!security || security.topHolders.length === 0) {
-    return <p className="p-3 font-mono text-[11px] text-ash">no holder data</p>;
+    return <p className="p-3 font-sans text-xs text-ash">No holder data</p>;
   }
 
   /*
@@ -36,11 +36,11 @@ function Holders({ security }: { security: TokenSecurity | null }) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-baseline justify-between border-b border-champagne/10 px-3 py-2 font-mono text-[10px]">
+      <div className="flex items-baseline justify-between border-b border-line px-3 py-2 font-mono text-[11px]">
         <span className="text-ash">
           {security.totalHolders.toLocaleString()} holders
         </span>
-        <span className={top10 > 50 ? "text-red-400" : "text-ash"}>
+        <span className={top10 > 50 ? "text-down" : "text-ash"}>
           top 10 hold {top10.toFixed(1)}%
         </span>
       </div>
@@ -48,7 +48,7 @@ function Holders({ security }: { security: TokenSecurity | null }) {
       {security.topHolders.map((h) => (
         <div
           key={h.address}
-          className="flex items-center gap-2 border-b border-champagne/5 px-3 py-1.5"
+          className="flex items-center gap-2 border-b border-hairline px-3 py-1.5"
         >
           <a
             href={`https://solscan.io/account/${h.address}`}
@@ -61,7 +61,7 @@ function Holders({ security }: { security: TokenSecurity | null }) {
 
           <div className="h-1 flex-1 overflow-hidden rounded-full bg-champagne/10">
             <div
-              className={h.insider ? "h-full bg-red-400/70" : "h-full bg-champagne/40"}
+              className={h.insider ? "h-full bg-down/70" : "h-full bg-champagne/40"}
               style={{ width: pctBar(h.pct) }}
               aria-hidden
             />
@@ -73,7 +73,7 @@ function Holders({ security }: { security: TokenSecurity | null }) {
           {/* Insider = upstream links this wallet to the deployer. Worth a
               glyph: the same 5% means different things from a stranger. */}
           {h.insider && (
-            <span title="linked to deployer" className="text-[9px] text-red-400">
+            <span title="linked to deployer" className="text-[11px] text-down">
               ●
             </span>
           )}
@@ -86,12 +86,12 @@ function Holders({ security }: { security: TokenSecurity | null }) {
 function Check({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
   return (
     <div className="flex items-start gap-2 px-3 py-2">
-      <span className={ok ? "text-green-400" : "text-red-400"}>
+      <span className={ok ? "text-up" : "text-down"}>
         {ok ? "✓" : "✕"}
       </span>
       <div className="flex flex-col">
-        <span className="font-mono text-[11px] text-champagne">{label}</span>
-        <span className="font-sans text-[10px] leading-snug text-ash">
+        <span className="font-sans text-[13px] font-medium text-champagne">{label}</span>
+        <span className="font-sans text-[11px] leading-snug text-ash">
           {detail}
         </span>
       </div>
@@ -147,19 +147,19 @@ function Info({
 
       {security && security.risks.length > 0 && (
         <div className="flex flex-col gap-1.5 px-3 py-2">
-          <span className="font-mono text-[10px] tracking-[0.12em] text-ash">
+          <span className="font-mono text-[11px] tracking-[0.12em] text-ash">
             FLAGS
           </span>
           {security.risks.map((r) => (
             <div key={r.name} className="flex flex-col">
               <span
                 className={`font-mono text-[11px] ${
-                  r.level === "danger" ? "text-red-400" : "text-amber-400"
+                  r.level === "danger" ? "text-down" : "text-amber-400"
                 }`}
               >
                 {r.name}
               </span>
-              <span className="font-sans text-[10px] leading-snug text-ash">
+              <span className="font-sans text-[11px] leading-snug text-ash">
                 {r.description}
               </span>
             </div>
@@ -175,7 +175,7 @@ function Info({
               href={s.url}
               target="_blank"
               rel="noreferrer"
-              className="rounded border border-champagne/15 px-2 py-1 font-mono text-[10px] lowercase text-ash hover:border-champagne/40 hover:text-champagne"
+              className="rounded border border-champagne/15 px-2 py-1 font-mono text-[11px] lowercase text-ash hover:border-champagne/40 hover:text-champagne"
             >
               {s.type}
             </a>
@@ -184,9 +184,9 @@ function Info({
       )}
 
       {!security && (
-        <p className="p-3 font-mono text-[11px] text-ash">
+        <p className="p-3 font-sans text-xs leading-relaxed text-ash">
           {/* Never render an absent check as a pass. */}
-          safety data unavailable — treat as unverified
+          Safety data unavailable — treat as unverified.
         </p>
       )}
     </div>
@@ -207,17 +207,19 @@ export function SidePanel({
   const [tab, setTab] = useState<Tab>("trades");
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-champagne/10 bg-slate">
-      <div className="flex shrink-0 gap-1 border-b border-champagne/10 px-2 py-1.5">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-panel">
+      <div className="flex shrink-0 items-center gap-4 border-b border-line px-3">
         {(["trades", "holders", "info"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             aria-pressed={tab === t}
-            className={`rounded px-2 py-1 font-mono text-[11px] transition-colors ${
+            /* Underline, matching the rail — tabs that swap the list below
+               should read as attached to it. */
+            className={`-mb-px border-b-2 pb-2 pt-2 font-sans text-sm capitalize transition-colors ${
               tab === t
-                ? "bg-champagne/15 text-champagne"
-                : "text-ash hover:text-champagne"
+                ? "border-champagne text-champagne"
+                : "border-transparent text-ash hover:text-champagne"
             }`}
           >
             {t}
@@ -229,7 +231,7 @@ export function SidePanel({
         {security?.mintAuthority !== null && security !== null && (
           <span
             title="mint authority is live"
-            className="ml-auto self-center text-[10px] text-red-400"
+            className="ml-auto self-center text-[11px] text-down"
           >
             ⚠
           </span>

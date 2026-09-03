@@ -56,20 +56,40 @@ function numOrNull(v: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * A token from the response's `included` array.
+ *
+ * GeckoTerminal side-loads these when the request asks for
+ * `include=base_token`, which is how the rail gets a logo and a real symbol
+ * for every row in ONE request instead of one lookup per token.
+ */
+interface GeckoToken {
+  id: string;
+  attributes: { symbol?: string; image_url?: string };
+}
+
 /** Exported for testing without a network call. */
-export function toPoolSummaries(pools: GeckoPool[]): PoolSummary[] {
+export function toPoolSummaries(
+  pools: GeckoPool[],
+  included: GeckoToken[] = [],
+): PoolSummary[] {
+  const tokens = new Map(included.map((t) => [t.id, t.attributes]));
+
   return pools.map((p) => {
+    const tokenId = p.relationships.base_token.data.id;
+    const meta = tokens.get(tokenId);
     const a = p.attributes;
     return {
       pairAddress: a.address,
       // Strip the network prefix; the route wants the bare mint.
-      mint: p.relationships.base_token.data.id.replace(/^solana_/, ""),
+      mint: tokenId.replace(/^solana_/, ""),
+      imageUrl: meta?.image_url ?? null,
       /*
-       * cipher: the base symbol is the left half of "BEN / USDC". A token
-       * whose own symbol contains " / " would split wrong — vanishingly rare,
-       * and the alternative is an extra request per row to resolve the token.
+       * Prefer the side-loaded symbol. The fallback splits "BEN / USDC" on
+       * the slash, which breaks for a token whose own symbol contains one —
+       * rare, but free to avoid now that the real symbol is in the response.
        */
-      symbol: a.name.split(" / ")[0]?.trim() ?? a.name,
+      symbol: meta?.symbol ?? a.name.split(" / ")[0]?.trim() ?? a.name,
       dex: p.relationships.dex.data.id,
       priceUsd: num(a.base_token_price_usd),
       change1h: numOrNull(a.price_change_percentage?.h1),
@@ -106,16 +126,19 @@ async function geckoList(path: string): Promise<PoolSummary[]> {
    */
   if (res.status === 429) throw new Error("geckoterminal: rate limited");
   if (!res.ok) return [];
-  const data = (await res.json()) as { data?: GeckoPool[] };
-  return toPoolSummaries(data.data ?? []);
+  const data = (await res.json()) as {
+    data?: GeckoPool[];
+    included?: GeckoToken[];
+  };
+  return toPoolSummaries(data.data ?? [], data.included ?? []);
 }
 
 export function fetchTrending(): Promise<PoolSummary[]> {
-  return geckoList("trending_pools?duration=1h");
+  return geckoList("trending_pools?duration=1h&include=base_token");
 }
 
 export function fetchNewPools(): Promise<PoolSummary[]> {
-  return geckoList("new_pools");
+  return geckoList("new_pools?include=base_token");
 }
 
 /* --------------------------------------------------------------- search -- */
@@ -149,15 +172,18 @@ export async function searchPools(query: string): Promise<PoolSummary[]> {
   if (q.length < 2) return [];
 
   const res = await fetch(
-    `${GECKO_SEARCH}?query=${encodeURIComponent(q)}&network=solana`,
+    `${GECKO_SEARCH}?query=${encodeURIComponent(q)}&network=solana&include=base_token`,
     { headers: { Accept: "application/json" }, next: { revalidate: 60 } },
   );
   if (res.status === 429) throw new Error("geckoterminal: rate limited");
   if (!res.ok) return [];
 
-  const data = (await res.json()) as { data?: GeckoPool[] };
+  const data = (await res.json()) as {
+    data?: GeckoPool[];
+    included?: GeckoToken[];
+  };
   return (
-    toPoolSummaries(data.data ?? [])
+    toPoolSummaries(data.data ?? [], data.included ?? [])
       /*
        * A memecoin ticker is not unique — "wif" matches WIFE, KWIF, SWIF and
        * a dozen deliberate clones. Ranking by liquidity puts the token a

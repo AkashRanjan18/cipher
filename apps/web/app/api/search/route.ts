@@ -33,6 +33,7 @@ export async function GET(req: Request) {
       const row: PoolSummary = {
         pairAddress: stats.pairAddress,
         mint: stats.mint,
+        imageUrl: stats.imageUrl,
         symbol: stats.symbol,
         dex: stats.dex,
         priceUsd: stats.priceUsd,

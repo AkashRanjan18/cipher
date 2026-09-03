@@ -24,18 +24,18 @@ export function TickerBar({ majors }: { majors: Major[] }) {
   if (majors.length === 0) return null;
 
   return (
-    <div className="flex shrink-0 items-center gap-5 overflow-x-auto border-t border-champagne/10 bg-ink px-4 py-1.5">
+    <div className="flex shrink-0 items-center gap-5 overflow-x-auto border-t border-line bg-ink px-4 py-1.5">
       {majors.map((m) => {
         const up = m.change24h >= 0;
         return (
           <div key={m.id} className="flex shrink-0 items-baseline gap-1.5">
-            <span className="font-mono text-[10px] text-ash">{m.symbol}</span>
+            <span className="font-mono text-[11px] text-ash">{m.symbol}</span>
             <span className="font-mono text-[11px] tabular-nums text-champagne">
               {price(m.priceUsd)}
             </span>
             <span
-              className={`font-mono text-[10px] tabular-nums ${
-                up ? "text-green-400" : "text-red-400"
+              className={`font-mono text-[11px] tabular-nums ${
+                up ? "text-up" : "text-down"
               }`}
             >
               {up ? "▲" : "▼"}

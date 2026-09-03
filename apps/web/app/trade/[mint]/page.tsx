@@ -75,7 +75,7 @@ export default async function TokenPage({
       <TopBar />
 
       <LivePrice initial={stats}>
-        <header className="shrink-0 border-b border-champagne/10 px-4 py-2.5">
+        <header className="shrink-0 border-b border-line px-4 py-2.5">
           <TokenHeader socials={stats.socials} />
         </header>
 

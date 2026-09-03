@@ -29,7 +29,7 @@ const UP = "#4ade80";
 const DOWN = "#f87171";
 
 const volumeColor = (c: Candle) =>
-  c.close >= c.open ? "rgba(74,222,128,0.3)" : "rgba(248,113,113,0.3)";
+  c.close >= c.open ? "rgba(34,201,138,0.3)" : "rgba(255,84,112,0.3)";
 
 export function PriceChart({
   candles,
@@ -182,7 +182,7 @@ export function PriceChart({
 
   if (candles.length === 0) {
     return (
-      <div className="flex h-full min-h-[240px] items-center justify-center rounded-2xl border border-champagne/10 bg-slate">
+      <div className="flex h-full min-h-[240px] items-center justify-center rounded-2xl border border-line bg-panel">
         <p className="font-sans text-sm text-ash">
           No price history for this pool.
         </p>
@@ -197,7 +197,7 @@ export function PriceChart({
       {legend && (
         /* pointer-events-none: the legend sits over the canvas, and swallowing
            the mouse there would kill the crosshair that feeds it. */
-        <div className="pointer-events-none absolute left-2 top-2 z-10 flex gap-3 rounded bg-ink/80 px-2 py-1 font-mono text-[10px] tabular-nums backdrop-blur-sm">
+        <div className="pointer-events-none absolute left-2 top-2 z-10 flex gap-3 rounded bg-ink/80 px-2 py-1 font-mono text-[11px] tabular-nums backdrop-blur-sm">
           {(
             [
               ["O", legend.open],
@@ -211,8 +211,8 @@ export function PriceChart({
               <span
                 className={
                   legend.close >= legend.open
-                    ? "text-green-400"
-                    : "text-red-400"
+                    ? "text-up"
+                    : "text-down"
                 }
               >
                 {v.toPrecision(4)}

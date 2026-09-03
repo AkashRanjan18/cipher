@@ -43,7 +43,7 @@ function Card({ pool, now }: { pool: PoolSummary; now: number | null }) {
   return (
     <Link
       href={`/trade/${pool.mint}`}
-      className="flex flex-col gap-3 rounded-xl border border-champagne/10 bg-slate p-4 transition-colors hover:border-champagne/30"
+      className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4 transition-colors hover:border-champagne/30"
     >
       <div className="flex items-baseline justify-between gap-2">
         <span className="truncate font-mono text-sm text-champagne">
@@ -51,14 +51,14 @@ function Card({ pool, now }: { pool: PoolSummary; now: number | null }) {
         </span>
         <span
           className={`shrink-0 font-mono text-sm tabular-nums ${
-            c === null ? "text-ash" : c >= 0 ? "text-green-400" : "text-red-400"
+            c === null ? "text-ash" : c >= 0 ? "text-up" : "text-down"
           }`}
         >
           {pct(c)}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-y-1.5 font-mono text-[10px]">
+      <div className="grid grid-cols-2 gap-y-1.5 font-mono text-[11px]">
         <span className="text-ash">liquidity</span>
         <span className="text-right tabular-nums text-champagne">
           ${compact(pool.liquidityUsd)}
@@ -135,7 +135,7 @@ export function DiscoverGrid({
         onChange={(e) => setQuery(e.target.value)}
         placeholder="search a token, or paste a contract address"
         aria-label="Search tokens"
-        className="w-full rounded-xl border border-champagne/12 bg-slate px-4 py-3 font-mono text-sm text-champagne placeholder:text-ash/60 focus:border-champagne/30 focus:outline-none"
+        className="w-full rounded-xl border border-line bg-panel px-4 py-3 font-mono text-sm text-champagne placeholder:text-ash/60 focus:border-champagne/30 focus:outline-none"
       />
 
       {!results && (

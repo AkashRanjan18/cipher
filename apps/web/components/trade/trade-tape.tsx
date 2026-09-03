@@ -68,11 +68,11 @@ export function TradeTape({
   }, [pair]);
 
   const header = (
-    <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-champagne/10 px-3 py-2 font-mono text-[10px] tracking-[0.12em] text-ash">
-      <span>PRICE</span>
-      <span className="text-right">SIZE</span>
-      <span className="text-right">WALLET</span>
-      <span className="text-right">AGE</span>
+    <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-line px-3 py-2 font-sans text-[11px] text-ash">
+      <span>Price</span>
+      <span className="text-right">Size</span>
+      <span className="text-right">Wallet</span>
+      <span className="text-right">Age</span>
     </div>
   );
 
@@ -86,7 +86,7 @@ export function TradeTape({
       key={t.id}
       className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-1 font-mono text-[11px] tabular-nums hover:bg-champagne/5"
     >
-      <span className={t.side === "buy" ? "text-green-400" : "text-red-400"}>
+      <span className={t.side === "buy" ? "text-up" : "text-down"}>
         {t.priceUsd.toPrecision(4)}
       </span>
       <span className="text-right text-champagne">${size(t.volumeUsd)}</span>
@@ -115,7 +115,7 @@ export function TradeTape({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-champagne/10 bg-slate">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-line bg-panel">
       {header}
       {/* Fixed height + scroll, so an arriving trade cannot push the page
           layout around underneath the cursor. */}

@@ -85,7 +85,7 @@ export function TopBar() {
   };
 
   return (
-    <header className="flex shrink-0 items-center gap-4 border-b border-champagne/10 bg-ink px-4 py-2.5">
+    <header className="flex shrink-0 items-center gap-4 border-b border-line bg-ink px-4 py-2.5">
       <Link
         href="/trade"
         className="font-display text-xl lowercase text-champagne"
@@ -103,14 +103,14 @@ export function TopBar() {
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder="Search a token, or paste a contract address"
           aria-label="Search tokens"
-          className="w-full rounded-lg border border-champagne/12 bg-slate px-3 py-2 pr-10 font-sans text-sm text-champagne placeholder:text-ash/60 focus:border-champagne/30 focus:outline-none"
+          className="w-full rounded-lg border border-line bg-panel px-3 py-2 pr-10 font-sans text-sm text-champagne placeholder:text-ash/60 focus:border-champagne/30 focus:outline-none"
         />
-        <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-champagne/15 px-1.5 py-0.5 font-mono text-[10px] text-ash">
+        <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-champagne/15 px-1.5 py-0.5 font-mono text-[11px] text-ash">
           /
         </kbd>
 
         {open && results && (
-          <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-lg border border-champagne/15 bg-slate shadow-xl">
+          <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-lg border border-champagne/15 bg-panel shadow-xl">
             {results.length === 0 ? (
               <p className="p-3 font-mono text-[11px] text-ash">no matches</p>
             ) : (
@@ -123,7 +123,7 @@ export function TopBar() {
                   <span className="truncate font-mono text-xs text-champagne">
                     {r.symbol}
                   </span>
-                  <span className="shrink-0 font-mono text-[10px] text-ash">
+                  <span className="shrink-0 font-mono text-[11px] text-ash">
                     liq ${compact(r.liquidityUsd)}
                   </span>
                 </button>

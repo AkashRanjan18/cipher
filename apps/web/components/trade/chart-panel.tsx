@@ -56,14 +56,14 @@ export function ChartPanel({
   }, [interval, pair, initial, initialInterval]);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-champagne/10">
-      <div className="flex items-center gap-1 border-b border-champagne/10 bg-slate px-2 py-1.5">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-line">
+      <div className="flex items-center gap-1 border-b border-line bg-panel px-2 py-2">
         {INTERVAL_ORDER.map((i) => (
           <button
             key={i}
             onClick={() => setInterval(i)}
             aria-pressed={interval === i}
-            className={`rounded px-2 py-1 font-mono text-[11px] transition-colors ${
+            className={`rounded-md px-2.5 py-1 font-mono text-xs transition-colors ${
               interval === i
                 ? "bg-champagne/15 text-champagne"
                 : "text-ash hover:text-champagne"

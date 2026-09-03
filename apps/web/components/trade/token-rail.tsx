@@ -7,34 +7,23 @@ import type { PoolSummary, Major } from "@/lib/market";
 import { useNow } from "./use-now";
 
 /**
- * The discovery rail — trending, new, and search results in one column.
+ * The discovery rail — blue chips, trending, new, and search in one column.
  *
- * Client component because it owns three pieces of interactive state: which
- * tab is active, the search query, and the debounce. Seeded with lists the
- * server already fetched, so it is populated on first paint.
+ * Client component: it owns the active tab, the query and the debounce.
+ * Seeded with lists the server already fetched, so it is populated on first
+ * paint.
  *
  * Search does not get its own tab. Typing REPLACES the list and clearing the
- * box restores it — a separate results view would make the user navigate
- * back to get to trending, which is one interaction too many for a panel
- * people glance at.
+ * box restores it — a separate results view would make the user navigate back
+ * to reach trending, which is one interaction too many for a panel people
+ * glance at.
+ *
+ * Rows are deliberately tall. An earlier pass fit more of them on screen at
+ * 10px and the column read as a log file; the logo and the two-line stack are
+ * what make a row scannable without reading it.
  */
 
 type Tab = "crypto" | "trending" | "new";
-
-/** Null is "the source did not say", which is not the same as "flat". */
-function pct(n: number | null): string {
-  if (n === null) return "—";
-  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
-}
-
-/** Pool age is the memecoin risk signal — a 40-minute-old pool is not BONK. */
-function age(unix: number | null, nowMs: number | null): string {
-  if (unix === null || nowMs === null) return "";
-  const s = Math.max(0, Math.floor(nowMs / 1000) - unix);
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
 
 /*
  * Spans nine orders of magnitude on one list: a $4k memecoin pool and BTC's
@@ -49,48 +38,58 @@ function compact(n: number): string {
   return n.toFixed(0);
 }
 
-function Row({
-  pool,
-  active,
-  now,
-}: {
-  pool: PoolSummary;
-  active: boolean;
-  now: number | null;
-}) {
-  const change = pool.change1h;
+function price(n: number): string {
+  if (n >= 1000)
+    return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  // Below a dollar, significant digits are what separate 0.0000030 from
+  // 0.0000003 — decimal places collapse both to $0.00.
+  return `$${n.toPrecision(3)}`;
+}
+
+/** Null is "the source did not say", which is not the same as "flat". */
+function pct(n: number | null): string {
+  if (n === null) return "—";
+  return `${n >= 0 ? "▲" : "▼"}${Math.abs(n).toFixed(2)}%`;
+}
+
+function age(unix: number | null, nowMs: number | null): string {
+  if (unix === null || nowMs === null) return "";
+  const s = Math.max(0, Math.floor(nowMs / 1000) - unix);
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function Logo({ src, symbol }: { src: string | null; symbol: string }) {
+  if (src) {
+    // eslint-disable-next-line @next/next/no-img-element -- token CDNs vary
+    // per token; listing them all in next.config is not possible.
+    return (
+      <img
+        src={src}
+        alt=""
+        className="h-8 w-8 shrink-0 rounded-full border border-line object-cover"
+      />
+    );
+  }
+  // A missing logo becomes an initial rather than a gap, so rows stay aligned.
   return (
-    <Link
-      href={`/trade/${pool.mint}`}
-      className={`block border-b border-champagne/5 px-3 py-2 transition-colors ${
-        active ? "bg-champagne/10" : "hover:bg-champagne/5"
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-ink font-sans text-xs text-ash">
+      {symbol.slice(0, 1).toUpperCase()}
+    </div>
+  );
+}
+
+function Change({ value }: { value: number | null }) {
+  return (
+    <span
+      className={`font-mono text-xs tabular-nums ${
+        value === null ? "text-ash" : value >= 0 ? "text-up" : "text-down"
       }`}
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate font-mono text-xs text-champagne">
-          {pool.symbol}
-        </span>
-        <span
-          className={`shrink-0 font-mono text-xs tabular-nums ${
-            change === null
-              ? "text-ash"
-              : change >= 0
-                ? "text-green-400"
-                : "text-red-400"
-          }`}
-        >
-          {pct(change)}
-        </span>
-      </div>
-      <div className="mt-0.5 flex items-baseline justify-between gap-2 font-mono text-[10px] text-ash">
-        <span className="truncate">
-          {/* Liquidity, not market cap. On a fresh pool mcap is a fiction the
-              deployer chose; liquidity is what you can actually sell into. */}
-          liq ${compact(pool.liquidityUsd)}
-        </span>
-        <span className="shrink-0 tabular-nums">{age(pool.createdAt, now)}</span>
-      </div>
-    </Link>
+      {pct(value)}
+    </span>
   );
 }
 
@@ -103,35 +102,63 @@ function Row({
  * flat on the day is actually strong, and nothing else on screen says so.
  */
 function MajorRow({ m }: { m: Major }) {
-  const up = m.change24h >= 0;
   return (
-    <div className="flex items-center gap-2 border-b border-champagne/5 px-3 py-2">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      {m.imageUrl && (
-        <img src={m.imageUrl} alt="" className="h-5 w-5 rounded-full" />
-      )}
+    <div className="flex items-center gap-2.5 border-b border-hairline px-3 py-2.5">
+      <Logo src={m.imageUrl} symbol={m.symbol} />
       <div className="flex min-w-0 flex-col">
-        <span className="font-mono text-xs text-champagne">{m.symbol}</span>
-        <span className="font-mono text-[10px] text-ash">
-          {m.marketCap ? `$${compact(m.marketCap)} MC` : ""}
+        <span className="font-sans text-sm font-medium text-champagne">
+          {m.symbol}
         </span>
+        {m.marketCap && (
+          <span className="font-mono text-[11px] text-ash">
+            ${compact(m.marketCap)} MC
+          </span>
+        )}
       </div>
       <div className="ml-auto flex flex-col items-end">
-        <span className="font-mono text-xs tabular-nums text-champagne">
-          {m.priceUsd >= 1
-            ? `$${m.priceUsd.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
-            : `$${m.priceUsd.toPrecision(3)}`}
+        <span className="font-mono text-sm tabular-nums text-champagne">
+          {price(m.priceUsd)}
         </span>
-        <span
-          className={`font-mono text-[10px] tabular-nums ${
-            up ? "text-green-400" : "text-red-400"
-          }`}
-        >
-          {up ? "▲" : "▼"}
-          {Math.abs(m.change24h).toFixed(2)}%
-        </span>
+        <Change value={m.change24h} />
       </div>
     </div>
+  );
+}
+
+function PoolRow({
+  pool,
+  active,
+  now,
+}: {
+  pool: PoolSummary;
+  active: boolean;
+  now: number | null;
+}) {
+  return (
+    <Link
+      href={`/trade/${pool.mint}`}
+      className={`flex items-center gap-2.5 border-b border-hairline px-3 py-2.5 transition-colors ${
+        active ? "bg-champagne/10" : "hover:bg-champagne/5"
+      }`}
+    >
+      <Logo src={pool.imageUrl} symbol={pool.symbol} />
+      <div className="flex min-w-0 flex-col">
+        <span className="truncate font-sans text-sm font-medium text-champagne">
+          {pool.symbol}
+        </span>
+        <span className="font-mono text-[11px] text-ash">
+          {/* Liquidity, not market cap. On a fresh pool mcap is a fiction the
+              deployer chose; liquidity is what you can actually sell into. */}
+          ${compact(pool.liquidityUsd)} liq
+        </span>
+      </div>
+      <div className="ml-auto flex shrink-0 flex-col items-end">
+        <Change value={pool.change1h} />
+        <span className="font-mono text-[11px] tabular-nums text-ash">
+          {age(pool.createdAt, now)}
+        </span>
+      </div>
+    </Link>
   );
 }
 
@@ -144,7 +171,7 @@ export function TokenRail({
   majors: Major[];
   trending: PoolSummary[];
   fresh: PoolSummary[];
-  /** The upstream list failed — usually a shared rate limit, not an empty market. */
+  /** The upstream list failed — usually a rate limit, not an empty market. */
   unavailable?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("trending");
@@ -152,7 +179,7 @@ export function TokenRail({
   const [results, setResults] = useState<PoolSummary[] | null>(null);
   const [searchFailed, setSearchFailed] = useState(false);
   const pathname = usePathname();
-  // Pool ages advance slowly; a minute is plenty and costs far fewer renders.
+  // Pool ages advance slowly; a minute costs far fewer renders than a second.
   const now = useNow(60_000);
 
   useEffect(() => {
@@ -200,30 +227,32 @@ export function TokenRail({
   const showMajors = !results && tab === "crypto";
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-champagne/10 bg-slate">
-      <div className="shrink-0 border-b border-champagne/10 p-2">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-panel">
+      <div className="shrink-0 p-2.5">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="search token or paste mint"
+          placeholder="Search"
           aria-label="Search tokens"
-          className="w-full rounded-lg border border-champagne/12 bg-ink px-2.5 py-1.5 font-mono text-xs text-champagne placeholder:text-ash/60 focus:border-champagne/30 focus:outline-none"
+          className="w-full rounded-lg border border-line bg-ink px-3 py-2 font-sans text-sm text-champagne placeholder:text-ash/60 focus:border-champagne/30 focus:outline-none"
         />
       </div>
 
       {/* Tabs hide while searching — they control a list that is not on
           screen, and a live control that does nothing is worse than none. */}
       {!results && (
-        <div className="flex shrink-0 gap-1 border-b border-champagne/10 px-2 py-1.5">
+        <div className="flex shrink-0 gap-4 border-b border-line px-3">
           {(["crypto", "trending", "new"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               aria-pressed={tab === t}
-              className={`rounded px-2 py-1 font-mono text-[11px] transition-colors ${
+              /* Underline rather than a pill: tabs that change the list below
+                 should look attached to it. */
+              className={`-mb-px border-b-2 pb-2 pt-1 font-sans text-sm capitalize transition-colors ${
                 tab === t
-                  ? "bg-champagne/15 text-champagne"
-                  : "text-ash hover:text-champagne"
+                  ? "border-champagne text-champagne"
+                  : "border-transparent text-ash hover:text-champagne"
               }`}
             >
               {t}
@@ -236,20 +265,20 @@ export function TokenRail({
         {showMajors ? (
           majors.map((m) => <MajorRow key={m.id} m={m} />)
         ) : list.length === 0 ? (
-          <p className="p-3 font-mono text-[11px] leading-relaxed text-ash">
+          <p className="p-3 font-sans text-xs leading-relaxed text-ash">
             {/* Never say "nothing is trending" when the truth is "we could
                 not ask" — that is a claim about the market. */}
             {searchFailed
-              ? "search unavailable — rate limited upstream. try again shortly."
+              ? "Search unavailable — rate limited upstream. Try again shortly."
               : results
-                ? "no matches"
+                ? "No matches"
                 : unavailable
-                  ? "list unavailable — rate limited upstream. search still works."
-                  : "no matches"}
+                  ? "List unavailable — rate limited upstream. Search still works."
+                  : "No matches"}
           </p>
         ) : (
           list.map((p) => (
-            <Row
+            <PoolRow
               key={p.pairAddress}
               pool={p}
               active={pathname === `/trade/${p.mint}`}

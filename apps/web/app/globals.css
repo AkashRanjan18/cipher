@@ -14,6 +14,29 @@
   --color-slate: #15121c;
   --color-ash: #8b8598;
 
+  /*
+   * Semantic market colours.
+   *
+   * These were raw Tailwind greens and reds scattered through components,
+   * which is why nothing cohered: a dozen call sites each picked their own
+   * shade. Direction is the single most repeated signal on a trading screen,
+   * so it gets one definition.
+   *
+   * Brighter than the champagne on purpose. Everything else on the page is
+   * warm and low-contrast; up and down have to cut through it at a glance.
+   */
+  --color-up: #22c98a;
+  --color-down: #ff5470;
+
+  /*
+   * Panel surface, one step above slate, plus the two border weights.
+   * A single hairline value cannot do both "divides rows" and "bounds a
+   * panel" — using one for both is what made the layout read as a wireframe.
+   */
+  --color-panel: #1b1725;
+  --color-line: #262035;
+  --color-hairline: #1e1a29;
+
   --font-display: var(--font-display), system-ui, sans-serif;
   --font-sans: var(--font-sans), system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, monospace;

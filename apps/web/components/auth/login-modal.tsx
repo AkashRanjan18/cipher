@@ -112,7 +112,7 @@ function Modal({ onClose }: { onClose: () => void }) {
       <button
         onClick={onClose}
         aria-label="Close"
-        className="absolute right-5 top-5 flex h-12 w-12 items-center justify-center rounded-full bg-slate/90 text-2xl text-champagne transition-colors hover:bg-slate focus-visible:outline focus-visible:outline-2 focus-visible:outline-champagne"
+        className="absolute right-5 top-5 flex h-12 w-12 items-center justify-center rounded-full bg-panel/90 text-2xl text-champagne transition-colors hover:bg-panel focus-visible:outline focus-visible:outline-2 focus-visible:outline-champagne"
       >
         &times;
       </button>
@@ -122,7 +122,7 @@ function Modal({ onClose }: { onClose: () => void }) {
         aria-modal="true"
         aria-label="Sign in to cipher"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-3xl border border-champagne/12 bg-slate/80 p-8 shadow-2xl backdrop-blur-xl sm:p-10"
+        className="w-full max-w-sm rounded-3xl border border-line bg-panel/80 p-8 shadow-2xl backdrop-blur-xl sm:p-10"
       >
         <p className="text-center font-display text-5xl lowercase text-champagne">
           cipher
@@ -147,7 +147,7 @@ function Modal({ onClose }: { onClose: () => void }) {
         </div>
 
         {error && (
-          <p role="alert" className="mt-4 text-center font-sans text-sm text-red-400">
+          <p role="alert" className="mt-4 text-center font-sans text-sm text-down">
             {error}
           </p>
         )}
