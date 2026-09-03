@@ -2,6 +2,7 @@
 
 import { useLive } from "./live-price";
 import type { MarketWindow, WindowKey, Trade } from "@/lib/market";
+import { compactUsd, pct } from "@/lib/format";
 
 /**
  * The About card: the same market read over four windows, then three
@@ -25,14 +26,6 @@ const LABELS: Record<WindowKey, string> = {
 };
 
 const ORDER: WindowKey[] = ["m5", "h1", "h6", "h24"];
-
-function compact(n: number): string {
-  if (n >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return n.toFixed(0);
-}
 
 /**
  * Two quantities as one bar.
@@ -81,7 +74,7 @@ function WindowBox({ k, w }: { k: WindowKey; w: MarketWindow }) {
         }`}
       >
         {/* Null is "the source did not say", which is not the same as flat. */}
-        {c === null ? "—" : `${c >= 0 ? "▲" : "▼"}${Math.abs(c).toFixed(2)}%`}
+        {pct(c)}
       </span>
     </div>
   );
@@ -137,8 +130,8 @@ export function AboutCard({ trades }: { trades: Trade[] }) {
             <Versus
               left={buyVol}
               right={sellVol}
-              leftLabel={`$${compact(buyVol)} bought`}
-              rightLabel={`$${compact(sellVol)} sold`}
+              leftLabel={`${compactUsd(buyVol)} bought`}
+              rightLabel={`${compactUsd(sellVol)} sold`}
             />
             <span className="font-mono text-[11px] text-ash">
               last {trades.length} trades

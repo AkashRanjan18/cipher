@@ -16,21 +16,31 @@ const ENDPOINT = "https://api.geckoterminal.com/api/v2/networks/solana/pools";
  * Exported so the mapping can be tested without a network call.
  */
 export function toCandles(rows: number[][]): Candle[] {
-  return rows
-    .map(([time, open, high, low, close, volume]) => ({
-      time,
-      open,
-      high,
-      low,
-      close,
-      volume,
-    }))
-    /*
-     * Chart libraries require ascending time and will either throw or render
-     * a scribble on unsorted input. GeckoTerminal returns newest first, so
-     * this reversal is not optional.
-     */
-    .sort((a, b) => a.time - b.time);
+  /*
+   * Deduplicate BEFORE sorting, keyed on the bar's timestamp.
+   *
+   * lightweight-charts requires STRICTLY ascending time and throws
+   * "data must be asc ordered by time" on a repeat — which takes the whole
+   * page down, not just the chart. Sorting alone does not save you: a sort
+   * puts duplicates next to each other, it does not remove them.
+   *
+   * GeckoTerminal does emit repeats. Rows arrive newest-first, so the first
+   * occurrence of a timestamp is the freshest read of that bar and the one
+   * worth keeping.
+   */
+  const byTime = new Map<number, Candle>();
+
+  for (const [time, open, high, low, close, volume] of rows) {
+    if (byTime.has(time)) continue;
+    byTime.set(time, { time, open, high, low, close, volume });
+  }
+
+  /*
+   * Chart libraries require ascending time and will either throw or render
+   * a scribble on unsorted input. GeckoTerminal returns newest first, so
+   * this reversal is not optional.
+   */
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
 
 /*

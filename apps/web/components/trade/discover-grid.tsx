@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { PoolSummary } from "@/lib/market";
 import { useNow } from "./use-now";
+import { compactUsd, pct, since } from "@/lib/format";
 
 /**
  * The discovery home — the front door to the terminal.
@@ -16,27 +17,6 @@ import { useNow } from "./use-now";
  * A grid rather than the narrow rail: this is the whole screen, so there is
  * room for the numbers that actually drive the choice.
  */
-
-function pct(n: number | null): string {
-  if (n === null) return "—";
-  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
-}
-
-function compact(n: number): string {
-  if (n >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-  return n.toFixed(0);
-}
-
-function age(unix: number | null, nowMs: number | null): string {
-  if (unix === null || nowMs === null) return "";
-  const s = Math.max(0, Math.floor(nowMs / 1000) - unix);
-  if (s < 3600) return `${Math.floor(s / 60)}m old`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h old`;
-  return `${Math.floor(s / 86400)}d old`;
-}
 
 function Card({ pool, now }: { pool: PoolSummary; now: number | null }) {
   const c = pool.change24h;
@@ -61,15 +41,15 @@ function Card({ pool, now }: { pool: PoolSummary; now: number | null }) {
       <div className="grid grid-cols-2 gap-y-1.5 font-mono text-[11px]">
         <span className="text-ash">liquidity</span>
         <span className="text-right tabular-nums text-champagne">
-          ${compact(pool.liquidityUsd)}
+          {compactUsd(pool.liquidityUsd)}
         </span>
         <span className="text-ash">24h volume</span>
         <span className="text-right tabular-nums text-champagne">
-          ${compact(pool.volume24h)}
+          {compactUsd(pool.volume24h)}
         </span>
         <span className="text-ash">{pool.dex}</span>
         <span className="text-right tabular-nums text-ash">
-          {age(pool.createdAt, now)}
+          {since(pool.createdAt, now)}
         </span>
       </div>
     </Link>

@@ -3,31 +3,10 @@
 import { useEffect, useState } from "react";
 import type { Trade } from "@/lib/market";
 import { useNow } from "./use-now";
+import { price, compactUsd, since } from "@/lib/format";
 
-/**
- * The live tape.
- *
- * Client component because it polls. Seeded with trades the server already
- * fetched, so the panel is full on first paint and the poll only ever
- * replaces it — no empty state, no spinner.
- */
 
-function ago(unix: number, nowMs: number): string {
-  const s = Math.max(0, Math.floor(nowMs / 1000) - unix);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  return `${Math.floor(s / 3600)}h`;
-}
 
-/** Terminals show size in k/M — $12,431 is four glyphs of noise in a column. */
-function size(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  // Dust trades are most of a memecoin tape. Rounding them to a bare "$0"
-  // reads as missing data rather than a small fill.
-  if (n < 1) return n.toFixed(2);
-  return n.toFixed(0);
-}
 
 export function TradeTape({
   pair,
@@ -68,7 +47,7 @@ export function TradeTape({
   }, [pair]);
 
   const header = (
-    <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-line px-3 py-2 font-sans text-[11px] text-ash">
+    <div className="grid grid-cols-[1.2fr_1fr_1fr_0.6fr] gap-3 border-b border-line px-3 py-2 font-sans text-[11px] text-ash">
       <span>Price</span>
       <span className="text-right">Size</span>
       <span className="text-right">Wallet</span>
@@ -84,12 +63,12 @@ export function TradeTape({
   const rows = trades.slice(0, 100).map((t) => (
     <div
       key={t.id}
-      className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-1 font-mono text-[11px] tabular-nums hover:bg-champagne/5"
+      className="grid grid-cols-[1.2fr_1fr_1fr_0.6fr] gap-3 px-3 py-1.5 font-mono text-xs tabular-nums hover:bg-champagne/5"
     >
       <span className={t.side === "buy" ? "text-up" : "text-down"}>
-        {t.priceUsd.toPrecision(4)}
+        {price(t.priceUsd)}
       </span>
-      <span className="text-right text-champagne">${size(t.volumeUsd)}</span>
+      <span className="text-right text-champagne">{compactUsd(t.volumeUsd)}</span>
       <a
         href={`https://solscan.io/account/${t.wallet}`}
         target="_blank"
@@ -99,8 +78,8 @@ export function TradeTape({
         {t.wallet.slice(0, 4)}
       </a>
       {/* Empty until mount — see useNow. */}
-      <span className="w-8 text-right text-ash">
-        {now === null ? "" : ago(t.time, now)}
+      <span className="text-right text-ash">
+        {since(t.time, now)}
       </span>
     </div>
   ));

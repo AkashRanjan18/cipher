@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { PoolSummary } from "@/lib/market";
+import { compactUsd } from "@/lib/format";
 
 /**
  * The global bar: brand, one search box, and the account corner.
@@ -12,14 +13,6 @@ import type { PoolSummary } from "@/lib/market";
  * change what the whole screen is about. Every terminal binds it to a key —
  * "/" focuses it — so a trader never reaches for the mouse to switch token.
  */
-
-function compact(n: number): string {
-  if (n >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-  return n.toFixed(0);
-}
 
 export function TopBar() {
   const [query, setQuery] = useState("");
@@ -124,7 +117,7 @@ export function TopBar() {
                     {r.symbol}
                   </span>
                   <span className="shrink-0 font-mono text-[11px] text-ash">
-                    liq ${compact(r.liquidityUsd)}
+                    liq {compactUsd(r.liquidityUsd)}
                   </span>
                 </button>
               ))

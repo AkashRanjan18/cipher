@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { PoolSummary, Major } from "@/lib/market";
 import { useNow } from "./use-now";
+import { usd, compact, compactUsd, pct, since } from "@/lib/format";
 
 /**
  * The discovery rail — blue chips, trending, new, and search in one column.
@@ -24,42 +25,6 @@ import { useNow } from "./use-now";
  */
 
 type Tab = "crypto" | "trending" | "new";
-
-/*
- * Spans nine orders of magnitude on one list: a $4k memecoin pool and BTC's
- * $1.6T cap sit in the same column. Stopping at millions printed
- * "$1635553.0M", which is unreadable and looks like a bug.
- */
-function compact(n: number): string {
-  if (n >= 1_000_000_000_000) return `${(n / 1_000_000_000_000).toFixed(1)}T`;
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-  return n.toFixed(0);
-}
-
-function price(n: number): string {
-  if (n >= 1000)
-    return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-  if (n >= 1) return `$${n.toFixed(2)}`;
-  // Below a dollar, significant digits are what separate 0.0000030 from
-  // 0.0000003 — decimal places collapse both to $0.00.
-  return `$${n.toPrecision(3)}`;
-}
-
-/** Null is "the source did not say", which is not the same as "flat". */
-function pct(n: number | null): string {
-  if (n === null) return "—";
-  return `${n >= 0 ? "▲" : "▼"}${Math.abs(n).toFixed(2)}%`;
-}
-
-function age(unix: number | null, nowMs: number | null): string {
-  if (unix === null || nowMs === null) return "";
-  const s = Math.max(0, Math.floor(nowMs / 1000) - unix);
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
 
 function Logo({ src, symbol }: { src: string | null; symbol: string }) {
   if (src) {
@@ -111,13 +76,13 @@ function MajorRow({ m }: { m: Major }) {
         </span>
         {m.marketCap && (
           <span className="font-mono text-[11px] text-ash">
-            ${compact(m.marketCap)} MC
+            {compact(m.marketCap)} MC
           </span>
         )}
       </div>
       <div className="ml-auto flex flex-col items-end">
         <span className="font-mono text-sm tabular-nums text-champagne">
-          {price(m.priceUsd)}
+          {usd(m.priceUsd)}
         </span>
         <Change value={m.change24h} />
       </div>
@@ -149,13 +114,13 @@ function PoolRow({
         <span className="font-mono text-[11px] text-ash">
           {/* Liquidity, not market cap. On a fresh pool mcap is a fiction the
               deployer chose; liquidity is what you can actually sell into. */}
-          ${compact(pool.liquidityUsd)} liq
+          {compactUsd(pool.liquidityUsd)} liq
         </span>
       </div>
       <div className="ml-auto flex shrink-0 flex-col items-end">
         <Change value={pool.change1h} />
         <span className="font-mono text-[11px] tabular-nums text-ash">
-          {age(pool.createdAt, now)}
+          {since(pool.createdAt, now)}
         </span>
       </div>
     </Link>

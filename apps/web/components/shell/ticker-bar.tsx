@@ -1,4 +1,5 @@
 import type { Major } from "@/lib/market";
+import { usd } from "@/lib/format";
 
 /**
  * The bottom ticker: blue-chip prices, always visible.
@@ -12,14 +13,6 @@ import type { Major } from "@/lib/market";
  * the day is actually strong, and nothing else on the page tells you that.
  */
 
-function price(n: number): string {
-  // Majors span $0.0895 (DOGE) to $81,428 (BTC); one fixed precision cannot
-  // serve both without either lying or wasting the row.
-  if (n >= 1000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-  if (n >= 1) return `$${n.toFixed(2)}`;
-  return `$${n.toPrecision(3)}`;
-}
-
 export function TickerBar({ majors }: { majors: Major[] }) {
   if (majors.length === 0) return null;
 
@@ -31,7 +24,7 @@ export function TickerBar({ majors }: { majors: Major[] }) {
           <div key={m.id} className="flex shrink-0 items-baseline gap-1.5">
             <span className="font-mono text-[11px] text-ash">{m.symbol}</span>
             <span className="font-mono text-[11px] tabular-nums text-champagne">
-              {price(m.priceUsd)}
+              {usd(m.priceUsd)}
             </span>
             <span
               className={`font-mono text-[11px] tabular-nums ${

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLive } from "./live-price";
 import { useNow } from "./use-now";
 import type { Social } from "@/lib/market";
+import { usd, compactUsd, pct, since } from "@/lib/format";
 
 /**
  * The token identity strip and the five headline stats.
@@ -16,31 +17,6 @@ import type { Social } from "@/lib/market";
  * eye needs an anchor per number, and a run of five bare figures reads as one
  * paragraph.
  */
-
-function money(n: number | null): string {
-  if (n === null) return "—";
-  if (n === 0) return "$0";
-  if (n >= 1_000) {
-    return `$${new Intl.NumberFormat("en-US", {
-      notation: "compact",
-      maximumFractionDigits: 2,
-    }).format(n)}`;
-  }
-  if (n >= 1) return `$${n.toFixed(2)}`;
-  // Below a dollar, decimal places are meaningless — significant digits are
-  // what tells you 0.0000030 from 0.0000003.
-  return `$${n.toPrecision(3)}`;
-}
-
-/** Pool age, in the coarse units a trader actually reasons in. */
-function age(unix: number | null, nowMs: number | null): string {
-  if (unix === null || nowMs === null) return "";
-  const s = Math.max(0, Math.floor(nowMs / 1000) - unix);
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  if (s < 2_592_000) return `${Math.floor(s / 86400)}d`;
-  return `${Math.floor(s / 2_592_000)}mo`;
-}
 
 function Box({
   label,
@@ -135,7 +111,7 @@ function LivePriceBox({ price, fresh }: { price: number; fresh: boolean }) {
               : "text-champagne"
         }`}
       >
-        {money(price)}
+        {usd(price)}
       </span>
     </div>
   );
@@ -180,7 +156,7 @@ export function TokenHeader({ socials }: { socials: Social[] }) {
             <CopyMint mint={stats.mint} />
             {stats.createdAt && (
               <span title="pool age" className="font-mono text-[11px] text-ash">
-                {age(stats.createdAt, now)}
+                {since(stats.createdAt, now)}
               </span>
             )}
             {socials.map((s) => (
@@ -199,19 +175,19 @@ export function TokenHeader({ socials }: { socials: Social[] }) {
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        <Box label="Market cap" value={money(stats.marketCap)} />
+        <Box label="Market cap" value={compactUsd(stats.marketCap)} />
         <LivePriceBox price={stats.priceUsd} fresh={fresh} />
         <Box
           label="24h change"
           value={
             day.change === null
               ? "—"
-              : `${up ? "+" : ""}${day.change.toFixed(2)}%`
+              : pct(day.change, false)
           }
           tone={day.change === null ? undefined : up ? "up" : "down"}
         />
-        <Box label="24h vol" value={money(day.volume)} />
-        <Box label="Liquidity" value={money(stats.liquidityUsd)} />
+        <Box label="24h vol" value={compactUsd(day.volume)} />
+        <Box label="Liquidity" value={compactUsd(stats.liquidityUsd)} />
       </div>
     </div>
   );

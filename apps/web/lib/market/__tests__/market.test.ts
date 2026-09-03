@@ -303,3 +303,31 @@ test("holders default insider to false, never true", () => {
   );
   assert.equal(s.topHolders[0].insider, false);
 });
+
+test("duplicate timestamps are dropped, not just sorted next to each other", () => {
+  /*
+   * lightweight-charts throws "data must be asc ordered by time" on a repeat
+   * and takes the whole page down. Sorting puts duplicates adjacent; it does
+   * not remove them. GeckoTerminal does emit repeats.
+   */
+  const out = toCandles([
+    [300, 3, 3, 3, 3, 3],
+    [200, 2, 2, 2, 2, 2],
+    [200, 9, 9, 9, 9, 9],
+    [100, 1, 1, 1, 1, 1],
+  ]);
+  assert.deepEqual(out.map((c) => c.time), [100, 200, 300]);
+  for (let i = 1; i < out.length; i++) {
+    assert.ok(out[i].time > out[i - 1].time, "times must strictly increase");
+  }
+});
+
+test("the freshest read of a repeated bar wins", () => {
+  // Rows arrive newest-first, so the first occurrence is the latest data.
+  const out = toCandles([
+    [200, 9, 9, 9, 9, 9],
+    [200, 2, 2, 2, 2, 2],
+  ]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].close, 9);
+});
