@@ -96,7 +96,7 @@ export function PriceChart({ candles }: { candles: Candle[] }) {
 
   if (candles.length === 0) {
     return (
-      <div className="flex h-[360px] items-center justify-center rounded-2xl border border-champagne/10 bg-slate">
+      <div className="flex h-full min-h-[240px] items-center justify-center rounded-2xl border border-champagne/10 bg-slate">
         <p className="font-sans text-sm text-ash">
           No price history for this pool.
         </p>
@@ -107,7 +107,7 @@ export function PriceChart({ candles }: { candles: Candle[] }) {
   return (
     <div
       ref={box}
-      className="h-[360px] overflow-hidden rounded-2xl border border-champagne/10"
+      className="h-full w-full"
       style={{ backgroundColor: INK }}
     />
   );

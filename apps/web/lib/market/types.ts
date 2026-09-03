@@ -38,3 +38,27 @@ export interface Candle {
 }
 
 export type Timeframe = "minute" | "hour" | "day";
+
+/**
+ * Chart intervals the UI offers.
+ *
+ * A closed union, not a string, because these map to a specific
+ * (timeframe, aggregate) pair upstream — GeckoTerminal has no "4h" endpoint,
+ * it has "hour" aggregated by 4. Letting a component pass an arbitrary string
+ * would push that translation into the UI.
+ */
+export type Interval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+
+/** One executed swap in the pool. The tape. */
+export interface Trade {
+  /** Upstream id — stable, so it doubles as the React key. */
+  id: string;
+  /** Unix seconds. */
+  time: number;
+  side: "buy" | "sell";
+  priceUsd: number;
+  volumeUsd: number;
+  /** The trader. Truncated for display, kept whole for the explorer link. */
+  wallet: string;
+  txHash: string;
+}

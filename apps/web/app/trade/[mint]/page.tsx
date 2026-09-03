@@ -1,16 +1,17 @@
 import { notFound } from "next/navigation";
-import { fetchTokenStats, fetchCandles } from "@/lib/market";
+import { fetchTokenStats, fetchCandles, fetchTrades } from "@/lib/market";
 import { TokenHeader } from "@/components/trade/token-header";
-import { PriceChart } from "@/components/trade/price-chart";
+import { ChartPanel } from "@/components/trade/chart-panel";
+import { TradeTape } from "@/components/trade/trade-tape";
 import { TradePanel } from "@/components/trade/trade-panel";
 import { PromptPanel } from "@/components/trade/prompt-panel";
 
 /**
- * The trading screen for one token.
+ * The terminal.
  *
- * A SERVER component, deliberately. Both fetches run on the server, so the
- * page arrives with prices already in the HTML — no spinner, no client-side
- * waterfall, and the upstream APIs never see the user's IP.
+ * A SERVER component. Every fetch runs here, so the page arrives with prices,
+ * candles and the tape already in the HTML — no spinner, no client waterfall,
+ * and the upstream APIs never see the user's IP.
  *
  * The route is /trade/[mint], so a token page is a shareable URL. That is
  * what makes a trade postable, which is the whole growth loop.
@@ -26,32 +27,46 @@ export default async function TokenPage({
   if (!stats) notFound();
 
   /*
-   * Candles are fetched second because they need the pair address the stats
-   * call chose. Charting a different pool from the one the stats came from
-   * would show two different prices for the same token on one screen.
+   * Candles and tape both key off the pair address the stats call chose, so
+   * they cannot start until it resolves — but they are independent of each
+   * other, so they run together. Sequencing them would add a round trip to
+   * every page load for nothing.
    */
-  const candles = await fetchCandles(stats.pairAddress, "hour", 300);
+  const [candles, trades] = await Promise.all([
+    fetchCandles(stats.pairAddress, "1h", 300),
+    fetchTrades(stats.pairAddress),
+  ]);
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-8 px-6 py-10">
-      <TokenHeader stats={stats} />
+    /*
+     * h-dvh with overflow-hidden, not a scrolling page. A terminal's panes
+     * scroll independently inside a fixed frame — if the whole document
+     * scrolls, the tape pushes the chart off screen as trades arrive.
+     */
+    <main className="flex h-dvh flex-col overflow-hidden bg-ink">
+      <header className="shrink-0 border-b border-champagne/10 px-4 py-3">
+        <TokenHeader stats={stats} />
+      </header>
 
-      {/* Chart takes the width it needs; the panels sit beside it on desktop
-          and stack underneath on a phone. */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-        <PriceChart candles={candles} />
+      {/* Chart left, tape and order entry right. Stacks on a phone, where a
+          four-pane terminal is unusable anyway. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[1fr_300px_340px] lg:overflow-hidden">
+        <div className="min-h-[380px] lg:min-h-0">
+          <ChartPanel
+            pair={stats.pairAddress}
+            initial={candles}
+            initialInterval="1h"
+          />
+        </div>
 
-        <div className="flex flex-col gap-5">
+        <div className="min-h-[300px] lg:min-h-0">
+          <TradeTape pair={stats.pairAddress} initial={trades} />
+        </div>
+
+        {/* Order entry is the only column that scrolls on its own — the
+            prompt panel grows as the readback fills in. */}
+        <div className="flex flex-col gap-3 lg:overflow-y-auto">
           <TradePanel token={stats.symbol} />
-
-          <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-champagne/12" />
-            <span className="font-mono text-[10px] tracking-[0.25em] text-ash">
-              OR JUST SAY IT
-            </span>
-            <div className="h-px flex-1 bg-champagne/12" />
-          </div>
-
           <PromptPanel />
         </div>
       </div>

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pickDeepestPair, normalise } from "../dexscreener.ts";
 import { toCandles } from "../geckoterminal.ts";
+import { toTrades } from "../trades.ts";
 
 const pair = (over: Record<string, unknown> = {}) => ({
   pairAddress: "P1",
@@ -85,4 +86,62 @@ test("candle rows map positionally", () => {
 
 test("empty candle list is empty, not an error", () => {
   assert.deepEqual(toCandles([]), []);
+});
+
+test("a buy reads price from the token received, not the token spent", () => {
+  const [t] = toTrades([
+    {
+      id: "x1",
+      attributes: {
+        block_timestamp: "2026-09-03T12:00:00Z",
+        kind: "buy",
+        // SOL went in, BONK came out. The charted price is BONK's.
+        price_from_in_usd: "101.28",
+        price_to_in_usd: "0.00000303",
+        volume_in_usd: "156.5",
+        tx_from_address: "8PcgDzzguWiFnEZ2CaGkTaMyVAHcS7fCnHUubc12HW2U",
+        tx_hash: "abc",
+      },
+    },
+  ]);
+  assert.equal(t.side, "buy");
+  assert.equal(t.priceUsd, 0.00000303);
+});
+
+test("a sell reads price from the token spent", () => {
+  const [t] = toTrades([
+    {
+      id: "x2",
+      attributes: {
+        block_timestamp: "2026-09-03T12:00:00Z",
+        kind: "sell",
+        price_from_in_usd: "0.00000303",
+        price_to_in_usd: "101.28",
+        volume_in_usd: "156.5",
+        tx_from_address: "8Pcg",
+        tx_hash: "def",
+      },
+    },
+  ]);
+  assert.equal(t.side, "sell");
+  assert.equal(t.priceUsd, 0.00000303);
+});
+
+test("an unrecognised kind is treated as a sell, never a buy", () => {
+  // Overstating demand is the direction that costs money.
+  const [t] = toTrades([
+    {
+      id: "x3",
+      attributes: {
+        block_timestamp: "2026-09-03T12:00:00Z",
+        kind: "",
+        price_from_in_usd: "0.0000030",
+        price_to_in_usd: "101.28",
+        volume_in_usd: "1",
+        tx_from_address: "a",
+        tx_hash: "b",
+      },
+    },
+  ]);
+  assert.equal(t.side, "sell");
 });

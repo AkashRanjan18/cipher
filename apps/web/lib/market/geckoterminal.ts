@@ -1,4 +1,4 @@
-import type { Candle, Timeframe } from "./types";
+import type { Candle, Interval } from "./types";
 
 /**
  * OHLCV candles from GeckoTerminal. Free, keyless, ~30 requests a minute.
@@ -33,14 +33,48 @@ export function toCandles(rows: number[][]): Candle[] {
     .sort((a, b) => a.time - b.time);
 }
 
+/*
+ * GeckoTerminal has three endpoints — minute, hour, day — and an `aggregate`
+ * multiplier. There is no "4h" route; there is "hour" aggregated by 4. This
+ * table is the only place that translation lives, so a component asks for
+ * "4h" and never learns the upstream shape.
+ *
+ * Only these multipliers are supported upstream. Asking for hour/aggregate=3
+ * returns an empty list, not an error, which would look like a dead token.
+ */
+const INTERVALS: Record<Interval, { timeframe: string; aggregate: number; seconds: number }> = {
+  "1m": { timeframe: "minute", aggregate: 1, seconds: 60 },
+  "5m": { timeframe: "minute", aggregate: 5, seconds: 300 },
+  "15m": { timeframe: "minute", aggregate: 15, seconds: 900 },
+  "1h": { timeframe: "hour", aggregate: 1, seconds: 3600 },
+  "4h": { timeframe: "hour", aggregate: 4, seconds: 14400 },
+  "1d": { timeframe: "day", aggregate: 1, seconds: 86400 },
+};
+
+export const INTERVAL_ORDER: Interval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+
+export function isInterval(v: string): v is Interval {
+  return v in INTERVALS;
+}
+
 export async function fetchCandles(
   pairAddress: string,
-  timeframe: Timeframe = "hour",
+  interval: Interval = "1h",
   limit = 300,
 ): Promise<Candle[]> {
+  const { timeframe, aggregate, seconds } = INTERVALS[interval];
+
   const res = await fetch(
-    `${ENDPOINT}/${pairAddress}/ohlcv/${timeframe}?limit=${limit}`,
-    { headers: { Accept: "application/json" }, next: { revalidate: 60 } },
+    `${ENDPOINT}/${pairAddress}/ohlcv/${timeframe}?aggregate=${aggregate}&limit=${limit}`,
+    {
+      headers: { Accept: "application/json" },
+      /*
+       * Cache for half a candle. Revalidating faster than the candle closes
+       * spends the 30 req/min budget re-fetching a bar that has not changed;
+       * revalidating slower leaves the live candle visibly stale.
+       */
+      next: { revalidate: Math.max(10, Math.floor(seconds / 2)) },
+    },
   );
   if (!res.ok) return [];
 
