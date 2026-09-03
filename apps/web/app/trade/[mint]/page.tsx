@@ -7,6 +7,7 @@ import {
   fetchNewPools,
 } from "@/lib/market";
 import { TokenHeader } from "@/components/trade/token-header";
+import { LivePrice } from "@/components/trade/live-price";
 import { ChartPanel } from "@/components/trade/chart-panel";
 import { TradeTape } from "@/components/trade/trade-tape";
 import { TokenRail } from "@/components/trade/token-rail";
@@ -63,8 +64,16 @@ export default async function TokenPage({
      * scrolls, the tape pushes the chart off screen as trades arrive.
      */
     <main className="flex h-dvh flex-col overflow-hidden bg-ink">
+      {/*
+        One poll for the whole terminal. The header and the chart both need a
+        live price; polling separately would double the upstream cost for the
+        same number, against a rate limit shared by every user.
+
+        Children pass straight through, so the panes below stay server-rendered.
+      */}
+      <LivePrice initial={stats}>
       <header className="shrink-0 border-b border-champagne/10 px-4 py-3">
-        <TokenHeader stats={stats} />
+        <TokenHeader />
       </header>
 
       {/* Rail, chart, tape, order entry. Stacks on a phone, where a four-pane
@@ -97,6 +106,7 @@ export default async function TokenPage({
           <PromptPanel />
         </div>
       </div>
+      </LivePrice>
     </main>
   );
 }

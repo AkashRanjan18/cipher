@@ -57,6 +57,17 @@ export function isInterval(v: string): v is Interval {
   return v in INTERVALS;
 }
 
+/**
+ * How many seconds one bar of this interval covers.
+ *
+ * The chart needs it to work out which bucket "now" falls in when folding a
+ * live price into the forming candle — the same arithmetic an exchange does
+ * to decide whether a trade extends the current bar or opens the next one.
+ */
+export function intervalSeconds(interval: Interval): number {
+  return INTERVALS[interval].seconds;
+}
+
 export async function fetchCandles(
   pairAddress: string,
   interval: Interval = "1h",

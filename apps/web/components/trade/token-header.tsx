@@ -1,10 +1,14 @@
-import type { TokenStats } from "@/lib/market";
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useLive } from "./live-price";
 
 /**
  * The terminal's top strip: identity, then the stats as one dense row.
  *
- * Server component — static text derived from data the page already fetched,
- * so it ships no JavaScript.
+ * A client component, because these are the numbers that move. It reads the
+ * shared poll from <LivePrice> rather than fetching, so the header and the
+ * chart cost one request between them instead of two.
  *
  * Shape matters here. On a terminal this bar is glanced at, not read: it has
  * to stay one line deep so the chart keeps the vertical space. That is why
@@ -60,7 +64,55 @@ function Stat({
   );
 }
 
-export function TokenHeader({ stats }: { stats: TokenStats }) {
+/**
+ * The price, flashing on change.
+ *
+ * The flash is not decoration. On a static number a trader cannot tell a
+ * quiet market from a broken feed; the flash is the proof the feed is alive,
+ * which is exactly what the staleness dot next to it withdraws when it isn't.
+ */
+function LivePriceCell({ price, fresh }: { price: number; fresh: boolean }) {
+  const [flash, setFlash] = useState<"up" | "down" | null>(null);
+  const prev = useRef(price);
+
+  useEffect(() => {
+    if (price === prev.current) return;
+    setFlash(price > prev.current ? "up" : "down");
+    prev.current = price;
+    const id = setTimeout(() => setFlash(null), 600);
+    return () => clearTimeout(id);
+  }, [price]);
+
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className="font-mono text-[10px] tracking-[0.12em] text-ash">
+        PRICE
+      </span>
+      <span
+        className={`rounded px-1 font-mono text-xs tabular-nums transition-colors duration-500 ${
+          flash === "up"
+            ? "bg-green-400/25 text-green-300"
+            : flash === "down"
+              ? "bg-red-400/25 text-red-300"
+              : "text-champagne"
+        }`}
+      >
+        {money(price)}
+      </span>
+      {/* Absence of the dot is the "live" signal; its presence means the last
+          poll failed and the number beside it is the last one we trusted. */}
+      {!fresh && (
+        <span
+          title="price feed stale — showing last known"
+          className="h-1.5 w-1.5 rounded-full bg-amber-400/80"
+        />
+      )}
+    </div>
+  );
+}
+
+export function TokenHeader() {
+  const { stats, fresh } = useLive();
   const up = stats.change24h >= 0;
   const total = stats.buys24h + stats.sells24h;
   // Guard the divide: a brand-new pool has no transactions at all.
@@ -83,7 +135,7 @@ export function TokenHeader({ stats }: { stats: TokenStats }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <Stat label="PRICE" value={money(stats.priceUsd)} />
+        <LivePriceCell price={stats.priceUsd} fresh={fresh} />
         <Stat
           label="24H"
           value={`${up ? "+" : ""}${stats.change24h.toFixed(2)}%`}

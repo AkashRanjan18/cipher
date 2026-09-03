@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { PoolSummary } from "@/lib/market";
+import { useNow } from "./use-now";
 
 /**
  * The discovery rail — trending, new, and search results in one column.
@@ -27,9 +28,9 @@ function pct(n: number | null): string {
 }
 
 /** Pool age is the memecoin risk signal — a 40-minute-old pool is not BONK. */
-function age(unix: number | null): string {
-  if (unix === null) return "";
-  const s = Math.max(0, Math.floor(Date.now() / 1000) - unix);
+function age(unix: number | null, nowMs: number | null): string {
+  if (unix === null || nowMs === null) return "";
+  const s = Math.max(0, Math.floor(nowMs / 1000) - unix);
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   if (s < 86400) return `${Math.floor(s / 3600)}h`;
   return `${Math.floor(s / 86400)}d`;
@@ -41,7 +42,15 @@ function compact(n: number): string {
   return n.toFixed(0);
 }
 
-function Row({ pool, active }: { pool: PoolSummary; active: boolean }) {
+function Row({
+  pool,
+  active,
+  now,
+}: {
+  pool: PoolSummary;
+  active: boolean;
+  now: number | null;
+}) {
   const change = pool.change1h;
   return (
     <Link
@@ -72,7 +81,7 @@ function Row({ pool, active }: { pool: PoolSummary; active: boolean }) {
               deployer chose; liquidity is what you can actually sell into. */}
           liq ${compact(pool.liquidityUsd)}
         </span>
-        <span className="shrink-0 tabular-nums">{age(pool.createdAt)}</span>
+        <span className="shrink-0 tabular-nums">{age(pool.createdAt, now)}</span>
       </div>
     </Link>
   );
@@ -93,6 +102,8 @@ export function TokenRail({
   const [results, setResults] = useState<PoolSummary[] | null>(null);
   const [searchFailed, setSearchFailed] = useState(false);
   const pathname = usePathname();
+  // Pool ages advance slowly; a minute is plenty and costs far fewer renders.
+  const now = useNow(60_000);
 
   useEffect(() => {
     const q = query.trim();
@@ -188,6 +199,7 @@ export function TokenRail({
               key={p.pairAddress}
               pool={p}
               active={pathname === `/trade/${p.mint}`}
+              now={now}
             />
           ))
         )}

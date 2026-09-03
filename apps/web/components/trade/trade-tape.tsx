@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Trade } from "@/lib/market";
+import { useNow } from "./use-now";
 
 /**
  * The live tape.
@@ -11,8 +12,8 @@ import type { Trade } from "@/lib/market";
  * replaces it — no empty state, no spinner.
  */
 
-function ago(unix: number): string {
-  const s = Math.max(0, Math.floor(Date.now() / 1000) - unix);
+function ago(unix: number, nowMs: number): string {
+  const s = Math.max(0, Math.floor(nowMs / 1000) - unix);
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   return `${Math.floor(s / 3600)}h`;
@@ -36,6 +37,7 @@ export function TradeTape({
   initial: Trade[];
 }) {
   const [trades, setTrades] = useState(initial);
+  const now = useNow();
 
   useEffect(() => {
     let alive = true;
@@ -74,7 +76,10 @@ export function TradeTape({
       {/* Fixed height + scroll, so an arriving trade cannot push the page
           layout around underneath the user's cursor. */}
       <div className="flex-1 overflow-y-auto">
-        {trades.map((t) => (
+        {/* Upstream returns ~300 trades; nobody scrolls past the first
+            hundred, and re-rendering all of them every second to advance the
+            age column is work with no reader. */}
+        {trades.slice(0, 100).map((t) => (
           <div
             key={t.id}
             className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-1 font-mono text-[11px] tabular-nums hover:bg-champagne/5"
@@ -91,7 +96,10 @@ export function TradeTape({
             >
               {t.wallet.slice(0, 4)}
             </a>
-            <span className="w-8 text-right text-ash">{ago(t.time)}</span>
+            {/* Empty until mount — see useNow. */}
+            <span className="w-8 text-right text-ash">
+              {now === null ? "" : ago(t.time, now)}
+            </span>
           </div>
         ))}
       </div>

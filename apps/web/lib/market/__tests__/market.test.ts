@@ -4,6 +4,7 @@ import { pickDeepestPair, normalise } from "../dexscreener.ts";
 import { toCandles } from "../geckoterminal.ts";
 import { toTrades } from "../trades.ts";
 import { toPoolSummaries, isMintAddress } from "../discover.ts";
+import { foldLivePrice } from "../live.ts";
 
 const pair = (over: Record<string, unknown> = {}) => ({
   pairAddress: "P1",
@@ -198,4 +199,48 @@ test("base58 excludes the ambiguous glyphs", () => {
   // than resolving to a different account — i.e. buying the wrong token.
   assert.ok(!isMintAddress("0ezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"));
   assert.ok(!isMintAddress("IezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"));
+});
+
+const bar = { time: 3600, open: 10, high: 12, low: 9, close: 11, volume: 5 };
+
+test("a tick inside the bucket extends the forming bar", () => {
+  // 3900s sits inside the 3600-7199 hour bucket, so the bar is extended.
+  const out = foldLivePrice(bar, 13, 3600, 3_900_000);
+  assert.equal(out.time, 3600);
+  assert.equal(out.open, 10, "the open never moves once a bar has started");
+  assert.equal(out.high, 13);
+  assert.equal(out.close, 13);
+});
+
+test("a tick below the low extends the low, not the high", () => {
+  const out = foldLivePrice(bar, 4, 3600, 3_900_000);
+  assert.equal(out.low, 4);
+  assert.equal(out.high, 12);
+});
+
+test("a tick past the boundary opens a new bar", () => {
+  const out = foldLivePrice(bar, 13, 3600, 7_300_000);
+  assert.equal(out.time, 7200);
+  // A fresh bar has no range yet: all four values are the first print.
+  assert.deepEqual(
+    [out.open, out.high, out.low, out.close],
+    [13, 13, 13, 13],
+  );
+});
+
+test("a new bar claims no volume it has not seen", () => {
+  // Volume is only known at the next server fetch; inventing one would put a
+  // number on the chart that no trade produced.
+  assert.equal(foldLivePrice(bar, 13, 3600, 7_300_000).volume, 0);
+});
+
+test("a closed bar is never rewritten by a late tick", () => {
+  /*
+   * If a stale price arrives after the bar has rolled, it must open the next
+   * bar rather than restate a settled one — otherwise the chart disagrees
+   * with the exchange about what already happened.
+   */
+  const out = foldLivePrice(bar, 999, 3600, 10_800_000);
+  assert.equal(out.time, 10800);
+  assert.equal(out.high, 999);
 });

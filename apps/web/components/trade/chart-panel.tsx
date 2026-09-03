@@ -2,7 +2,13 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { PriceChart } from "./price-chart";
-import { INTERVAL_ORDER, type Candle, type Interval } from "@/lib/market";
+import { useLive } from "./live-price";
+import {
+  INTERVAL_ORDER,
+  intervalSeconds,
+  type Candle,
+  type Interval,
+} from "@/lib/market";
 
 /**
  * The chart plus its interval tabs.
@@ -23,6 +29,8 @@ export function ChartPanel({
   initialInterval?: Interval;
 }) {
   const [interval, setInterval] = useState<Interval>(initialInterval);
+  // The shared poll, so the forming bar tracks the same price as the header.
+  const { stats } = useLive();
   const [candles, setCandles] = useState(initial);
   const [pending, start] = useTransition();
 
@@ -72,7 +80,11 @@ export function ChartPanel({
       </div>
 
       <div className="min-h-0 flex-1">
-        <PriceChart candles={candles} />
+        <PriceChart
+          candles={candles}
+          livePrice={stats.priceUsd}
+          barSeconds={intervalSeconds(interval)}
+        />
       </div>
     </div>
   );
