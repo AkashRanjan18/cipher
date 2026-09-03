@@ -22,6 +22,11 @@ interface DsPair {
   volume?: { h24?: number };
   priceChange?: { h24?: number };
   txns?: { h24?: { buys: number; sells: number } };
+  info?: {
+    imageUrl?: string;
+    websites?: { url: string; label?: string }[];
+    socials?: { type: string; url: string }[];
+  };
 }
 
 /** Exported for testing without a network call. */
@@ -49,6 +54,19 @@ export function normalise(mint: string, pair: DsPair): TokenStats {
     change24h: pair.priceChange?.h24 ?? 0,
     buys24h: pair.txns?.h24?.buys ?? 0,
     sells24h: pair.txns?.h24?.sells ?? 0,
+    imageUrl: pair.info?.imageUrl ?? null,
+    /*
+     * Websites and socials arrive as separate arrays with different shapes;
+     * flattening them here keeps the "link out" logic in one place instead of
+     * making every consumer know the difference.
+     */
+    socials: [
+      ...(pair.info?.websites ?? []).map((w) => ({
+        type: "website",
+        url: w.url,
+      })),
+      ...(pair.info?.socials ?? []),
+    ],
   };
 }
 

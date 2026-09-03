@@ -25,6 +25,51 @@ export interface TokenStats {
   change24h: number;
   buys24h: number;
   sells24h: number;
+  /** Token logo. Null when the pool has no metadata attached. */
+  imageUrl: string | null;
+  socials: Social[];
+}
+
+export interface Social {
+  /** "twitter" | "telegram" | "discord" | "website" — kept open, sources vary. */
+  type: string;
+  url: string;
+}
+
+/**
+ * The safety picture for one token.
+ *
+ * On memecoins this is not a nice-to-have panel: a live mint authority means
+ * the deployer can print supply into your position, and an unlocked LP means
+ * they can withdraw the pool you are trying to sell into. Every competitor
+ * shows this, because trading without it is gambling on a stranger.
+ */
+export interface TokenSecurity {
+  /** Null is GOOD here: the authority has been revoked. */
+  mintAuthority: string | null;
+  freezeAuthority: string | null;
+  /** Percent of LP locked or burned. */
+  lpLockedPct: number;
+  totalHolders: number;
+  /** Upstream's own 0-10 rating. Lower is safer. */
+  riskScore: number;
+  risks: Risk[];
+  topHolders: Holder[];
+}
+
+export interface Risk {
+  name: string;
+  description: string;
+  /** "warn" | "danger" | "info" — rendered as colour. */
+  level: string;
+}
+
+export interface Holder {
+  address: string;
+  /** Share of supply, percent. */
+  pct: number;
+  /** Upstream believes this wallet is connected to the deployer. */
+  insider: boolean;
 }
 
 /** One candle. Times are unix seconds. */

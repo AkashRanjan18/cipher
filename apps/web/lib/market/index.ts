@@ -14,3 +14,4 @@ export {
   isMintAddress,
 } from "./discover";
 export { foldLivePrice } from "./live";
+export { fetchSecurity } from "./security";

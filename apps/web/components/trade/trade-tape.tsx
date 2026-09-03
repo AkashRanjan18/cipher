@@ -32,9 +32,12 @@ function size(n: number): string {
 export function TradeTape({
   pair,
   initial,
+  bare = false,
 }: {
   pair: string;
   initial: Trade[];
+  /** Rendered inside a panel that already owns the frame and the scroll. */
+  bare?: boolean;
 }) {
   const [trades, setTrades] = useState(initial);
   const now = useNow();
@@ -64,45 +67,59 @@ export function TradeTape({
     };
   }, [pair]);
 
+  const header = (
+    <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-champagne/10 px-3 py-2 font-mono text-[10px] tracking-[0.12em] text-ash">
+      <span>PRICE</span>
+      <span className="text-right">SIZE</span>
+      <span className="text-right">WALLET</span>
+      <span className="text-right">AGE</span>
+    </div>
+  );
+
+  /*
+   * Upstream returns ~300 trades; nobody scrolls past the first hundred, and
+   * re-rendering all of them every second to advance the age column is work
+   * with no reader.
+   */
+  const rows = trades.slice(0, 100).map((t) => (
+    <div
+      key={t.id}
+      className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-1 font-mono text-[11px] tabular-nums hover:bg-champagne/5"
+    >
+      <span className={t.side === "buy" ? "text-green-400" : "text-red-400"}>
+        {t.priceUsd.toPrecision(4)}
+      </span>
+      <span className="text-right text-champagne">${size(t.volumeUsd)}</span>
+      <a
+        href={`https://solscan.io/account/${t.wallet}`}
+        target="_blank"
+        rel="noreferrer"
+        className="text-right text-ash hover:text-champagne"
+      >
+        {t.wallet.slice(0, 4)}
+      </a>
+      {/* Empty until mount — see useNow. */}
+      <span className="w-8 text-right text-ash">
+        {now === null ? "" : ago(t.time, now)}
+      </span>
+    </div>
+  ));
+
+  if (bare) {
+    return (
+      <div className="flex flex-col">
+        {header}
+        {rows}
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-champagne/10 bg-slate">
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-champagne/10 px-3 py-2 font-mono text-[10px] tracking-[0.12em] text-ash">
-        <span>PRICE</span>
-        <span className="text-right">SIZE</span>
-        <span className="text-right">WALLET</span>
-        <span className="text-right">AGE</span>
-      </div>
-
+      {header}
       {/* Fixed height + scroll, so an arriving trade cannot push the page
-          layout around underneath the user's cursor. */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Upstream returns ~300 trades; nobody scrolls past the first
-            hundred, and re-rendering all of them every second to advance the
-            age column is work with no reader. */}
-        {trades.slice(0, 100).map((t) => (
-          <div
-            key={t.id}
-            className="grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 py-1 font-mono text-[11px] tabular-nums hover:bg-champagne/5"
-          >
-            <span className={t.side === "buy" ? "text-green-400" : "text-red-400"}>
-              {t.priceUsd.toPrecision(4)}
-            </span>
-            <span className="text-right text-champagne">${size(t.volumeUsd)}</span>
-            <a
-              href={`https://solscan.io/account/${t.wallet}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-right text-ash hover:text-champagne"
-            >
-              {t.wallet.slice(0, 4)}
-            </a>
-            {/* Empty until mount — see useNow. */}
-            <span className="w-8 text-right text-ash">
-              {now === null ? "" : ago(t.time, now)}
-            </span>
-          </div>
-        ))}
-      </div>
+          layout around underneath the cursor. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">{rows}</div>
     </div>
   );
 }

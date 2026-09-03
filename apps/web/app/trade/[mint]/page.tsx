@@ -5,11 +5,12 @@ import {
   fetchTrades,
   fetchTrending,
   fetchNewPools,
+  fetchSecurity,
 } from "@/lib/market";
 import { TokenHeader } from "@/components/trade/token-header";
 import { LivePrice } from "@/components/trade/live-price";
 import { ChartPanel } from "@/components/trade/chart-panel";
-import { TradeTape } from "@/components/trade/trade-tape";
+import { SidePanel } from "@/components/trade/side-panel";
 import { TokenRail } from "@/components/trade/token-rail";
 import { TradePanel } from "@/components/trade/trade-panel";
 import { PromptPanel } from "@/components/trade/prompt-panel";
@@ -51,10 +52,15 @@ export default async function TokenPage({
    * they cannot start until it resolves — but they are independent of each
    * other, so they run together.
    */
-  const [rail, candles, trades] = await Promise.all([
+  const [rail, candles, trades, security] = await Promise.all([
     railP,
     fetchCandles(stats.pairAddress, "1h", 300),
     fetchTrades(stats.pairAddress),
+    /*
+     * Safety is allowed to fail without taking the page down. An absent panel
+     * says "unverified"; it must never be rendered as a pass.
+     */
+    fetchSecurity(mint).catch(() => null),
   ]);
 
   return (
@@ -96,7 +102,12 @@ export default async function TokenPage({
         </div>
 
         <div className="order-3 min-h-[300px] lg:order-none lg:min-h-0">
-          <TradeTape pair={stats.pairAddress} initial={trades} />
+          <SidePanel
+            pair={stats.pairAddress}
+            trades={trades}
+            security={security}
+            socials={stats.socials}
+          />
         </div>
 
         {/* Order entry is the only column that scrolls on its own — the

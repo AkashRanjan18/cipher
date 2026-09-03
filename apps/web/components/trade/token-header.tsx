@@ -120,7 +120,17 @@ export function TokenHeader() {
 
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-      <div className="flex items-baseline gap-2">
+      <div className="flex items-center gap-2">
+        {/* eslint-disable-next-line @next/next/no-img-element --
+            next/image would need every token CDN in next.config, and the
+            hosts are whatever DexScreener happens to use per token. */}
+        {stats.imageUrl && (
+          <img
+            src={stats.imageUrl}
+            alt=""
+            className="h-7 w-7 rounded-full border border-champagne/15 object-cover"
+          />
+        )}
         <h1 className="font-display text-2xl lowercase leading-none text-champagne">
           {stats.symbol}
         </h1>

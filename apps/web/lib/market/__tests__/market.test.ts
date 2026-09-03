@@ -5,6 +5,7 @@ import { toCandles } from "../geckoterminal.ts";
 import { toTrades } from "../trades.ts";
 import { toPoolSummaries, isMintAddress } from "../discover.ts";
 import { foldLivePrice } from "../live.ts";
+import { toSecurity } from "../security.ts";
 
 const pair = (over: Record<string, unknown> = {}) => ({
   pairAddress: "P1",
@@ -243,4 +244,52 @@ test("a closed bar is never rewritten by a late tick", () => {
   const out = foldLivePrice(bar, 999, 3600, 10_800_000);
   assert.equal(out.time, 10800);
   assert.equal(out.high, 999);
+});
+
+test("a revoked authority is the safe state, not a missing value", () => {
+  /*
+   * null means revoked — the deployer can no longer mint or freeze. Coercing
+   * it to a string would invert the meaning and paint a safe token as
+   * dangerous; coercing the reverse would be far worse.
+   */
+  const s = toSecurity({ mintAuthority: null, freezeAuthority: null }, {});
+  assert.equal(s.mintAuthority, null);
+  assert.equal(s.freezeAuthority, null);
+});
+
+test("a live mint authority is preserved verbatim", () => {
+  const s = toSecurity(
+    { mintAuthority: "Deployer111", freezeAuthority: null },
+    {},
+  );
+  assert.equal(s.mintAuthority, "Deployer111");
+});
+
+test("LP lock comes from the summary, not the per-market report", () => {
+  // The full report has no top-level lpLockedPct; reading one defaulted to 0
+  // and claimed the pool could be drained when it could not.
+  const s = toSecurity(
+    { mintAuthority: null, freezeAuthority: null },
+    { lpLockedPct: 22.67 },
+  );
+  assert.equal(s.lpLockedPct, 22.67);
+});
+
+test("a missing summary leaves LP at zero rather than inventing a lock", () => {
+  // Erring toward "unlocked" is the safe direction: it warns on a token that
+  // may be fine, instead of reassuring on one that is not.
+  const s = toSecurity({ mintAuthority: null, freezeAuthority: null }, {});
+  assert.equal(s.lpLockedPct, 0);
+});
+
+test("holders default insider to false, never true", () => {
+  const s = toSecurity(
+    {
+      mintAuthority: null,
+      freezeAuthority: null,
+      topHolders: [{ address: "A1", pct: 8.2 }],
+    },
+    {},
+  );
+  assert.equal(s.topHolders[0].insider, false);
 });
