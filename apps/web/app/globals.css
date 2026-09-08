@@ -37,6 +37,32 @@
   --color-line: #262035;
   --color-hairline: #1e1a29;
 
+  /*
+   * Accent. Champagne cannot do this job — it is the body text colour, so
+   * anything painted with it disappears into the page. The terminal needs one
+   * hue that means "yours" and "act here": Polly, your own chart markers,
+   * focus rings, the primary button.
+   *
+   * Amber rather than the obvious orange, because it has to sit beside the
+   * up/down pair without competing with either.
+   */
+  --color-accent: #e2a445;
+
+  /* One surface step above panel, for controls that sit ON a panel. */
+  --color-raised: #241f31;
+
+  /*
+   * Identity colours for people and flocks, assigned by hashing the handle.
+   * Deliberately none of accent/up/down — a person's avatar must never read
+   * as a direction or as one of your own markers.
+   */
+  --color-id-violet: #9b7cf0;
+  --color-id-cyan: #4fc3d9;
+  --color-id-lime: #a3d94f;
+  --color-id-pink: #f07cb4;
+  --color-id-sky: #6ba8f0;
+  --color-id-coral: #f0906b;
+
   --font-display: var(--font-display), system-ui, sans-serif;
   --font-sans: var(--font-sans), system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, monospace;
