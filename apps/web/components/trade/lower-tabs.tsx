@@ -1,17 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { SQUAWKS, FLOCKS, POSITION, hueOf } from "@/lib/social/mock";
-import { usd, pct } from "@/lib/format";
+import { SQUAWKS, FLOCKS, hueOf } from "@/lib/social/mock";
+import { usePaperAccount } from "@/lib/account/store";
+import { usd, since } from "@/lib/format";
 import { Avatar } from "./avatar";
 import { Reactions } from "./reactions";
 
 /**
  * The panel under the chart: talk, tape, groups, your own trades.
  *
- * Squawks and Flocks are fixtures. "My trades" reads the fake position but
- * marks it live against the REAL price, so the P&L moves with the market —
- * which is the point of putting it here rather than in a static card.
+ * Squawks and Flocks are fixtures. "My trades" is not — it is the real fill
+ * history of the paper account, in the order it happened, with the price and
+ * fee actually charged.
  *
  * Parrot's Tape tab is omitted rather than faked. A fabricated tape sitting
  * under a real chart is the one place invented data would be mistaken for
@@ -21,7 +22,7 @@ import { Reactions } from "./reactions";
 
 type Tab = "squawks" | "flocks" | "mine";
 
-export function LowerTabs({ price }: { price: number | undefined }) {
+export function LowerTabs() {
   const [tab, setTab] = useState<Tab>("squawks");
 
   return (
@@ -109,30 +110,42 @@ export function LowerTabs({ price }: { price: number | undefined }) {
             </article>
           ))}
 
-        {tab === "mine" && <MyTrades price={price} />}
+        {tab === "mine" && <MyTrades />}
       </div>
     </div>
   );
 }
 
-function MyTrades({ price }: { price: number | undefined }) {
-  if (price === undefined) {
-    return <p className="p-4 text-center font-sans text-xs text-ash">Waiting for a price…</p>;
+function MyTrades() {
+  const { account, hydrated } = usePaperAccount();
+
+  if (!hydrated) {
+    return <p className="p-4 text-center font-sans text-xs text-ash">Reading your account…</p>;
   }
 
-  const { sizeSol, entryUsd } = POSITION;
-  const pnl = (price - entryUsd) * sizeSol;
-  const pnlPct = ((price - entryUsd) / entryUsd) * 100;
+  if (account.fills.length === 0) {
+    return (
+      <p className="p-4 text-center font-sans text-xs leading-relaxed text-ash">
+        No trades yet. You have {usd(account.usdc)} of paper money — buy something on the right,
+        or just tell Polly what you want.
+      </p>
+    );
+  }
+
+  /* Newest first. The engine appends, because a ledger is written forwards;
+     a human reads it backwards. */
+  const fills = [...account.fills].reverse();
+  const nowMs = Date.now();
 
   return (
     <table className="w-full border-collapse font-sans text-[11.5px]">
       <thead>
         <tr>
-          {["When", "Side", "Size", "Price", "Your squawk", "P&L"].map((h, i) => (
+          {["When", "Side", "Size", "Price", "Fee", "Your squawk", "Booked"].map((h, i) => (
             <th
               key={h}
               className={`bg-panel px-2.5 py-1.5 font-sans text-[9px] font-bold uppercase tracking-[0.1em] text-ash ${
-                i >= 2 && i !== 4 ? "text-right" : "text-left"
+                i >= 2 && i !== 5 ? "text-right" : "text-left"
               }`}
             >
               {h}
@@ -141,28 +154,44 @@ function MyTrades({ price }: { price: number | undefined }) {
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td className="whitespace-nowrap border-t border-hairline px-2.5 py-1.5 text-ash">
-            2h ago
-          </td>
-          <td className="border-t border-hairline px-2.5 py-1.5 text-up">Buy</td>
-          <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums">
-            {sizeSol} SOL
-          </td>
-          <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums">
-            {usd(entryUsd)}
-          </td>
-          <td className="border-t border-hairline px-2.5 py-1.5 text-ash">
-            Sized for a full loss. Out at 3× or if it breaks 150.
-          </td>
-          <td
-            className={`whitespace-nowrap border-t border-hairline px-2.5 py-1.5 text-right font-mono font-bold tabular-nums ${
-              pnl >= 0 ? "text-up" : "text-down"
-            }`}
-          >
-            {pnl >= 0 ? "+" : "−"}${Math.abs(pnl).toFixed(2)} ({pct(pnlPct, false)})
-          </td>
-        </tr>
+        {fills.map((f) => (
+          <tr key={f.id}>
+            <td className="whitespace-nowrap border-t border-hairline px-2.5 py-1.5 text-ash">
+              {since(f.ts, nowMs)} ago
+            </td>
+            <td
+              className={`border-t border-hairline px-2.5 py-1.5 ${
+                f.side === "buy" ? "text-up" : "text-down"
+              }`}
+            >
+              {f.side === "buy" ? "Buy" : "Sell"}
+              {f.source === "polly" && <span className="ml-1 text-ash">🦜</span>}
+            </td>
+            <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums">
+              {f.qty.toFixed(4)} SOL
+            </td>
+            <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums">
+              {usd(f.price)}
+            </td>
+            <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums text-ash">
+              {usd(f.feeUsd)}
+            </td>
+            <td className="border-t border-hairline px-2.5 py-1.5 text-ash">
+              {f.squawk || <span className="opacity-50">—</span>}
+            </td>
+            {/* Only a sell books anything. A buy shows nothing rather than
+                "$0.00", which would read as a trade that made no money. */}
+            <td
+              className={`whitespace-nowrap border-t border-hairline px-2.5 py-1.5 text-right font-mono font-bold tabular-nums ${
+                f.side === "buy" ? "text-ash" : f.realisedUsd >= 0 ? "text-up" : "text-down"
+              }`}
+            >
+              {f.side === "buy"
+                ? "—"
+                : `${f.realisedUsd >= 0 ? "+" : "−"}${usd(Math.abs(f.realisedUsd))}`}
+            </td>
+          </tr>
+        ))}
       </tbody>
     </table>
   );

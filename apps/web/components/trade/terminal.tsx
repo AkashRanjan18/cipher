@@ -9,6 +9,8 @@ import {
   subscribeCandles,
 } from "@/lib/market";
 import { usd, pct, compactUsd } from "@/lib/format";
+import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/account/store";
+import { equity } from "@/lib/account/paper";
 import { STRIP_ITEMS } from "@/lib/social/mock";
 import { PriceChart } from "./price-chart";
 import { Rail } from "./rail";
@@ -33,7 +35,20 @@ import { Polly } from "./polly";
  * This component owns the three things that change without a navigation: the
  * interval, the candle set, and the live price. Everything else is a child.
  */
-export function Terminal({
+export function Terminal(props: { initial: Candle[]; initialInterval: Interval }) {
+  /*
+   * The provider wraps the body rather than sitting inside it, because a
+   * component cannot consume a context it provides in the same render — and
+   * the header needs the balance.
+   */
+  return (
+    <PaperAccountProvider>
+      <TerminalBody {...props} />
+    </PaperAccountProvider>
+  );
+}
+
+function TerminalBody({
   initial,
   initialInterval,
 }: {
@@ -113,15 +128,10 @@ export function Terminal({
         </span>
 
         <span className="ml-auto rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 font-sans text-[9px] font-extrabold uppercase tracking-[0.1em] text-accent">
-          Demo social
+          Paper money
         </span>
 
-        <div className="hidden text-right sm:block">
-          <div className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
-            Bag
-          </div>
-          <div className="font-mono text-[13px] font-bold tabular-nums">—</div>
-        </div>
+        <Bag price={last} />
 
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent font-sans text-[11px] font-extrabold text-ink">
           AR
@@ -210,7 +220,7 @@ export function Terminal({
           </div>
 
           <div className="h-[210px] shrink-0">
-            <LowerTabs price={last} />
+            <LowerTabs />
           </div>
         </section>
 
@@ -231,6 +241,92 @@ export function Terminal({
       </div>
 
       <Polly price={last} />
+    </div>
+  );
+}
+
+/**
+ * The balance in the header. CASH AND TOTAL, never total alone.
+ *
+ * Total account value is the number a trader glances at, but it is the wrong
+ * number to show by itself the moment after a buy: dollars turn into SOL, so
+ * a $250 purchase moves it by the fee and nothing else. Shipped that way it
+ * read as "the buy did not register", and the honest response to that is to
+ * press buy again — which is exactly what happened, six times, for $1,507.
+ *
+ * Cash is the number that answers "did that come out of my account". It goes
+ * first, and it moves by the full amount.
+ *
+ * Both render "—" until the account is read out of storage. The server always
+ * renders the opening deposit, and flashing $10,000 before correcting to the
+ * real figure is, for one frame, the screen telling someone they have money
+ * they do not have.
+ */
+function Bag({ price }: { price: number | undefined }) {
+  const { account, hydrated, reset } = usePaperAccount();
+  const [confirming, setConfirming] = useState(false);
+
+  const value = hydrated && price ? equity(account, price) : null;
+  const ret = value === null ? null : ((value - account.depositedUsd) / account.depositedUsd) * 100;
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="hidden text-right sm:block">
+        <div className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
+          Cash
+        </div>
+        <div className="font-mono text-[13px] font-bold tabular-nums">
+          {hydrated ? usd(account.usdc) : "—"}
+        </div>
+      </div>
+
+      {/* Holdings, so the money that left cash is visibly somewhere rather
+          than just gone. Hidden when flat — an empty row is noise. */}
+      {hydrated && account.sol > 0 && (
+        <div className="hidden text-right md:block">
+          <div className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
+            SOL
+          </div>
+          <div className="font-mono text-[13px] font-bold tabular-nums">
+            {account.sol.toFixed(4)}
+          </div>
+        </div>
+      )}
+
+      <div className="hidden border-l border-line pl-3 text-right sm:block">
+        <div className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
+          Bag
+        </div>
+        <div className="font-mono text-[13px] font-bold tabular-nums">
+          {value === null ? "—" : usd(value)}
+          {ret !== null && (
+            <span className={`ml-1.5 text-[11px] ${ret >= 0 ? "text-up" : "text-down"}`}>
+              {pct(ret, false)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Two taps to wipe the account. One tap would be a $10,000 reset next to
+          a live P&L, which people would hit by accident exactly once. */}
+      <button
+        onClick={() => {
+          if (!confirming) {
+            setConfirming(true);
+            window.setTimeout(() => setConfirming(false), 4000);
+            return;
+          }
+          reset();
+          setConfirming(false);
+        }}
+        className={`rounded-lg border px-2 py-1 font-sans text-[9.5px] font-bold uppercase tracking-[0.08em] transition-colors ${
+          confirming
+            ? "border-down bg-down/15 text-down"
+            : "border-line text-ash hover:text-champagne"
+        }`}
+      >
+        {confirming ? `Wipe to $${OPENING_DEPOSIT / 1000}k?` : "Reset"}
+      </button>
     </div>
   );
 }

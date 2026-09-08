@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { OrderSpec } from "@cipher/shared";
 import { parseWithGrammar } from "@/lib/compiler/grammar";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
+import { usePaperAccount } from "@/lib/account/store";
+import { resolveQty } from "@/lib/account/paper";
 import { usd } from "@/lib/format";
 
 /**
@@ -25,6 +28,8 @@ interface Turn {
   text: string;
   /** Present when the sentence compiled into an order. */
   lines?: ReadbackLine[];
+  /** The spec behind those lines, so approving can execute the exact thing shown. */
+  spec?: OrderSpec;
   /** Set once the user has answered the card, so it stops asking. */
   resolved?: string;
 }
@@ -41,6 +46,7 @@ const COMMANDS: [string, string][] = [
 let nextId = 0;
 
 export function Polly({ price }: { price: number | undefined }) {
+  const { account, trade } = usePaperAccount();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
@@ -82,7 +88,8 @@ export function Polly({ price }: { price: number | undefined }) {
         mine: false,
         text:
           "Type it the way you'd say it — \"buy $500 of SOL, sell a third at 2x, stop the rest at -50%\". " +
-          "Anything that moves money comes back as a card you have to approve first. " +
+          "Anything that moves money comes back as a card you have to approve first, and " +
+          "approving it really does trade your paper balance. " +
           "I refuse rather than guess: if I only half-understood, you get nothing instead of a plausible-looking order.",
       });
       return;
@@ -131,11 +138,52 @@ export function Polly({ price }: { price: number | undefined }) {
       mine: false,
       text: "I read that as an order. Check it before it goes anywhere.",
       lines: readback(spec),
+      spec,
     });
   }
 
   function resolve(id: number, answer: string) {
     setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, resolved: answer } : t)));
+  }
+
+  /*
+   * Approving a card executes its ENTRY against the paper account, using the
+   * same engine the ticket uses, so a sentence and a button press are the
+   * same trade.
+   *
+   * The exits are deliberately not armed. There is no trigger engine yet, and
+   * a card that says "stop set at -50%" when nothing is watching the price is
+   * the single worst lie this product could tell — the user would size the
+   * position believing they are protected. So the entry fills and Polly says
+   * plainly that the exits did not arm.
+   */
+  function approve(t: Turn) {
+    const entry = t.spec?.entry;
+    if (!entry || !price) {
+      resolve(t.id, "No live price to fill against. Nothing happened.");
+      return;
+    }
+
+    const qty = resolveQty(entry.amount, entry.side, account, price);
+    if (qty === null) {
+      resolve(t.id, `I can't turn "${entry.amount.kind}" into a ${entry.side} size. Nothing happened.`);
+      return;
+    }
+
+    const r = trade({ side: entry.side, qty, mark: price, source: "polly" });
+    if ("refusal" in r) {
+      resolve(t.id, r.refusal);
+      return;
+    }
+
+    const exits = t.spec!.exits.length;
+    resolve(
+      t.id,
+      `Filled ${r.fill.qty.toFixed(4)} SOL at ${usd(r.fill.price)}, fee ${usd(r.fill.feeUsd)}.` +
+        (exits
+          ? ` The ${exits === 1 ? "exit" : `${exits} exits`} did NOT arm — there is no trigger engine yet, so nothing is watching the price. You are unhedged.`
+          : ""),
+    );
   }
 
   return (
@@ -183,20 +231,13 @@ export function Polly({ price }: { price: number | undefined }) {
                       ) : (
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button
-                            onClick={() =>
-                              resolve(
-                                t.id,
-                                `Staged, not sent — execution isn't wired up. On a live desk this fills near ${
-                                  price ? usd(price) : "the last price"
-                                }.`,
-                              )
-                            }
+                            onClick={() => approve(t)}
                             className="rounded-lg bg-accent px-3.5 py-2 font-sans text-[12.5px] font-bold text-ink hover:brightness-110"
                           >
                             Yep, do it
                           </button>
                           <button
-                            onClick={() => resolve(t.id, "Dropped it. Nothing staged.")}
+                            onClick={() => resolve(t.id, "Dropped it. Nothing happened.")}
                             className="rounded-lg border border-line px-3.5 py-2 font-sans text-[12.5px] font-bold text-ash hover:border-ash hover:text-champagne"
                           >
                             Never mind
@@ -274,7 +315,8 @@ export function Polly({ price }: { price: number | undefined }) {
 
       <div className="flex flex-wrap gap-4 px-1 pt-2 font-sans text-[10.5px] text-ash">
         <span>
-          Prices are live from Binance. Everything social on this screen is placeholder data.
+          Live Binance prices, real fees, <b className="text-champagne">paper money</b>. Handles
+          and squawks around them are placeholder.
         </span>
         <span>
           Hit <b className="text-champagne">/</b> anywhere to talk to Polly.

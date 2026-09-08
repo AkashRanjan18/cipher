@@ -9,8 +9,9 @@
  * fixtures were scattered inline through the components you would find them
  * for months, and some of them would ship.
  *
- * The chart, the price and the candles are REAL — Binance SOL/USDT. Only this
- * file is theatre, and the UI marks it as such.
+ * The chart, the price, the candles and YOUR OWN ACCOUNT are real — Binance
+ * SOL/USDT, and a paper ledger in lib/account that charges real fees and
+ * refuses to overdraw. Only this file is theatre, and the UI marks it as such.
  */
 
 export interface FlockTrade {
@@ -105,9 +106,6 @@ export const STRIP_ITEMS = [
   "🚀 <b>SOL</b> is the most-copied market today",
   "🩹 <b>@crayon</b> is down 61% and still posting",
 ];
-
-/** Your open position. Also invented. */
-export const POSITION = { sizeSol: 9.4, entryUsd: 171.2 };
 
 const HUES = [
   "var(--color-id-violet)",

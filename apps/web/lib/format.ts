@@ -26,7 +26,11 @@ function subDollarDecimals(n: number): number {
  */
 export function price(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0";
-  if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  /* minimumFractionDigits too, or an account balance renders "$9,497.5" —
+     toLocaleString trims the trailing zero, and money with one decimal place
+     reads as a typo on a screen where every other figure has two. */
+  if (n >= 1000)
+    return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (n >= 1) return n.toFixed(2);
   return n.toFixed(subDollarDecimals(n)).replace(/0+$/, "");
 }
