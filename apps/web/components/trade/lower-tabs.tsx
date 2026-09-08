@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SQUAWKS, FLOCKS, hueOf } from "@/lib/social/mock";
 import { usePaperAccount } from "@/lib/account/store";
+import { allInPrice } from "@/lib/account/paper";
 import { usd, since } from "@/lib/format";
 import { Avatar } from "./avatar";
 import { Reactions } from "./reactions";
@@ -11,8 +12,8 @@ import { Reactions } from "./reactions";
  * The panel under the chart: talk, tape, groups, your own trades.
  *
  * Squawks and Flocks are fixtures. "My trades" is not — it is the real fill
- * history of the paper account, in the order it happened, with the price and
- * fee actually charged.
+ * history of the paper account, in the order it happened, priced all-in so
+ * size times price is the cash that actually moved.
  *
  * Parrot's Tape tab is omitted rather than faked. A fabricated tape sitting
  * under a real chart is the one place invented data would be mistaken for
@@ -141,11 +142,11 @@ function MyTrades() {
     <table className="w-full border-collapse font-sans text-[11.5px]">
       <thead>
         <tr>
-          {["When", "Side", "Size", "Price", "Fee", "Your squawk", "Booked"].map((h, i) => (
+          {["When", "Side", "Size", "Price", "Your squawk", "Booked"].map((h, i) => (
             <th
               key={h}
               className={`bg-panel px-2.5 py-1.5 font-sans text-[9px] font-bold uppercase tracking-[0.1em] text-ash ${
-                i >= 2 && i !== 5 ? "text-right" : "text-left"
+                i >= 2 && i !== 4 ? "text-right" : "text-left"
               }`}
             >
               {h}
@@ -170,11 +171,9 @@ function MyTrades() {
             <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums">
               {f.qty.toFixed(4)} SOL
             </td>
+            {/* All-in, so size × price is the cash that actually moved. */}
             <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums">
-              {usd(f.price)}
-            </td>
-            <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums text-ash">
-              {usd(f.feeUsd)}
+              {usd(allInPrice(f))}
             </td>
             <td className="border-t border-hairline px-2.5 py-1.5 text-ash">
               {f.squawk || <span className="opacity-50">—</span>}

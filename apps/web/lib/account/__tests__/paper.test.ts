@@ -10,6 +10,7 @@ import {
   unrealised,
   resolveQty,
   maxBuyUsd,
+  allInPrice,
   type Account,
 } from "../paper.ts";
 
@@ -209,4 +210,27 @@ test("selling the exact position leaves nothing behind", () => {
   const { account: c } = fill(b, "sell", b.sol, 141.77);
   assert.equal(c.sol, 0);
   assert.equal(c.costBasis, 0);
+});
+
+test("the all-in price accounts for every dollar that moved", () => {
+  /*
+   * The UI itemises no fees, so the price it shows has to carry them. If
+   * size × price did not equal the cash that left the balance, the user would
+   * see a gap they could not explain — worse than either showing the fee or
+   * hiding it properly.
+   */
+  const a = openAccount(10_000);
+
+  const qb = quote(a, "buy", 10, 100);
+  assert.ok(Math.abs(10 * allInPrice(qb) - qb.cashUsd) < 1e-9, "a buy reconciles");
+  assert.ok(allInPrice(qb) > qb.price, "the buyer pays above the fill");
+
+  const { account: b } = fill(a, "buy", 10, 100);
+  const qs = quote(b, "sell", 10, 100);
+  assert.ok(Math.abs(10 * allInPrice(qs) - qs.cashUsd) < 1e-9, "a sell reconciles");
+  assert.ok(allInPrice(qs) < qs.price, "the seller receives below the fill");
+
+  // A fill has the same four fields, so the history reconciles the same way.
+  const { fill: f } = fill(a, "buy", 10, 100);
+  assert.equal(allInPrice(f), allInPrice(qb));
 });

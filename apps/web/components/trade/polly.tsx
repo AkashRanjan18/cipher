@@ -5,7 +5,7 @@ import type { OrderSpec } from "@cipher/shared";
 import { parseWithGrammar } from "@/lib/compiler/grammar";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
 import { usePaperAccount } from "@/lib/account/store";
-import { resolveQty } from "@/lib/account/paper";
+import { resolveQty, allInPrice } from "@/lib/account/paper";
 import { usd } from "@/lib/format";
 
 /**
@@ -179,7 +179,7 @@ export function Polly({ price }: { price: number | undefined }) {
     const exits = t.spec!.exits.length;
     resolve(
       t.id,
-      `Filled ${r.fill.qty.toFixed(4)} SOL at ${usd(r.fill.price)}, fee ${usd(r.fill.feeUsd)}.` +
+      `Filled ${r.fill.qty.toFixed(4)} SOL at ${usd(allInPrice(r.fill))}.` +
         (exits
           ? ` The ${exits === 1 ? "exit" : `${exits} exits`} did NOT arm — there is no trigger engine yet, so nothing is watching the price. You are unhedged.`
           : ""),
@@ -315,8 +315,8 @@ export function Polly({ price }: { price: number | undefined }) {
 
       <div className="flex flex-wrap gap-4 px-1 pt-2 font-sans text-[10.5px] text-ash">
         <span>
-          Live Binance prices, real fees, <b className="text-champagne">paper money</b>. Handles
-          and squawks around them are placeholder.
+          Live Binance prices, <b className="text-champagne">paper money</b>. Handles and
+          squawks around them are placeholder.
         </span>
         <span>
           Hit <b className="text-champagne">/</b> anywhere to talk to Polly.

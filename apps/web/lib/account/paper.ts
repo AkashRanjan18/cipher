@@ -114,6 +114,28 @@ export function fillPrice(mark: number, side: "buy" | "sell"): number {
   return side === "buy" ? mark * (1 + SPREAD_BPS / 10_000) : mark * (1 - SPREAD_BPS / 10_000);
 }
 
+/**
+ * The price with the commission already inside it.
+ *
+ * The UI does not itemise fees anywhere, so every price it shows has to be
+ * this one: quantity times all-in price is exactly the cash that moved.
+ * Quoting the raw fill price beside a balance that also moved by the fee
+ * leaves a gap the user can see and cannot explain, which is worse than
+ * either showing the fee or hiding it properly.
+ *
+ * Takes a Quote or a Fill — both carry the four fields it needs.
+ */
+export function allInPrice(t: {
+  side: "buy" | "sell";
+  qty: number;
+  price: number;
+  feeUsd: number;
+}): number {
+  if (!(t.qty > 0)) return t.price;
+  const notional = t.qty * t.price;
+  return (t.side === "buy" ? notional + t.feeUsd : notional - t.feeUsd) / t.qty;
+}
+
 /** Total account value, marked at the live price. */
 export function equity(a: Account, mark: number): number {
   return a.usdc + a.sol * mark;

@@ -2,58 +2,57 @@
 
 import { useState } from "react";
 import { usePaperAccount } from "@/lib/account/store";
-import { quote, fillPrice, maxBuyUsd, unrealised, equity } from "@/lib/account/paper";
+import {
+  quote,
+  fillPrice,
+  maxBuyUsd,
+  unrealised,
+  equity,
+  allInPrice,
+} from "@/lib/account/paper";
 import { usd, pct } from "@/lib/format";
 
 /**
- * The trade ticket.
+ * The trade ticket. Buy, sell, position. Nothing else.
  *
- * Parrot's shape, wired to the paper account. Pressing the button moves money:
- * the balance drops, the position appears, and the P&L on it is marked against
- * the live Binance price from that moment on.
+ * Stripped to the shape every serious terminal converges on — side, amount,
+ * presets, one button — because everything else that was here was asking the
+ * user a question they had not asked to be asked. Gone: the conviction
+ * picker (a multiplier on a number you already typed), the squawk box and the
+ * share toggle (social, and it belongs with the feed rather than in the path
+ * between a decision and a fill).
  *
- * Every number on this card comes from quote(), including the reason the
- * button is disabled. Computing the preview one way and the execution another
- * is how a screen promises one price and charges a different one.
+ * NO FEE IS ITEMISED ANYWHERE, by instruction. The commission is still
+ * charged — the ledger would not balance otherwise — so every price on this
+ * screen is quoted ALL-IN instead: the figure shown already contains it, and
+ * quantity times price equals the cash that actually moves. That is the only
+ * way to drop the line item without leaving a balance the user cannot
+ * reconcile against the numbers in front of them.
  *
- * Parrot's unlocked-liquidity warning is dropped. This market is SOL on
- * Binance; there is no pool to pull and no deployer. Showing that warning
- * against a major would train people to click through it, which is exactly
- * how a real warning stops working.
+ * Presets switch units with the side. Dollars are the wrong question on a
+ * sell — nobody thinks "$500 of my position", they think "half".
  */
 
 type Side = "buy" | "sell";
 
-const CONVICTION = [
-  { k: 0.25, emoji: "🐣", label: "Nibble" },
-  { k: 1, emoji: "🦜", label: "Normal" },
-  { k: 4, emoji: "🚀", label: "Send it" },
-] as const;
+const BUY_PRESETS = [10, 100, 500, 1000];
+const SELL_PRESETS = [25, 50, 75, 100];
 
 export function Ticket({ price }: { price: number | undefined }) {
   const { account, hydrated, trade } = usePaperAccount();
   const [side, setSide] = useState<Side>("buy");
-  const [amount, setAmount] = useState("250");
-  const [conviction, setConviction] = useState(1);
-  const [squawk, setSquawk] = useState("");
-  const [sharing, setSharing] = useState(true);
+  const [amount, setAmount] = useState("");
   const [receipt, setReceipt] = useState<{ ok: boolean; text: string } | null>(null);
   /*
-   * Set only by Max on a sell. "Sell everything" is a quantity instruction,
+   * Set only by the 100% preset. "Sell everything" is a quantity instruction,
    * and routing it through the USD box rounds it to the cent and converts it
-   * back, which leaves a few millionths of a SOL behind. Carrying the intent
-   * explicitly sells the exact position.
+   * back, leaving a few millionths of a SOL behind.
    */
   const [sellAll, setSellAll] = useState(false);
 
   const buying = side === "buy";
   const value = parseFloat(amount.replace(/,/g, "")) || 0;
 
-  /*
-   * The USD box is turned into a quantity through the FILL price, not the
-   * mark — $250 buys slightly less than $250/chart-price, and the ticket
-   * should say so before the trade rather than after it.
-   */
   const qty = !price ? 0 : sellAll && !buying ? account.sol : value / fillPrice(price, side);
   const q = price ? quote(account, side, qty, price) : null;
 
@@ -62,85 +61,99 @@ export function Ticket({ price }: { price: number | undefined }) {
      refusal about the wrong account. */
   const blocked = hydrated ? (q?.refusal ?? null) : null;
 
-  /*
-   * Conviction rescales the amount rather than replacing it. Someone who typed
-   * 250 and taps "Send it" means 4x what they were going to do, not a fixed
-   * house number — the multiplier has to compose with their own figure.
-   */
-  function pickConviction(k: number) {
-    setAmount(String(Math.max(1, Math.round((value / conviction) * k))));
-    setConviction(k);
-    setSellAll(false);
+  /** What you can spend on a buy, what the position is worth on a sell. */
+  const available =
+    !hydrated || !price
+      ? null
+      : buying
+        ? maxBuyUsd(account)
+        : account.sol * fillPrice(price, "sell");
+
+  function edit(v: string) {
+    if (v === "" || /^\d*\.?\d*$/.test(v)) {
+      setAmount(v);
+      setSellAll(false);
+    }
   }
 
-  /** Max is the whole balance on a buy, the whole position on a sell. */
-  function goMax() {
+  function preset(n: number) {
+    if (buying) {
+      setAmount(String(n));
+      setSellAll(false);
+      return;
+    }
     if (!price) return;
-    const max = buying ? maxBuyUsd(account) : account.sol * fillPrice(price, "sell");
-    setAmount(max.toFixed(2));
-    setConviction(1);
-    setSellAll(!buying);
+    // A percentage of the position, priced back into the box.
+    setAmount(((account.sol * fillPrice(price, "sell") * n) / 100).toFixed(2));
+    setSellAll(n === 100);
+  }
+
+  /** The available line is a button: tapping it spends or sells all of it. */
+  function useAvailable() {
+    if (available === null || available <= 0) return;
+    if (buying) {
+      setAmount(available.toFixed(2));
+      setSellAll(false);
+    } else {
+      preset(100);
+    }
   }
 
   function submit() {
     if (!price) return;
-    const r = trade({ side, qty, mark: price, squawk, source: "ticket" });
+    const before = account.usdc;
+    const cash = q?.cashUsd ?? 0;
+    const r = trade({ side, qty, mark: price, source: "ticket" });
     if ("refusal" in r) {
       setReceipt({ ok: false, text: r.refusal });
       return;
     }
     /*
-     * The receipt names the RESULTING CASH BALANCE, not just the fill.
-     *
-     * "Bought 2.4177 SOL at $103.40" does not answer the only question the
-     * user actually has after pressing the button, which is whether the money
-     * came out. Saying the new balance answers it in the same glance, and
-     * stops the button being pressed again to check.
+     * The receipt names the RESULTING CASH BALANCE, which is the only thing
+     * the user actually wants confirmed after pressing a button that moves
+     * money — and the all-in price, so quantity × price is exactly the cash
+     * that moved and nothing looks unaccounted for.
      */
-    const q2 = quote(account, side, qty, price);
-    const cashAfter = buying ? account.usdc - q2.cashUsd : account.usdc + q2.cashUsd;
     setSellAll(false);
+    setAmount("");
     setReceipt({
       ok: true,
       text:
-        `${buying ? "Bought" : "Sold"} ${r.fill.qty.toFixed(4)} SOL at ${usd(r.fill.price)}, ` +
-        `fee ${usd(r.fill.feeUsd)}. Cash is now ${usd(cashAfter)}.` +
+        `${buying ? "Bought" : "Sold"} ${r.fill.qty.toFixed(4)} SOL at ` +
+        `${usd(allInPrice(r.fill))}. Cash is now ${usd(buying ? before - cash : before + cash)}.` +
         (buying
           ? ""
-          : ` Booked ${r.fill.realisedUsd >= 0 ? "+" : "−"}${usd(Math.abs(r.fill.realisedUsd))}.`) +
-        (sharing && squawk.trim() ? " Your squawk went with it." : ""),
+          : ` Booked ${r.fill.realisedUsd >= 0 ? "+" : "−"}${usd(Math.abs(r.fill.realisedUsd))}.`),
     });
-    setSquawk("");
   }
 
   return (
     /*
      * [&>*]:shrink-0 on the children, not decoration.
      *
-     * This column scrolls, so flexbox is free to compress its children to
-     * make them fit — and a child carrying overflow-hidden has no content
-     * floor to push back with. The position card collapsed to 2.65px tall:
-     * present in the DOM, correct in every number, and invisible. Anything
-     * added to this column needs to keep its natural height and let the
-     * container scroll instead.
+     * This column scrolls, so flexbox is free to compress its children to fit
+     * — and a child carrying overflow-hidden has no content floor to push
+     * back with. The position card collapsed to 2.65px tall: present in the
+     * DOM, correct in every number, and invisible.
      */
     <div className="flex flex-col gap-2.5 overflow-y-auto rounded-2xl border border-line bg-panel p-3 [&>*]:shrink-0">
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-ink p-1">
+      <div className="grid grid-cols-2 gap-2">
         {(["buy", "sell"] as const).map((s) => (
           <button
             key={s}
             onClick={() => {
               setSide(s);
+              setAmount("");
               setSellAll(false);
               setReceipt(null);
             }}
             aria-pressed={side === s}
-            className={`rounded-lg py-2.5 font-display text-sm font-bold capitalize transition-colors ${
+            className={`rounded-xl border py-2.5 font-display text-[15px] font-bold capitalize transition-colors ${
               side === s
                 ? s === "buy"
-                  ? "bg-up text-ink"
-                  : "bg-down text-ink"
-                : "text-ash hover:text-champagne"
+                  ? "border-up/50 bg-up/15 text-up"
+                  : "border-down/50 bg-down/15 text-down"
+                : "border-line bg-slate text-ash hover:text-champagne"
             }`}
           >
             {s}
@@ -148,122 +161,50 @@ export function Ticket({ price }: { price: number | undefined }) {
         ))}
       </div>
 
-      {/* What you hold, directly under the side toggle. It sat at the bottom
-          of the card and was below the fold, so the one number that tells you
-          whether to press Buy or Sell was the one you had to scroll for. */}
-      <Position price={price} />
-
-      <div className="rounded-xl border border-line bg-slate px-3 py-2.5 focus-within:border-accent/50">
-        <div className="flex items-baseline justify-between">
-          <label
-            htmlFor="tk-amount"
-            className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash"
+      <div className="rounded-xl border border-line bg-slate px-3.5 py-3 focus-within:border-accent/50">
+        <div className="flex items-baseline gap-1.5">
+          <span
+            className={`font-display text-[30px] font-bold leading-none ${
+              value > 0 ? "text-champagne" : "text-ash"
+            }`}
           >
-            {buying ? "Amount to spend" : "Amount to sell"}
-          </label>
-          <button
-            onClick={goMax}
-            className="font-sans text-[10px] font-bold uppercase tracking-[0.08em] text-accent hover:brightness-125"
-          >
-            Max
-          </button>
-        </div>
-        <input
-          id="tk-amount"
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === "" || /^\d*\.?\d*$/.test(v)) {
-              setAmount(v);
-              setSellAll(false);
-            }
-          }}
-          className="w-full bg-transparent font-display text-[27px] font-bold tabular-nums text-champagne focus:outline-none"
-        />
-        <div className="flex justify-between font-sans text-[11px] text-ash">
-          <span>USD</span>
-          <span className="font-mono tabular-nums">
-            {price ? `≈ ${qty.toFixed(4)} SOL` : "—"}
+            $
+          </span>
+          <input
+            id="tk-amount"
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => edit(e.target.value)}
+            placeholder="0"
+            aria-label={buying ? "Amount to spend in dollars" : "Amount to sell in dollars"}
+            className="min-w-0 flex-1 bg-transparent font-display text-[30px] font-bold leading-none tabular-nums text-champagne placeholder:text-ash focus:outline-none"
+          />
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-ash">
+            {price && qty > 0 ? `${qty.toFixed(4)} SOL` : "Enter amount"}
           </span>
         </div>
       </div>
 
-      <div>
-        <div className="mb-1.5 font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
-          How sure are you?
-        </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          {CONVICTION.map((c) => (
-            <button
-              key={c.k}
-              onClick={() => pickConviction(c.k)}
-              aria-pressed={conviction === c.k}
-              className={`flex flex-col items-center gap-0.5 rounded-xl border py-1.5 font-sans text-[11px] font-bold transition-colors ${
-                conviction === c.k
-                  ? "border-accent bg-accent/15 text-accent"
-                  : "border-line bg-slate text-ash hover:text-champagne"
-              }`}
-            >
-              <span className="text-[15px] leading-none">{c.emoji}</span>
-              {c.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-line bg-slate px-3 py-2 focus-within:border-accent/50">
-        <label
-          htmlFor="tk-squawk"
-          className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash"
-        >
-          Your squawk
-        </label>
-        <textarea
-          id="tk-squawk"
-          value={squawk}
-          onChange={(e) => setSquawk(e.target.value)}
-          placeholder="Why are you doing this? It gets saved with the fill."
-          className="min-h-[30px] w-full resize-none bg-transparent font-sans text-xs leading-snug text-champagne placeholder:text-ash focus:outline-none"
-        />
-        <div className="mt-1.5 flex items-center gap-2 border-t border-hairline pt-1.5 font-sans text-[11px] text-ash">
+      <div className="flex items-center gap-1.5">
+        {(buying ? BUY_PRESETS : SELL_PRESETS).map((n) => (
           <button
-            onClick={() => setSharing((v) => !v)}
-            aria-pressed={sharing}
-            aria-label="Share this trade with your flock"
-            className={`relative h-[18px] w-8 shrink-0 rounded-full transition-colors ${
-              sharing ? "bg-accent" : "bg-raised"
-            }`}
+            key={n}
+            onClick={() => preset(n)}
+            className="flex-1 rounded-lg border border-line bg-slate py-1.5 font-sans text-[11.5px] font-bold text-champagne transition-colors hover:border-ash"
           >
-            <span
-              className={`absolute left-0 top-0.5 h-3.5 w-3.5 rounded-full transition-transform ${
-                sharing ? "translate-x-[16px] bg-ink" : "translate-x-[2px] bg-ash"
-              }`}
-            />
+            {buying ? `$${n}` : `${n}%`}
           </button>
-          {sharing ? (
-            <span>
-              Sharing with <b className="text-champagne">Chart Goblins</b> · 24 people
-            </span>
-          ) : (
-            <span>Trading quietly. Nobody sees this one.</span>
-          )}
-        </div>
+        ))}
       </div>
 
-      {/* Costs, straight off the quote — not a second formula that agrees by luck. */}
-      <dl className="flex flex-col gap-1.5 px-0.5 font-sans text-[11.5px]">
-        {[
-          ["Your fill", q ? usd(q.price) : "—"],
-          ["Fee", q ? usd(q.feeUsd) : "—"],
-          [buying ? "Total cost" : "You receive", q ? usd(q.cashUsd) : "—"],
-        ].map(([k, v]) => (
-          <div key={k} className="flex justify-between">
-            <dt className="text-ash">{k}</dt>
-            <dd className="font-mono tabular-nums text-champagne">{v}</dd>
-          </div>
-        ))}
-      </dl>
+      {/* What you can actually use, and a one-tap way to use all of it. */}
+      <button
+        onClick={useAvailable}
+        disabled={available === null || available <= 0}
+        className="-mt-0.5 self-start font-sans text-[11.5px] text-accent transition-[filter] hover:brightness-125 disabled:text-ash"
+      >
+        {available === null ? "—" : `${usd(available)} available`}
+      </button>
 
       <button
         disabled={!price || !!blocked || value <= 0}
@@ -272,13 +213,11 @@ export function Ticket({ price }: { price: number | undefined }) {
           buying ? "bg-up text-ink" : "bg-down text-ink"
         }`}
       >
-        {value > 0
-          ? `${buying ? "Buy" : "Sell"} $${value.toLocaleString("en-US")} of SOL`
-          : `Enter an amount to ${side}`}
+        {buying ? "Buy" : "Sell"} SOL
       </button>
 
-      {/* The refusal is shown even while the button is disabled, because a
-          dead button with no reason beside it is the worst state a ticket has. */}
+      {/* The refusal shows even while the button is disabled — a dead button
+          with no reason beside it is the worst state a ticket has. */}
       {blocked && value > 0 && (
         <p className="rounded-xl border border-down/40 bg-down/10 px-3 py-2 font-sans text-[11.5px] leading-relaxed text-champagne">
           {blocked}
@@ -295,20 +234,21 @@ export function Ticket({ price }: { price: number | undefined }) {
         </p>
       )}
 
+      <Position price={price} />
     </div>
   );
 }
 
 /**
- * The position card, read from the account rather than a fixture.
+ * The position, under the ticket.
  *
- * Break-even is shown next to the entry because the entry alone is misleading
- * — the cost basis already carries the buy fee, and the sell fee is still to
- * come, so the price that gets you out flat is above the price you paid.
+ * "Cost basis" rather than "entry", because it is already all-in — it is the
+ * price the market has to reach for a sale to break even, which is the number
+ * that matters and is not quite the price on the chart when you bought.
  */
 function Position({ price }: { price: number | undefined }) {
   const { account, hydrated } = usePaperAccount();
-  const { sol, costBasis, usdc, realisedUsd, feesUsd } = account;
+  const { sol, costBasis, usdc, realisedUsd } = account;
 
   const open = sol > 0;
   const pnl = price && open ? unrealised(account, price) : 0;
@@ -347,24 +287,23 @@ function Position({ price }: { price: number | undefined }) {
         {open && (
           <div className="flex justify-between">
             <dt className="text-ash">Open P&amp;L</dt>
-            <dd
-              className={`font-mono font-bold tabular-nums ${pnl >= 0 ? "text-up" : "text-down"}`}
-            >
+            <dd className={`font-mono font-bold tabular-nums ${pnl >= 0 ? "text-up" : "text-down"}`}>
               {pnl >= 0 ? "+" : "−"}
               {usd(Math.abs(pnl))} ({pct(pnlPct, false)})
             </dd>
           </div>
         )}
 
-        {hydrated && (realisedUsd !== 0 || feesUsd > 0) && (
+        {hydrated && realisedUsd !== 0 && (
           <div className="flex justify-between border-t border-hairline pt-1.5">
-            <dt className="text-ash">Booked · fees paid</dt>
-            <dd className="font-mono tabular-nums">
-              <span className={realisedUsd >= 0 ? "text-up" : "text-down"}>
-                {realisedUsd >= 0 ? "+" : "−"}
-                {usd(Math.abs(realisedUsd))}
-              </span>
-              <span className="text-ash"> · {usd(feesUsd)}</span>
+            <dt className="text-ash">Booked</dt>
+            <dd
+              className={`font-mono font-bold tabular-nums ${
+                realisedUsd >= 0 ? "text-up" : "text-down"
+              }`}
+            >
+              {realisedUsd >= 0 ? "+" : "−"}
+              {usd(Math.abs(realisedUsd))}
             </dd>
           </div>
         )}
