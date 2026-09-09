@@ -136,7 +136,7 @@ export function Ticket({ price }: { price: number | undefined }) {
      * back with. The position card collapsed to 2.65px tall: present in the
      * DOM, correct in every number, and invisible.
      */
-    <div className="flex flex-col gap-2.5 overflow-y-auto rounded-2xl border border-line bg-panel p-3 [&>*]:shrink-0">
+    <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto rounded-2xl border border-line bg-panel p-3 [&>*]:shrink-0">
       <div className="grid grid-cols-2 gap-2">
         {(["buy", "sell"] as const).map((s) => (
           <button

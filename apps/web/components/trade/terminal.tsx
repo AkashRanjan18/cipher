@@ -17,6 +17,7 @@ import { Rail } from "./rail";
 import { LowerTabs } from "./lower-tabs";
 import { Ticket } from "./ticket";
 import { Polly } from "./polly";
+import { Flow } from "./flow";
 
 /**
  * The terminal shell.
@@ -181,31 +182,56 @@ function TerminalBody({
             </div>
             {pending && <span className="font-mono text-[10.5px] text-ash">loading…</span>}
 
-            <div className="ml-auto flex items-center gap-3">
+            {/*
+              * Boxed, not loose text.
+              *
+              * These three sat unbordered in the header and read as labels
+              * rather than as live figures — fomo boxes the same numbers and
+              * that alone is most of why theirs looks instrumented. A border
+              * and a raised surface say "this is a reading".
+              *
+              * Values are full champagne, not a dimmed variant. Nothing on
+              * the page was ever at full brightness, which is what made the
+              * whole screen read as flat.
+              */}
+            <div className="ml-auto flex items-center gap-1.5">
               {(
                 [
                   ["Price", last ? usd(last) : "—"],
                   ["24h", change === null ? "—" : pct(change, false)],
                   ["24h vol", compactUsd(dayVolumeUsd)],
                 ] as [string, string][]
-              ).map(([k, v], i) => (
-                <div key={k} className="text-right">
-                  <div className="font-sans text-[9px] font-bold uppercase tracking-[0.1em] text-ash">
-                    {k}
-                  </div>
+              ).map(([k, v], i) => {
+                const dir =
+                  i === 1 && change !== null ? (change >= 0 ? "up" : "down") : null;
+                return (
                   <div
-                    className={`font-mono text-[13px] font-bold leading-tight tabular-nums ${
-                      i === 1 && change !== null
-                        ? change >= 0
-                          ? "text-up"
-                          : "text-down"
-                        : ""
+                    key={k}
+                    className={`min-w-[74px] rounded-lg border px-2.5 py-1 text-right ${
+                      dir === "up"
+                        ? "border-up/30 bg-up/10"
+                        : dir === "down"
+                          ? "border-down/30 bg-down/10"
+                          : "border-line bg-raised"
                     }`}
                   >
-                    {v}
+                    <div className="font-sans text-[8.5px] font-bold uppercase tracking-[0.11em] text-ash">
+                      {k}
+                    </div>
+                    <div
+                      className={`font-mono text-[13.5px] font-bold leading-tight tabular-nums ${
+                        dir === "up"
+                          ? "text-up"
+                          : dir === "down"
+                            ? "text-down"
+                            : "text-champagne"
+                      }`}
+                    >
+                      {v}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -222,8 +248,15 @@ function TerminalBody({
           </div>
         </section>
 
+        {/* The column ended at the account box and left a third of the
+            screen empty. Flow fills it with the only data visualisation on
+            the page outside the chart itself. */}
+        {/* No overflow here — Ticket is its own scroll container. Nesting a
+            second one let flexbox compress it, and its internal overflow then
+            clipped the account panel mid-row. */}
         <aside className="flex min-h-0 flex-col">
           <Ticket price={last} />
+          <Flow candles={candles} last={last} />
         </aside>
       </div>
 
