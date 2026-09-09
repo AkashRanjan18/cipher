@@ -47,7 +47,14 @@ const COMMANDS: [string, string][] = [
 
 let nextId = 0;
 
-export function Polly({ price }: { price: number | undefined }) {
+export function Polly({
+  price,
+  market = "SOL",
+}: {
+  price: number | undefined;
+  /** The open market, so the chip names what a prompt would actually trade. */
+  market?: string;
+}) {
   const { account, trade } = usePaperAccount();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
@@ -314,7 +321,7 @@ export function Polly({ price }: { price: number | undefined }) {
           className="flex items-center gap-2.5 rounded-xl bg-champagne py-2 pl-3 pr-2 shadow-lg shadow-black/30 ring-1 ring-black/10 focus-within:ring-4 focus-within:ring-accent"
         >
           <span className="shrink-0 rounded-lg bg-ink/10 px-2 py-1 font-mono text-[11px] text-ink/60">
-            <b className="font-bold text-ink">SOL</b>/USDT
+            <b className="font-bold text-ink">{market}</b>/USDT
           </span>
           <input
             ref={inputRef}

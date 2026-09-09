@@ -68,12 +68,21 @@ export function PriceChart({
   candles,
   livePrice,
   barSeconds,
+  showMarks = true,
+  showThesis = true,
+  friendsOnly = false,
+  minSize = false,
 }: {
   candles: Candle[];
   /** Latest traded price, from the shared poll. Folds into the forming bar. */
   livePrice?: number;
   /** Seconds per bar, so "now" can be placed in the right bucket. */
   barSeconds: number;
+  /** The four overlay checkboxes in the header. */
+  showMarks?: boolean;
+  showThesis?: boolean;
+  friendsOnly?: boolean;
+  minSize?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -281,7 +290,14 @@ export function PriceChart({
    * the data lands.
    */
   const [marks, setMarks] = useState<
-    { key: string; who: string; side: "buy" | "sell"; x: number; y: number }[]
+    {
+      key: string;
+      who: string;
+      side: "buy" | "sell";
+      note: string;
+      x: number;
+      y: number;
+    }[]
   >([]);
 
   const placeMarks = useCallback(() => {
@@ -292,11 +308,31 @@ export function PriceChart({
     const ts = c.timeScale();
     const next: typeof marks = [];
 
-    // The pane's own height, to keep a marker inside it — see the clamp below.
-    const height = box.current?.clientHeight ?? 0;
+    /*
+     * The PRICE pane's bounds, which are not the container's.
+     *
+     * Two bands sit below the candles: the volume histogram takes the bottom
+     * fifth (scaleMargins in CREATE), and the time axis takes its own strip
+     * under that. Clamping to clientHeight pinned every marker on a low bar
+     * into a row lying across the axis labels — eight faces stacked on the
+     * dates, which looked like a bug because it was one.
+     */
     const PAD = 14;
+    const axis = ts.height();
+    const priceBottom = (box.current?.clientHeight ?? 0) - axis;
+    // 0.8 is the volume band's top edge; see scaleMargins in the CREATE effect.
+    const floor = priceBottom * 0.8 - PAD;
 
     for (const m of CHART_MARKS) {
+      /*
+       * The header's overlay checkboxes, applied here rather than in the
+       * render — a filtered mark should never be positioned at all, and
+       * computing coordinates for something that will not be drawn is work
+       * repeated on every pan.
+       */
+      if (friendsOnly && !m.friend) continue;
+      if (minSize && m.amountUsd < 1000) continue;
+
       const bar = candles[Math.round(m.at * (candles.length - 1))];
       if (!bar) continue;
 
@@ -313,18 +349,19 @@ export function PriceChart({
        * it on the candle's side of the chart and inside the frame.
        */
       const offY = Number(y) + (m.side === "buy" ? 16 : -16);
-      const clamped = Math.min(Math.max(offY, PAD), height - PAD);
+      const clamped = Math.min(Math.max(offY, PAD), floor);
 
       next.push({
         key: `${m.who}${m.at}`,
         who: m.who,
         side: m.side,
+        note: m.note,
         x: Number(x),
         y: clamped,
       });
     }
     setMarks(next);
-  }, [candles]);
+  }, [candles, friendsOnly, minSize]);
 
   useEffect(() => {
     const c = chart.current;
@@ -353,24 +390,34 @@ export function PriceChart({
         pointer-events-none on the layer: it covers the whole canvas, and
         swallowing the mouse would kill the crosshair and the drag-to-pan.
       */}
-      <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
-        {marks.map((m) => (
-          <span
-            key={m.key}
-            className="absolute -translate-x-1/2 -translate-y-1/2"
-            style={{ left: m.x, top: m.y }}
-          >
+      {showMarks && (
+        <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
+          {marks.map((m) => (
             <span
-              className="block rounded-full p-[1.5px]"
-              style={{
-                background: m.side === "buy" ? "var(--color-up)" : "var(--color-down)",
-              }}
+              key={m.key}
+              className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1"
+              style={{ left: m.x, top: m.y }}
             >
-              <Avatar who={m.who} size={20} />
+              <span
+                className="block shrink-0 rounded-full p-[1.5px]"
+                style={{
+                  background: m.side === "buy" ? "var(--color-up)" : "var(--color-down)",
+                }}
+              >
+                <Avatar who={m.who} size={20} />
+              </span>
+              {/* The thesis. This is the whole reason to put people on a chart
+                  rather than plain markers — a face says someone traded, the
+                  note says why, and only the second one is worth reading. */}
+              {showThesis && m.note && (
+                <span className="whitespace-nowrap rounded bg-ink/85 px-1.5 py-px font-sans text-[9.5px] text-champagne backdrop-blur-sm">
+                  {m.note}
+                </span>
+              )}
             </span>
-          </span>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {legend && (
         /* pointer-events-none: the legend sits over the canvas, and swallowing

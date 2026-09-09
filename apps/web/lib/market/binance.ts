@@ -17,6 +17,13 @@ import type { Candle, Interval } from "./types";
 const REST = "https://api.binance.com/api/v3/klines";
 const STREAM = "wss://stream.binance.com:9443/ws";
 
+/**
+ * The market the terminal opens on.
+ *
+ * Still a default, no longer the only one — every function below now takes a
+ * symbol. The left panel is a navigator, and a navigator cannot exist while
+ * the pair is baked into the fetch.
+ */
 export const SYMBOL = "SOLUSDT";
 
 /** Bar length in seconds, so the chart can bucket "now" correctly. */
@@ -45,9 +52,10 @@ type Kline = [number, string, string, string, string, string, ...unknown[]];
 export async function fetchCandles(
   interval: Interval = "1h",
   limit = 1000,
+  symbol: string = SYMBOL,
 ): Promise<Candle[]> {
   const res = await fetch(
-    `${REST}?symbol=${SYMBOL}&interval=${interval}&limit=${limit}`,
+    `${REST}?symbol=${symbol}&interval=${interval}&limit=${limit}`,
     {
       headers: { Accept: "application/json" },
       // Half a bar. Revalidating faster re-fetches a candle that has not
@@ -96,6 +104,7 @@ interface KlineMessage {
 export function subscribeCandles(
   interval: Interval,
   onCandle: (c: Candle) => void,
+  symbol: string = SYMBOL,
 ): () => void {
   let socket: WebSocket | null = null;
   let retry: ReturnType<typeof setTimeout> | null = null;
@@ -105,7 +114,7 @@ export function subscribeCandles(
   const connect = () => {
     if (stopped) return;
     socket = new WebSocket(
-      `${STREAM}/${SYMBOL.toLowerCase()}@kline_${interval}`,
+      `${STREAM}/${symbol.toLowerCase()}@kline_${interval}`,
     );
 
     socket.onopen = () => {

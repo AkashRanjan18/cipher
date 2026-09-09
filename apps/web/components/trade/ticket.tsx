@@ -38,7 +38,14 @@ type Side = "buy" | "sell";
 const BUY_PRESETS = [10, 100, 500, 1000];
 const SELL_PRESETS = [25, 50, 75, 100];
 
-export function Ticket({ price }: { price: number | undefined }) {
+export function Ticket({
+  price,
+  market = "SOL",
+}: {
+  price: number | undefined;
+  /** The market the chart is showing. See tradable below. */
+  market?: string;
+}) {
   const { account, hydrated, trade } = usePaperAccount();
   const [side, setSide] = useState<Side>("buy");
   const [amount, setAmount] = useState("");
@@ -49,6 +56,21 @@ export function Ticket({ price }: { price: number | undefined }) {
    * back, leaving a few millionths of a SOL behind.
    */
   const [sellAll, setSellAll] = useState(false);
+
+  /*
+   * The ledger holds ONE asset.
+   *
+   * The left panel became a navigator, so the chart can now show BTC — but
+   * lib/account/paper.ts keeps a single `sol` balance with a single cost
+   * basis. Buying while another market is open would credit SOL at BTC's
+   * price and silently corrupt every downstream number: the position card,
+   * the P&L, the equity in the header.
+   *
+   * Refusing is the honest version, and it is two lines. The fix is the one
+   * paper.ts already names — holdings becomes a map keyed by mint — and it is
+   * a real piece of work, not something to slip in behind a layout change.
+   */
+  const tradable = market === "SOL";
 
   const buying = side === "buy";
   const value = parseFloat(amount.replace(/,/g, "")) || 0;
@@ -207,13 +229,17 @@ export function Ticket({ price }: { price: number | undefined }) {
       </button>
 
       <button
-        disabled={!price || !!blocked || value <= 0}
+        disabled={!tradable || !price || !!blocked || value <= 0}
         onClick={submit}
         className={`rounded-xl py-3 font-display text-[15px] font-bold transition-transform active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-40 ${
-          buying ? "bg-up text-ink" : "bg-down text-ink"
+          !tradable
+            ? "cursor-not-allowed bg-raised text-mute"
+            : buying
+              ? "bg-up text-ink"
+              : "bg-down text-ink"
         }`}
       >
-        {buying ? "Buy" : "Sell"} SOL
+        {tradable ? `${buying ? "Buy" : "Sell"} SOL` : `${market} is chart-only`}
       </button>
 
       {/* The refusal shows even while the button is disabled — a dead button

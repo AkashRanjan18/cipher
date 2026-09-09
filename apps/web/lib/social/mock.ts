@@ -52,6 +52,10 @@ export interface ChartMark {
   who: string;
   side: "buy" | "sell";
   amountUsd: number;
+  /** In one of your flocks. Drives the "Friends only" overlay. */
+  friend: boolean;
+  /** Why they did it. Drives the "Thesis" overlay. */
+  note: string;
 }
 
 export const FLOCK_TRADES: FlockTrade[] = [
@@ -103,14 +107,14 @@ export const LEADERS: { who: string; pnl: string; wins: string; medal: string }[
  * point of putting faces on the chart is that the history looks inhabited.
  */
 export const CHART_MARKS: ChartMark[] = [
-  { at: 0.16, who: "unipcs", side: "buy", amountUsd: 12_000 },
-  { at: 0.29, who: "kaito", side: "buy", amountUsd: 300 },
-  { at: 0.41, who: "crayon", side: "sell", amountUsd: 1_400 },
-  { at: 0.54, who: "mochi", side: "buy", amountUsd: 420 },
-  { at: 0.66, who: "ogle", side: "buy", amountUsd: 5_100 },
-  { at: 0.78, who: "you", side: "buy", amountUsd: 250 },
-  { at: 0.88, who: "vex", side: "sell", amountUsd: 900 },
-  { at: 0.96, who: "kaito", side: "sell", amountUsd: 780 },
+  { at: 0.16, who: "unipcs", side: "buy", amountUsd: 12_000, friend: false, note: "180 holds" },
+  { at: 0.29, who: "kaito", side: "buy", amountUsd: 300, friend: true, note: "sized to not care" },
+  { at: 0.41, who: "crayon", side: "sell", amountUsd: 1_400, friend: true, note: "chart looked done" },
+  { at: 0.54, who: "mochi", side: "buy", amountUsd: 420, friend: true, note: "deployer is clean" },
+  { at: 0.66, who: "ogle", side: "buy", amountUsd: 5_100, friend: false, note: "adding here" },
+  { at: 0.78, who: "you", side: "buy", amountUsd: 250, friend: true, note: "" },
+  { at: 0.88, who: "vex", side: "sell", amountUsd: 900, friend: true, note: "free ride off" },
+  { at: 0.96, who: "kaito", side: "sell", amountUsd: 780, friend: true, note: "taking the rest" },
 ];
 
 export const STRIP_ITEMS = [

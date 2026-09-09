@@ -2,18 +2,16 @@
 
 import { useEffect, useState, useTransition } from "react";
 import type { Candle, Interval } from "@/lib/market";
-import {
-  SYMBOL,
-  INTERVAL_ORDER,
-  intervalSeconds,
-  subscribeCandles,
-} from "@/lib/market";
-import { usd, pct, compactUsd } from "@/lib/format";
+import { SYMBOL, intervalSeconds, subscribeCandles, marketOf } from "@/lib/market";
+import { usd, pct } from "@/lib/format";
 import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/account/store";
 import { equity } from "@/lib/account/paper";
-import { STRIP_ITEMS } from "@/lib/social/mock";
 import { PriceChart } from "./price-chart";
-import { Rail } from "./rail";
+import { SidePanel } from "./side-panel";
+import { ChartHeader, DEFAULT_OVERLAYS, type Overlays } from "./chart-header";
+import { MarketSearch } from "./market-search";
+import { StatusBar } from "./status-bar";
+import { useMajors } from "./use-majors";
 import { LowerTabs } from "./lower-tabs";
 import { Ticket } from "./ticket";
 import { Polly } from "./polly";
@@ -22,19 +20,21 @@ import { Flow } from "./flow";
 /**
  * The terminal shell.
  *
- * Layout is Parrot's: header, then a three-column body (flock rail, chart with
- * a panel under it, ticket), then a social strip, then Polly along the bottom.
- * That arrangement is why the design works — the social layer is never a tab
- * you go to, it sits beside the chart the whole time.
+ * Layout is fomo's: header with a centred search, a three-column body (market
+ * navigator, chart, ticket), and a status bar carrying live prices along the
+ * bottom. The social layer is never a tab you go to — it sits beside the chart
+ * the whole time, which is the arrangement that makes the design work.
  *
- * Two departures from the source. Parrot's market switcher and watchlist are
- * gone, because cipher runs one market and a selector with one option is a
- * control that does nothing. And the chart stays lightweight-charts rather
- * than Parrot's hand-rolled canvas — it already carries real candles, a live
- * websocket, zoom, pan and a crosshair, none of which the canvas version has.
+ * The right column is cipher's and stays cipher's: the ticket, the flow panel,
+ * and Polly along the bottom. That is where the product differs, so that is
+ * where the layout should.
  *
- * This component owns the three things that change without a navigation: the
- * interval, the candle set, and the live price. Everything else is a child.
+ * This component owns the five things that change without a navigation: the
+ * MARKET, the interval, the candle set, the live price, and the layout split.
+ * Everything else is a child. The market lives here rather than in the panel
+ * that selects it because the chart, the header, the ticket and the websocket
+ * all read it — a panel owning it would have to push it up through three
+ * components on every click.
  */
 export function Terminal(props: { initial: Candle[]; initialInterval: Interval }) {
   /*
@@ -56,24 +56,32 @@ function TerminalBody({
   initial: Candle[];
   initialInterval: Interval;
 }) {
+  const [symbol, setSymbol] = useState<string>(SYMBOL);
   const [interval, setInterval] = useState<Interval>(initialInterval);
   const [candles, setCandles] = useState<Candle[]>(initial);
   const [live, setLive] = useState<number | undefined>(undefined);
+  const [depth, setDepth] = useState<number | null>(null);
+  const [overlays, setOverlays] = useState<Overlays>(DEFAULT_OVERLAYS);
+  const [split, setSplit] = useState<"bottom" | "right">("bottom");
+  const [panelOpen, setPanelOpen] = useState(true);
   const [pending, startTransition] = useTransition();
 
+  const market = marketOf(symbol);
+  const majors = useMajors();
+
   /*
-   * Refetch on interval change — but not on mount, because the server already
-   * fetched this exact set and refetching would blank the chart for one round
-   * trip on every page load.
+   * Refetch when the market or the interval changes — but not on mount for
+   * the pair the server already fetched, because refetching that would blank
+   * the chart for one round trip on every page load.
    */
   useEffect(() => {
-    if (interval === initialInterval) {
+    if (symbol === SYMBOL && interval === initialInterval) {
       setCandles(initial);
       return;
     }
     let alive = true;
     startTransition(async () => {
-      const res = await fetch(`/api/candles?interval=${interval}`);
+      const res = await fetch(`/api/candles?symbol=${symbol}&interval=${interval}`);
       if (!res.ok || !alive) return;
       const { candles: next } = (await res.json()) as { candles: Candle[] };
       if (alive) setCandles(next);
@@ -81,12 +89,52 @@ function TerminalBody({
     return () => {
       alive = false;
     };
-  }, [interval, initial, initialInterval]);
+  }, [symbol, interval, initial, initialInterval]);
 
-  // Live bars pushed over a websocket. Resubscribes per interval.
-  useEffect(() => subscribeCandles(interval, (c) => setLive(c.close)), [interval]);
+  /*
+   * Drop the live price the moment the market changes.
+   *
+   * Without this, BTC's $78,000 stays in `live` until the first SOL tick
+   * arrives — and `live` is what the ticket prices a buy at. For a few hundred
+   * milliseconds after every row click, the buy button would size a position
+   * off the previous market's price.
+   */
+  useEffect(() => setLive(undefined), [symbol]);
+
+  // Live bars pushed over a websocket. Resubscribes per market and interval.
+  useEffect(
+    () => subscribeCandles(interval, (c) => setLive(c.close), symbol),
+    [interval, symbol],
+  );
+
+  /* Book depth for the Liquidity reading. Polled slowly — it is a context
+     number, not something anyone trades off tick by tick. */
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/depth?symbol=${symbol}`);
+        if (!res.ok) return;
+        const { depthUsd } = (await res.json()) as { depthUsd: number };
+        if (alive) setDepth(depthUsd);
+      } catch {
+        /* Keep the last reading rather than blanking the box. */
+      }
+    };
+    setDepth(null);
+    load();
+    const id = window.setInterval(load, 20_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [symbol]);
 
   const last = live ?? candles[candles.length - 1]?.close;
+
+  /* Cap for the open market, from the same supply table the list uses — so
+     the header and the row a click arrived from cannot disagree. */
+  const marketCap = last ? last * market.supply : null;
 
   /*
    * A real 24-hour change, found by walking back to the bar closest to 24h
@@ -121,14 +169,18 @@ function TerminalBody({
     <div className="flex h-dvh flex-col gap-2 overflow-hidden bg-ink p-2">
       {/* ---------------- header ---------------- */}
       <header className="flex shrink-0 items-center gap-3 rounded-2xl border border-line bg-panel px-3 py-2">
-        <a href="/" className="font-display text-xl lowercase text-champagne">
+        <a href="/" className="shrink-0 font-display text-xl lowercase text-champagne">
           cipher
         </a>
-        <span className="rotate-[-6deg] rounded bg-accent px-1.5 py-0.5 font-sans text-[8.5px] font-extrabold uppercase tracking-[0.08em] text-ink">
+        <span className="shrink-0 rotate-[-6deg] rounded bg-accent px-1.5 py-0.5 font-sans text-[8.5px] font-extrabold uppercase tracking-[0.08em] text-ink">
           beta
         </span>
 
-        <span className="ml-auto rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 font-sans text-[9px] font-extrabold uppercase tracking-[0.1em] text-accent">
+        {/* Centred, and the widest thing in the row. On a platform with more
+            markets than fit a list, search is the primary navigation. */}
+        <MarketSearch onSelect={setSymbol} />
+
+        <span className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 font-sans text-[9px] font-extrabold uppercase tracking-[0.1em] text-accent">
           Paper money
         </span>
 
@@ -140,112 +192,76 @@ function TerminalBody({
       </header>
 
       {/* ---------------- body ---------------- */}
-      <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[248px_minmax(0,1fr)_320px]">
-        <div className="hidden min-h-0 lg:flex lg:flex-col">
-          <Rail />
-        </div>
+      <div
+        className="grid min-h-0 flex-1 gap-2"
+        // Grid template in a style rather than a class: the left column has to
+        // collapse to zero when the panel is closed, and Tailwind cannot hold
+        // a conditional arbitrary value without generating both classes.
+        style={{
+          gridTemplateColumns: panelOpen
+            ? "248px minmax(0,1fr) 320px"
+            : "minmax(0,1fr) 320px",
+        }}
+      >
+        {panelOpen && (
+          <div className="hidden min-h-0 lg:flex lg:flex-col">
+            <SidePanel
+              majors={majors}
+              symbol={symbol}
+              onSelect={setSymbol}
+              split={split}
+              onSplit={setSplit}
+              onCollapse={() => setPanelOpen(false)}
+            />
+          </div>
+        )}
+
+        {/* Reopening it. A collapse with no way back is a trap, and fomo's
+            chevron is the only affordance once the panel is gone. */}
+        {!panelOpen && (
+          <button
+            onClick={() => setPanelOpen(true)}
+            aria-label="Open panel"
+            className="absolute left-2 top-1/2 z-20 hidden -translate-y-1/2 rounded-r-lg border border-l-0 border-line bg-panel px-1 py-3 font-mono text-[13px] text-mute hover:text-champagne lg:block"
+          >
+            »
+          </button>
+        )}
 
         <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
-          {/*
-            * Instrument and timeframe on ONE row.
-            *
-            * These were two stacked bars costing about 90px of vertical space
-            * on a screen whose whole job is the chart. "Bars: 1000" went with
-            * them — it is diagnostic, not something anyone trades on.
-            */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline px-3 py-2">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent font-display text-base font-bold text-ink">
-              ◎
-            </span>
-            <div className="mr-1">
-              <h1 className="font-display text-[17px] font-bold leading-none tracking-tight">
-                SOL
-              </h1>
-              <p className="mt-0.5 font-sans text-[10px] leading-none text-ash">
-                {SYMBOL} · live
-              </p>
-            </div>
-
-            <div className="flex gap-0.5 rounded-full bg-slate p-0.5">
-              {INTERVAL_ORDER.map((i) => (
-                <button
-                  key={i}
-                  onClick={() => setInterval(i)}
-                  aria-pressed={i === interval}
-                  className={`rounded-full px-2 py-0.5 font-mono text-[10.5px] transition-colors ${
-                    i === interval ? "bg-raised text-champagne" : "text-ash hover:text-champagne"
-                  }`}
-                >
-                  {i}
-                </button>
-              ))}
-            </div>
-            {pending && <span className="font-mono text-[10.5px] text-ash">loading…</span>}
-
-            {/*
-              * Boxed, not loose text.
-              *
-              * These three sat unbordered in the header and read as labels
-              * rather than as live figures — fomo boxes the same numbers and
-              * that alone is most of why theirs looks instrumented. A border
-              * and a raised surface say "this is a reading".
-              *
-              * Values are full champagne, not a dimmed variant. Nothing on
-              * the page was ever at full brightness, which is what made the
-              * whole screen read as flat.
-              */}
-            <div className="ml-auto flex items-center gap-1.5">
-              {(
-                [
-                  ["Price", last ? usd(last) : "—"],
-                  ["24h", change === null ? "—" : pct(change, false)],
-                  ["24h vol", compactUsd(dayVolumeUsd)],
-                ] as [string, string][]
-              ).map(([k, v], i) => {
-                const dir =
-                  i === 1 && change !== null ? (change >= 0 ? "up" : "down") : null;
-                return (
-                  <div
-                    key={k}
-                    className={`min-w-[74px] rounded-lg border px-2.5 py-1 text-right ${
-                      dir === "up"
-                        ? "border-up/30 bg-up/10"
-                        : dir === "down"
-                          ? "border-down/30 bg-down/10"
-                          : "border-line bg-raised"
-                    }`}
-                  >
-                    <div className="font-sans text-[8.5px] font-bold uppercase tracking-[0.11em] text-ash">
-                      {k}
-                    </div>
-                    <div
-                      className={`font-mono text-[13.5px] font-bold leading-tight tabular-nums ${
-                        dir === "up"
-                          ? "text-up"
-                          : dir === "down"
-                            ? "text-down"
-                            : "text-champagne"
-                      }`}
-                    >
-                      {v}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <ChartHeader
+            market={market}
+            price={last}
+            marketCap={marketCap}
+            change={change}
+            volumeUsd={dayVolumeUsd}
+            depthUsd={depth}
+            interval={interval}
+            onInterval={setInterval}
+            pending={pending}
+            overlays={overlays}
+            onOverlays={setOverlays}
+          />
 
           <div className="min-h-[180px] flex-1">
             <PriceChart
               candles={candles}
               livePrice={live}
               barSeconds={intervalSeconds(interval)}
+              showMarks={overlays.mySwaps}
+              showThesis={overlays.thesis}
+              friendsOnly={overlays.friendsOnly}
+              minSize={overlays.minSize}
             />
           </div>
 
-          <div className="h-[150px] shrink-0">
-            <LowerTabs />
-          </div>
+          {/* "Split right" gives the chart the whole column. The tape is still
+              reachable from the Feed tab, so nothing becomes unavailable. */}
+          {split === "bottom" && (
+            <div className="h-[150px] shrink-0">
+              <LowerTabs />
+            </div>
+          )}
         </section>
 
         {/* The column ended at the account box and left a third of the
@@ -255,23 +271,14 @@ function TerminalBody({
             second one let flexbox compress it, and its internal overflow then
             clipped the account panel mid-row. */}
         <aside className="flex min-h-0 flex-col">
-          <Ticket price={last} />
+          <Ticket price={last} market={market.base} />
           <Flow candles={candles} last={last} />
         </aside>
       </div>
 
-      {/* ---------------- social strip ---------------- */}
-      <div className="no-scrollbar flex h-8 shrink-0 items-center overflow-x-auto rounded-xl border border-line bg-panel">
-        {STRIP_ITEMS.map((html) => (
-          <span
-            key={html}
-            className="whitespace-nowrap border-r border-hairline px-3.5 font-sans text-[11.5px] text-ash [&_b]:font-bold [&_b]:text-champagne"
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        ))}
-      </div>
+      <StatusBar majors={majors} onSelect={setSymbol} />
 
-      <Polly price={last} />
+      <Polly price={last} market={market.base} />
     </div>
   );
 }
