@@ -61,6 +61,30 @@ function precisionFor(candles: Candle[]): number {
   return 9;
 }
 
+/**
+ * Pixels per candle when the chart opens, and when it is reset.
+ *
+ * The chart used to call fitContent() on every load, which frames ALL the
+ * data — a thousand bars into about 930 pixels, or 0.93px per candle. At that
+ * width a candle has no body, no wick and no colour you can read; the chart
+ * became a texture. Nobody trades off a texture.
+ *
+ * Nine pixels is the width at which a body, both wicks and the direction are
+ * all legible, and it is roughly where TradingView's own default sits. It is
+ * a SPACING rather than a bar count on purpose: fixing the count would make
+ * candles fat on a wide monitor and thin on a laptop, and the whole point is
+ * that they are always readable.
+ */
+const DEFAULT_BAR_SPACING = 9;
+
+/**
+ * Empty bars kept to the right of the newest one.
+ *
+ * Without it the forming candle is welded to the price axis, and the live
+ * price label — which sits in the axis — covers the bar it is labelling.
+ */
+const RIGHT_OFFSET = 12;
+
 const volumeColor = (c: Candle, up: string, down: string) =>
   c.close >= c.open ? wash(up, 0.3) : wash(down, 0.3);
 
@@ -98,6 +122,22 @@ export function PriceChart({
 
   /** Whatever the crosshair is over, or the last bar when it is off the chart. */
   const [legend, setLegend] = useState<Candle | null>(null);
+
+  /**
+   * Back to the default view: readable candles, newest bar at the right.
+   *
+   * TradingView binds this to Alt+R and every chart user has it in their
+   * fingers, so it is bound to the same keys here. It is one function rather
+   * than two code paths because "how the chart opens" and "what reset gives
+   * you" must be the same thing — the moment they differ, reset stops being a
+   * way back to somewhere familiar.
+   */
+  const resetView = useCallback(() => {
+    const ts = chart.current?.timeScale();
+    if (!ts) return;
+    ts.applyOptions({ barSpacing: DEFAULT_BAR_SPACING, rightOffset: RIGHT_OFFSET });
+    ts.scrollToRealTime();
+  }, []);
 
   /*
    * Bumped every time a chart instance is built, and listed in the LOAD
@@ -157,7 +197,12 @@ export function PriceChart({
         },
       },
       rightPriceScale: { borderColor: LINE },
-      timeScale: { borderColor: LINE, timeVisible: true },
+      timeScale: {
+        borderColor: LINE,
+        timeVisible: true,
+        barSpacing: DEFAULT_BAR_SPACING,
+        rightOffset: RIGHT_OFFSET,
+      },
       autoSize: true,
     });
 
@@ -245,12 +290,14 @@ export function PriceChart({
         ),
       })) as never,
     );
-    chart.current?.timeScale().fitContent();
+    /* Not fitContent(). See DEFAULT_BAR_SPACING — framing a thousand bars is
+       what made every candle a hairline. */
+    resetView();
 
     // The newest bar from the server becomes the one live prices extend.
     forming.current = candles[candles.length - 1] ?? null;
     setLegend(forming.current);
-  }, [candles, generation]);
+  }, [candles, generation, resetView]);
 
   /*
    * TICK. Folds the polled price into the forming bar — the same arithmetic
@@ -362,6 +409,27 @@ export function PriceChart({
     }
     setMarks(next);
   }, [candles, friendsOnly, minSize]);
+
+  /*
+   * Alt+R resets the view.
+   *
+   * Bound on the window rather than the chart node because the canvas is not
+   * focusable — you would have to click the chart before the shortcut worked,
+   * which is exactly the friction the shortcut exists to remove. Guarded on
+   * the target so it does not fire while someone is typing a prompt.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.key.toLowerCase() !== "r") return;
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA)$/.test(el.tagName)) return;
+      if (el?.isContentEditable) return;
+      e.preventDefault();
+      resetView();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [resetView]);
 
   useEffect(() => {
     const c = chart.current;
