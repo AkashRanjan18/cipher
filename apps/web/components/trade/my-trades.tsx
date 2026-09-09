@@ -25,7 +25,7 @@ export function MyTrades() {
   const { account, hydrated } = usePaperAccount();
 
   return (
-    <div className="flex min-h-0 flex-col border-t border-hairline">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-baseline gap-2 px-2.5 py-1.5">
         <h2 className="font-sans text-[10px] font-bold uppercase tracking-[0.11em] text-ash">
           My trades
@@ -37,7 +37,10 @@ export function MyTrades() {
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2.5">
+      {/* pb-24: the prompt bar floats over the bottom of this panel, so the
+          last rows need somewhere to scroll to. Without it they can never be
+          brought out from under it. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-24">
         <Fills />
       </div>
     </div>

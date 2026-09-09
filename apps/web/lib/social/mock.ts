@@ -19,47 +19,7 @@
  * refuses to overdraw. Only this file is theatre.
  */
 
-export interface ChartMark {
-  /**
-   * Where along the loaded history this trade sits, 0 = oldest bar, 1 = newest.
-   *
-   * This was a count of bars back from the newest, which broke twice over:
-   * a mark at -742 simply vanished whenever the feed returned fewer than 742
-   * bars, and switching interval moved every mark to a different date because
-   * the same bar count is a different span at 1m and at 1d. A fraction lands
-   * in the same place in the window whatever the feed sends.
-   */
-  at: number;
-  who: string;
-  side: "buy" | "sell";
-  amountUsd: number;
-  /** In one of your flocks. Drives the "Friends only" overlay. */
-  friend: boolean;
-  /** Why they did it. Drives the "Thesis" overlay. */
-  note: string;
-}
 
-/** Trades pinned to the chart. "you" renders in the accent colour. */
-/*
- * Weighted toward recent history, not spread evenly.
- *
- * The chart opens on the last ~110 bars of a thousand (see DEFAULT_BAR_SPACING
- * in price-chart.tsx), so an even spread put seven of the eight off-screen to
- * the left and the default view looked deserted. Four now land inside the
- * opening window and the rest appear as you zoom out — which is also how
- * activity actually distributes: people traded recently, not uniformly since
- * August.
- */
-export const CHART_MARKS: ChartMark[] = [
-  { at: 0.34, who: "unipcs", side: "buy", amountUsd: 12_000, friend: false, note: "180 holds" },
-  { at: 0.55, who: "kaito", side: "buy", amountUsd: 300, friend: true, note: "sized to not care" },
-  { at: 0.71, who: "crayon", side: "sell", amountUsd: 1_400, friend: true, note: "chart looked done" },
-  { at: 0.83, who: "mochi", side: "buy", amountUsd: 420, friend: true, note: "deployer is clean" },
-  { at: 0.905, who: "ogle", side: "buy", amountUsd: 5_100, friend: false, note: "adding here" },
-  { at: 0.94, who: "you", side: "buy", amountUsd: 250, friend: true, note: "" },
-  { at: 0.965, who: "vex", side: "sell", amountUsd: 900, friend: true, note: "free ride off" },
-  { at: 0.99, who: "kaito", side: "sell", amountUsd: 780, friend: true, note: "taking the rest" },
-];
 
 export const STRIP_ITEMS = [
   "🔥 <b>@ogle</b> just 5×'d",

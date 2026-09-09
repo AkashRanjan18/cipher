@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import type { Candle, Interval } from "@/lib/market";
 import { SYMBOL, intervalSeconds, subscribeCandles, marketOf } from "@/lib/market";
 import { usd, pct } from "@/lib/format";
@@ -8,7 +8,7 @@ import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/ac
 import { equity } from "@/lib/account/paper";
 import { PriceChart } from "./price-chart";
 import { SidePanel } from "./side-panel";
-import { ChartHeader, DEFAULT_OVERLAYS, type Overlays } from "./chart-header";
+import { ChartHeader } from "./chart-header";
 import { MarketSearch } from "./market-search";
 import { StatusBar } from "./status-bar";
 import { useMajors } from "./use-majors";
@@ -61,8 +61,18 @@ function TerminalBody({
   const [candles, setCandles] = useState<Candle[]>(initial);
   const [live, setLive] = useState<number | undefined>(undefined);
   const [depth, setDepth] = useState<number | null>(null);
-  const [overlays, setOverlays] = useState<Overlays>(DEFAULT_OVERLAYS);
   const [split, setSplit] = useState<"bottom" | "right">("bottom");
+
+  /*
+   * Height of the fills panel, dragged by the divider above it.
+   *
+   * Held here rather than inside MyTrades because the chart is its sibling —
+   * the pixels the panel gains are pixels the chart loses, and a child cannot
+   * resize its sibling. The chart is flex-1 and simply takes what is left.
+   */
+  const [lowerH, setLowerH] = useState(150);
+  const dragging = useRef(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [pending, startTransition] = useTransition();
 
@@ -106,6 +116,43 @@ function TerminalBody({
     () => subscribeCandles(interval, (c) => setLive(c.close), symbol),
     [interval, symbol],
   );
+
+  /*
+   * The drag itself, on the WINDOW rather than the handle.
+   *
+   * A pointer moving faster than React re-renders leaves the handle behind,
+   * and a handler bound to the handle stops receiving events the moment the
+   * cursor is outside it — the panel then sticks mid-drag. Listening on the
+   * window for as long as the drag lasts is what makes it track properly.
+   */
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      if (!dragging.current || !bodyRef.current) return;
+      const bottom = bodyRef.current.getBoundingClientRect().bottom;
+      // Floors and ceilings, or the chart can be dragged out of existence and
+      // the divider becomes unreachable.
+      setLowerH(Math.max(64, Math.min(bottom - e.clientY, 460)));
+    };
+    const onUp = () => {
+      dragging.current = false;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
+
+  const startDrag = useCallback(() => {
+    dragging.current = true;
+    // Without these the drag selects the table text under the cursor and the
+    // cursor flickers back to the arrow whenever it leaves the handle.
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "row-resize";
+  }, []);
 
   /* Book depth for the Liquidity reading. Polled slowly — it is a context
      number, not something anyone trades off tick by tick. */
@@ -166,7 +213,8 @@ function TerminalBody({
     : null;
 
   return (
-    <div className="flex h-dvh flex-col gap-2 overflow-hidden bg-ink p-2">
+    /* relative: the prompt bar is positioned against this, see below. */
+    <div className="relative flex h-dvh flex-col gap-2 overflow-hidden bg-ink p-2">
       {/* ---------------- header ---------------- */}
       <header className="flex shrink-0 items-center gap-3 rounded-2xl border border-line bg-panel px-3 py-2">
         <a href="/" className="shrink-0 font-display text-xl lowercase text-champagne">
@@ -193,6 +241,7 @@ function TerminalBody({
 
       {/* ---------------- body ---------------- */}
       <div
+        ref={bodyRef}
         className="grid min-h-0 flex-1 gap-2"
         // Grid template in a style rather than a class: the left column has to
         // collapse to zero when the panel is closed, and Tailwind cannot hold
@@ -239,8 +288,6 @@ function TerminalBody({
             interval={interval}
             onInterval={setInterval}
             pending={pending}
-            overlays={overlays}
-            onOverlays={setOverlays}
           />
 
           <div className="min-h-[180px] flex-1">
@@ -248,19 +295,36 @@ function TerminalBody({
               candles={candles}
               livePrice={live}
               barSeconds={intervalSeconds(interval)}
-              showMarks={overlays.mySwaps}
-              showThesis={overlays.thesis}
-              friendsOnly={overlays.friendsOnly}
-              minSize={overlays.minSize}
             />
           </div>
 
-          {/* "Split right" gives the chart the whole column. The tape is still
-              reachable from the Feed tab, so nothing becomes unavailable. */}
+          {/* "Split right" gives the chart the whole column. */}
           {split === "bottom" && (
-            <div className="h-[150px] shrink-0">
-              <MyTrades />
-            </div>
+            <>
+              {/*
+                * The divider.
+                *
+                * touch-none because a pointerdown on a scrollable panel is a
+                * scroll gesture on touch devices — without it the browser
+                * claims the pointer and the drag never starts.
+                */}
+              <div
+                onPointerDown={startDrag}
+                onDoubleClick={() => setLowerH(150)}
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize trade history"
+                title="Drag to resize · double-click to reset"
+                className="group flex h-2 shrink-0 cursor-row-resize touch-none items-center justify-center border-t border-hairline transition-colors hover:bg-raised"
+              >
+                {/* A grip, so the divider reads as draggable when idle. Two
+                    pixels of hairline does not. */}
+                <span className="h-[3px] w-8 rounded-full bg-line transition-colors group-hover:bg-ash" />
+              </div>
+              <div style={{ height: lowerH }} className="shrink-0 overflow-hidden">
+                <MyTrades />
+              </div>
+            </>
           )}
         </section>
 
@@ -278,7 +342,23 @@ function TerminalBody({
 
       <StatusBar majors={majors} onSelect={setSymbol} />
 
-      <Polly price={last} market={market.base} />
+      {/*
+        * The prompt bar FLOATS over the bottom rather than taking a row.
+        *
+        * It is centred and about 640px wide, so as a flex row it reserved
+        * ~90px of full-width height and left two dead black bands either side
+        * of itself — the panels stopped well short of the bottom of the screen
+        * for no reason. Positioned instead, it stays exactly where it was and
+        * the columns get the height back.
+        */}
+      {/* bottom-11 clears the status bar (h-8 plus the shell's padding). The
+          bar is chrome you read, not content you scroll past, so the prompt
+          must never sit on top of it. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-11 z-30 flex justify-center px-2">
+        <div className="pointer-events-auto w-full">
+          <Polly price={last} market={market.base} />
+        </div>
+      </div>
     </div>
   );
 }

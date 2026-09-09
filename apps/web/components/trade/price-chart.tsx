@@ -11,8 +11,6 @@ import {
   type ISeriesApi,
 } from "lightweight-charts";
 import { foldLivePrice, type Candle } from "@/lib/market";
-import { CHART_MARKS } from "@/lib/social/mock";
-import { Avatar } from "./avatar";
 
 /**
  * Price chart.
@@ -20,6 +18,12 @@ import { Avatar } from "./avatar";
  * lightweight-charts renders to canvas and imperatively owns its DOM node, so
  * it lives behind a ref and is created once in an effect rather than described
  * in JSX. React never re-renders it — data goes in through the series API.
+ *
+ * There used to be a layer of trader avatars and their "thesis" over the
+ * candles. Every one of them was invented — made-up people saying made-up
+ * things about a real price series — and that is the worst place on the whole
+ * page to put fiction, because it sits ON the one thing that is true. Gone,
+ * along with the overlay checkboxes that filtered them.
  *
  * v5 API: chart.addSeries(CandlestickSeries, opts). v4's addCandlestickSeries()
  * no longer exists, and most examples online are still v4.
@@ -92,21 +96,12 @@ export function PriceChart({
   candles,
   livePrice,
   barSeconds,
-  showMarks = true,
-  showThesis = true,
-  friendsOnly = false,
-  minSize = false,
 }: {
   candles: Candle[];
   /** Latest traded price, from the shared poll. Folds into the forming bar. */
   livePrice?: number;
   /** Seconds per bar, so "now" can be placed in the right bucket. */
   barSeconds: number;
-  /** The four overlay checkboxes in the header. */
-  showMarks?: boolean;
-  showThesis?: boolean;
-  friendsOnly?: boolean;
-  minSize?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -318,128 +313,6 @@ export function PriceChart({
     setLegend(next);
   }, [livePrice, barSeconds]);
 
-  /*
-   * WHO TRADED, ON THE CHART.
-   *
-   * fomo puts trader avatars directly on their candles, and it is the single
-   * detail that makes their chart look inhabited rather than plotted. The
-   * data has been sitting in CHART_MARKS unused since the mock was written.
-   *
-   * lightweight-charts can only draw its own marker shapes, so these are DOM
-   * nodes positioned over the canvas: timeToCoordinate for x, priceToCoordinate
-   * for y. Which means they have to be recomputed on every pan, zoom and new
-   * bar, or they drift off the candle they belong to.
-   *
-   * These three hooks sit above the empty-candles early return, not next to
-   * the markup they feed. `candles` is empty on the first render while the
-   * fetch is in flight, so declaring them after the return runs fewer hooks on
-   * that pass and React throws "Rendered fewer hooks than expected" the moment
-   * the data lands.
-   */
-  const [marks, setMarks] = useState<
-    {
-      key: string;
-      who: string;
-      side: "buy" | "sell";
-      note: string;
-      x: number;
-      y: number;
-    }[]
-  >([]);
-
-  const placeMarks = useCallback(() => {
-    const c = chart.current;
-    const price = priceSeries.current;
-    if (!c || !price || candles.length === 0) return setMarks([]);
-
-    const ts = c.timeScale();
-    const next: typeof marks = [];
-
-    /*
-     * The PRICE pane's bounds, which are not the container's.
-     *
-     * Two bands sit below the candles: the volume histogram takes the bottom
-     * fifth (scaleMargins in CREATE), and the time axis takes its own strip
-     * under that. Clamping to clientHeight pinned every marker on a low bar
-     * into a row lying across the axis labels — eight faces stacked on the
-     * dates, which looked like a bug because it was one.
-     */
-    const PAD = 14;
-    const axis = ts.height();
-    const priceBottom = (box.current?.clientHeight ?? 0) - axis;
-    // 0.8 is the volume band's top edge; see scaleMargins in the CREATE effect.
-    const floor = priceBottom * 0.8 - PAD;
-
-    for (const m of CHART_MARKS) {
-      /*
-       * The header's overlay checkboxes, applied here rather than in the
-       * render — a filtered mark should never be positioned at all, and
-       * computing coordinates for something that will not be drawn is work
-       * repeated on every pan.
-       */
-      if (friendsOnly && !m.friend) continue;
-      if (minSize && m.amountUsd < 1000) continue;
-
-      const bar = candles[Math.round(m.at * (candles.length - 1))];
-      if (!bar) continue;
-
-      const x = ts.timeToCoordinate(bar.time as never);
-      // Sit buys under the low and sells above the high, so a marker never
-      // covers the candle it refers to.
-      const y = price.priceToCoordinate(m.side === "buy" ? bar.low : bar.high);
-      if (x === null || y === null) continue;
-
-      /*
-       * Clamp into the pane. A buy on a bar at the bottom of the visible
-       * range gets pushed 16px below it, which is past the time axis — the
-       * marker then hangs over the axis labels, half cut off. Clamping keeps
-       * it on the candle's side of the chart and inside the frame.
-       */
-      const offY = Number(y) + (m.side === "buy" ? 16 : -16);
-      const clamped = Math.min(Math.max(offY, PAD), floor);
-
-      next.push({
-        key: `${m.who}${m.at}`,
-        who: m.who,
-        side: m.side,
-        note: m.note,
-        x: Number(x),
-        y: clamped,
-      });
-    }
-    setMarks(next);
-  }, [candles, friendsOnly, minSize]);
-
-  /*
-   * Alt+R resets the view.
-   *
-   * Bound on the window rather than the chart node because the canvas is not
-   * focusable — you would have to click the chart before the shortcut worked,
-   * which is exactly the friction the shortcut exists to remove. Guarded on
-   * the target so it does not fire while someone is typing a prompt.
-   */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!e.altKey || e.key.toLowerCase() !== "r") return;
-      const el = e.target as HTMLElement | null;
-      if (el && /^(INPUT|TEXTAREA)$/.test(el.tagName)) return;
-      if (el?.isContentEditable) return;
-      e.preventDefault();
-      resetView();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [resetView]);
-
-  useEffect(() => {
-    const c = chart.current;
-    if (!c) return;
-    placeMarks();
-    const ts = c.timeScale();
-    ts.subscribeVisibleLogicalRangeChange(placeMarks);
-    return () => ts.unsubscribeVisibleLogicalRangeChange(placeMarks);
-  }, [placeMarks, generation]);
-
   if (candles.length === 0) {
     return (
       <div className="flex h-full min-h-[240px] items-center justify-center rounded-2xl border border-line bg-panel">
@@ -458,35 +331,6 @@ export function PriceChart({
         pointer-events-none on the layer: it covers the whole canvas, and
         swallowing the mouse would kill the crosshair and the drag-to-pan.
       */}
-      {showMarks && (
-        <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
-          {marks.map((m) => (
-            <span
-              key={m.key}
-              className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1"
-              style={{ left: m.x, top: m.y }}
-            >
-              <span
-                className="block shrink-0 rounded-full p-[1.5px]"
-                style={{
-                  background: m.side === "buy" ? "var(--color-up)" : "var(--color-down)",
-                }}
-              >
-                <Avatar who={m.who} size={20} />
-              </span>
-              {/* The thesis. This is the whole reason to put people on a chart
-                  rather than plain markers — a face says someone traded, the
-                  note says why, and only the second one is worth reading. */}
-              {showThesis && m.note && (
-                <span className="whitespace-nowrap rounded bg-ink/85 px-1.5 py-px font-sans text-[9.5px] text-champagne backdrop-blur-sm">
-                  {m.note}
-                </span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-
       {legend && (
         /* pointer-events-none: the legend sits over the canvas, and swallowing
            the mouse there would kill the crosshair that feeds it. */
