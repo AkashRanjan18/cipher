@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import localFont from "next/font/local";
-import { IBM_Plex_Sans } from "next/font/google";
 import { Privy } from "./providers/privy";
 import { LoginModalProvider } from "@/components/auth/login-modal";
 import "./globals.css";
@@ -23,10 +22,24 @@ const display = localFont({
   display: "swap",
 });
 
-const sans = IBM_Plex_Sans({
+/*
+ * IBM Plex Sans, self-hosted for the same reason as the display face above.
+ *
+ * next/font/google downloads at build time, and when it cannot reach
+ * fonts.googleapis.com it blocks for the full network timeout on every
+ * compile before silently falling back to a system font — twelve seconds of
+ * dead air, and the wrong typeface rendered. It failed exactly that way here
+ * while curl reached the same host in 0.19s, so the network is not reliably
+ * the problem and a build should not depend on it.
+ *
+ * This is the latin subset of Google's variable file, which is why one file
+ * covers the whole 400-500 range rather than needing a weight each.
+ */
+const sans = localFont({
+  src: "./fonts/IBMPlexSans-latin.woff2",
   variable: "--font-sans",
-  weight: ["400", "500"],
-  subsets: ["latin"],
+  weight: "400 500",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
