@@ -12,7 +12,7 @@ import { ChartHeader, DEFAULT_OVERLAYS, type Overlays } from "./chart-header";
 import { MarketSearch } from "./market-search";
 import { StatusBar } from "./status-bar";
 import { useMajors } from "./use-majors";
-import { LowerTabs } from "./lower-tabs";
+import { MyTrades } from "./my-trades";
 import { Ticket } from "./ticket";
 import { Polly } from "./polly";
 import { Flow } from "./flow";
@@ -259,7 +259,7 @@ function TerminalBody({
               reachable from the Feed tab, so nothing becomes unavailable. */}
           {split === "bottom" && (
             <div className="h-[150px] shrink-0">
-              <LowerTabs />
+              <MyTrades />
             </div>
           )}
         </section>
