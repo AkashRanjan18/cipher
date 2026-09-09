@@ -145,59 +145,33 @@ function TerminalBody({
         </div>
 
         <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
-          {/* instrument head */}
-          <div className="flex flex-wrap items-center gap-3 border-b border-hairline px-3.5 py-2.5">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent font-display text-lg font-bold text-ink">
+          {/*
+            * Instrument and timeframe on ONE row.
+            *
+            * These were two stacked bars costing about 90px of vertical space
+            * on a screen whose whole job is the chart. "Bars: 1000" went with
+            * them — it is diagnostic, not something anyone trades on.
+            */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline px-3 py-2">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent font-display text-base font-bold text-ink">
               ◎
             </span>
-            <div>
-              <h1 className="font-display text-[22px] font-bold leading-tight tracking-tight">
+            <div className="mr-1">
+              <h1 className="font-display text-[17px] font-bold leading-none tracking-tight">
                 SOL
               </h1>
-              <p className="font-sans text-[11px] text-ash">
-                Solana · Binance · {SYMBOL}
+              <p className="mt-0.5 font-sans text-[10px] leading-none text-ash">
+                {SYMBOL} · live
               </p>
             </div>
 
-            <div className="ml-auto flex flex-wrap items-center gap-1.5">
-              {[
-                ["Price", last ? usd(last) : "—"],
-                ["24h", change === null ? "—" : pct(change, false)],
-                ["24h vol", compactUsd(dayVolumeUsd)],
-                ["Bars", String(candles.length)],
-              ].map(([k, v], i) => (
-                <div
-                  key={k}
-                  className="flex min-w-[76px] flex-col gap-0.5 rounded-xl border border-hairline bg-slate px-3 py-1.5"
-                >
-                  <span className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
-                    {k}
-                  </span>
-                  <span
-                    className={`font-mono text-[13px] font-bold tabular-nums ${
-                      i === 1 && change !== null
-                        ? change >= 0
-                          ? "text-up"
-                          : "text-down"
-                        : ""
-                    }`}
-                  >
-                    {v}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* timeframe */}
-          <div className="flex shrink-0 items-center gap-2 border-b border-hairline px-3.5 py-2">
-            <div className="flex gap-0.5 rounded-full bg-slate p-1">
+            <div className="flex gap-0.5 rounded-full bg-slate p-0.5">
               {INTERVAL_ORDER.map((i) => (
                 <button
                   key={i}
                   onClick={() => setInterval(i)}
                   aria-pressed={i === interval}
-                  className={`rounded-full px-2.5 py-1 font-mono text-[10.5px] transition-colors ${
+                  className={`rounded-full px-2 py-0.5 font-mono text-[10.5px] transition-colors ${
                     i === interval ? "bg-raised text-champagne" : "text-ash hover:text-champagne"
                   }`}
                 >
@@ -206,9 +180,33 @@ function TerminalBody({
               ))}
             </div>
             {pending && <span className="font-mono text-[10.5px] text-ash">loading…</span>}
-            <span className="ml-auto font-mono text-[10.5px] text-ash">
-              live from Binance
-            </span>
+
+            <div className="ml-auto flex items-center gap-3">
+              {(
+                [
+                  ["Price", last ? usd(last) : "—"],
+                  ["24h", change === null ? "—" : pct(change, false)],
+                  ["24h vol", compactUsd(dayVolumeUsd)],
+                ] as [string, string][]
+              ).map(([k, v], i) => (
+                <div key={k} className="text-right">
+                  <div className="font-sans text-[9px] font-bold uppercase tracking-[0.1em] text-ash">
+                    {k}
+                  </div>
+                  <div
+                    className={`font-mono text-[13px] font-bold leading-tight tabular-nums ${
+                      i === 1 && change !== null
+                        ? change >= 0
+                          ? "text-up"
+                          : "text-down"
+                        : ""
+                    }`}
+                  >
+                    {v}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="min-h-[180px] flex-1">
@@ -219,7 +217,7 @@ function TerminalBody({
             />
           </div>
 
-          <div className="h-[210px] shrink-0">
+          <div className="h-[150px] shrink-0">
             <LowerTabs />
           </div>
         </section>

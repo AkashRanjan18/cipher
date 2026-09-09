@@ -28,7 +28,7 @@ export function LowerTabs() {
 
   return (
     <div className="flex min-h-0 flex-col border-t border-hairline">
-      <div className="flex gap-1 px-2.5 pb-1.5 pt-2.5" role="tablist">
+      <div className="flex gap-1 px-2.5 pb-1.5 pt-1.5" role="tablist">
         {(
           [
             ["squawks", "Squawks"],
@@ -41,7 +41,7 @@ export function LowerTabs() {
             role="tab"
             aria-selected={tab === k}
             onClick={() => setTab(k)}
-            className={`rounded-full px-3 py-1.5 font-sans text-[11.5px] font-bold transition-colors ${
+            className={`rounded-full px-2.5 py-1 font-sans text-[11.5px] font-bold transition-colors ${
               tab === k ? "bg-raised text-champagne" : "text-ash hover:text-champagne"
             }`}
           >
@@ -55,7 +55,7 @@ export function LowerTabs() {
           SQUAWKS.map((s) => (
             <article
               key={s.who + s.ago}
-              className="flex flex-col gap-2 rounded-xl border border-hairline bg-slate p-2.5"
+              className="flex flex-col gap-1.5 rounded-xl border border-hairline bg-slate p-2"
             >
               <div className="flex items-center gap-2">
                 <Avatar who={s.who} />

@@ -5,6 +5,8 @@ import type { OrderSpec } from "@cipher/shared";
 import { parseWithGrammar } from "@/lib/compiler/grammar";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
 import { usePaperAccount } from "@/lib/account/store";
+import { useSpeech } from "@/lib/voice/use-speech";
+import { normaliseSpeech } from "@/lib/voice/normalise";
 import { resolveQty, allInPrice } from "@/lib/account/paper";
 import { usd } from "@/lib/format";
 
@@ -52,6 +54,21 @@ export function Polly({ price }: { price: number | undefined }) {
   const [slashOpen, setSlashOpen] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /*
+   * Dictation lands in the box; it does NOT send on its own.
+   *
+   * Hands-free execution is one recogniser error away from a valid, plausible
+   * order for the wrong amount — "five hundred" and "five thousand" are one
+   * syllable apart. The readback would still catch it, but a wrong number is
+   * far easier to fix while it is still editable text than after it has
+   * become a card asking to be approved. One keystroke is the right price for
+   * that, and the user can see exactly what was heard before committing.
+   */
+  const speech = useSpeech((heard) => {
+    setInput(heard);
+    inputRef.current?.focus();
+  });
 
   // Newest turn should be visible without scrolling for it.
   useEffect(() => {
@@ -122,7 +139,15 @@ export function Polly({ price }: { price: number | undefined }) {
      * When it returns null the model would take over — that route is not
      * built yet, so Polly says so rather than pretending.
      */
-    const spec = parseWithGrammar(text.replace(/^\/(buy|sell)\s*/i, "$1 "));
+    /*
+     * normaliseSpeech runs on TYPED input too, not just dictation.
+     *
+     * The grammar wants "$500" and "50%", and a person in a hurry types "500
+     * dollars" and "50 percent" — which failed before for no reason a user
+     * could see. The transform is form-only and provably lossless on text
+     * that is already written correctly, which lib/voice has a test for.
+     */
+    const spec = parseWithGrammar(normaliseSpeech(text.replace(/^\/(buy|sell)\s*/i, "$1 ")));
 
     if (!spec) {
       push({
@@ -283,28 +308,54 @@ export function Polly({ price }: { price: number | undefined }) {
             handle(input);
             setInput("");
           }}
-          className="flex items-center gap-2.5 rounded-xl border border-line bg-slate py-2 pl-3 pr-2 focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15"
+          className="flex items-center gap-2.5 rounded-xl bg-champagne py-2 pl-3 pr-2 shadow-lg shadow-black/30 ring-1 ring-black/10 focus-within:ring-4 focus-within:ring-accent"
         >
-          <span className="shrink-0 rounded-lg bg-raised px-2 py-1 font-mono text-[11px] text-ash">
-            <b className="font-medium text-champagne">SOL</b>/USDT
+          <span className="shrink-0 rounded-lg bg-ink/10 px-2 py-1 font-mono text-[11px] text-ink/60">
+            <b className="font-bold text-ink">SOL</b>/USDT
           </span>
           <input
             ref={inputRef}
-            value={input}
+            value={speech.listening ? speech.transcript + speech.interim : input}
+            readOnly={speech.listening}
             onChange={(e) => {
               setInput(e.target.value);
               setSlashOpen(e.target.value.startsWith("/") && !e.target.value.includes(" "));
             }}
             onKeyDown={(e) => e.key === "Escape" && setSlashOpen(false)}
-            placeholder="Ask Polly, place a trade, or /copy a friend"
+            placeholder={
+              speech.listening ? "Listening…" : "Ask Polly, place a trade, or /copy a friend"
+            }
             aria-label="Ask Polly or type a command"
-            className="min-w-0 flex-1 bg-transparent font-sans text-sm text-champagne placeholder:text-ash focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent font-sans text-sm text-ink placeholder:text-ink/45 focus:outline-none"
           />
-          <span className="shrink-0 font-mono text-[10.5px] text-ash">⏎</span>
+
+          {/* Hidden entirely in Firefox and on insecure origins rather than
+              offered and then failing — a mic button that cannot work is a
+              worse answer than no mic button. */}
+          {speech.supported && (
+            <button
+              type="button"
+              onClick={() => (speech.listening ? speech.stop() : speech.start())}
+              aria-pressed={speech.listening}
+              aria-label={speech.listening ? "Stop listening" : "Speak your order"}
+              className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors ${
+                speech.listening
+                  ? "animate-pulse bg-down text-champagne"
+                  : "text-ink/50 hover:bg-ink/10 hover:text-ink"
+              }`}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <rect x="9" y="2" width="6" height="11" rx="3" />
+                <path d="M5 10a7 7 0 0 0 14 0M12 17v4" />
+              </svg>
+            </button>
+          )}
+
+          <span className="shrink-0 font-mono text-[10.5px] text-ink/40">⏎</span>
           <button
             type="submit"
             aria-label="Send to Polly"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-ink hover:brightness-110"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-ink text-champagne hover:brightness-150"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
               <path d="M5 12h13M12 5.5l6.5 6.5-6.5 6.5" />
@@ -313,13 +364,19 @@ export function Polly({ price }: { price: number | undefined }) {
         </form>
       </div>
 
+      {speech.error && (
+        <p className="mt-1.5 rounded-lg border border-down/40 bg-down/10 px-2.5 py-1.5 font-sans text-[11px] text-champagne">
+          {speech.error}
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-4 px-1 pt-2 font-sans text-[10.5px] text-ash">
         <span>
           Live Binance prices, <b className="text-champagne">paper money</b>. Handles and
           squawks around them are placeholder.
         </span>
         <span>
-          Hit <b className="text-champagne">/</b> anywhere to talk to Polly.
+          Hit <b className="text-champagne">/</b> to type, or the mic to say it out loud.
         </span>
       </div>
     </div>
