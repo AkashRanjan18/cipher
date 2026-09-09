@@ -151,8 +151,8 @@ export function Ticket({ price }: { price: number | undefined }) {
             className={`rounded-xl border py-2.5 font-display text-[15px] font-bold capitalize transition-colors ${
               side === s
                 ? s === "buy"
-                  ? "border-up/50 bg-up/15 text-up"
-                  : "border-down/50 bg-down/15 text-down"
+                  ? "border-up/50 bg-up-soft text-up"
+                  : "border-down/50 bg-down-soft text-down"
                 : "border-line bg-slate text-ash hover:text-champagne"
             }`}
           >

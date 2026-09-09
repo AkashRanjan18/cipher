@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -11,6 +11,8 @@ import {
   type ISeriesApi,
 } from "lightweight-charts";
 import { foldLivePrice, type Candle } from "@/lib/market";
+import { CHART_MARKS } from "@/lib/social/mock";
+import { Avatar } from "./avatar";
 
 /**
  * Price chart.
@@ -23,10 +25,27 @@ import { foldLivePrice, type Candle } from "@/lib/market";
  * no longer exists, and most examples online are still v4.
  */
 
-const INK = "#0b0910";
-const ASH = "#8b8598";
-const UP = "#4ade80";
-const DOWN = "#f87171";
+/*
+ * The canvas cannot read CSS variables — lightweight-charts wants literal
+ * colours — so the theme is resolved once, here, off the document element.
+ *
+ * These used to be four hardcoded hexes, and they had drifted: the candles
+ * were #4ade80 while --color-up was #22c98a, so the chart's green and every
+ * other green on the page were different greens and nobody could say which
+ * was the real one. Reading the tokens means the palette has one home.
+ */
+function token(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+  return v.trim() || fallback;
+}
+
+/** fomo washes their volume bars back to a fifth. Solid bars fight the candles. */
+function wash(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.replace(/./g, (c) => c + c) : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
 
 /**
  * How many decimals this series needs.
@@ -42,8 +61,8 @@ function precisionFor(candles: Candle[]): number {
   return 9;
 }
 
-const volumeColor = (c: Candle) =>
-  c.close >= c.open ? "rgba(34,201,138,0.3)" : "rgba(255,84,112,0.3)";
+const volumeColor = (c: Candle, up: string, down: string) =>
+  c.close >= c.open ? wash(up, 0.3) : wash(down, 0.3);
 
 export function PriceChart({
   candles,
@@ -93,6 +112,15 @@ export function PriceChart({
   useEffect(() => {
     if (!box.current) return;
 
+    const INK = token("--color-ink", "#060510");
+    const ASH = token("--color-ash", "#9899a3");
+    const UP = token("--color-up", "#21c95e");
+    const DOWN = token("--color-down", "#ff622e");
+    // The grid and the axis borders are the same translucent lavender the
+    // panels use, so the chart is bounded like every other surface.
+    const LINE = token("--color-line", "rgba(203,208,235,0.1)");
+    const GRID = token("--color-hairline", "rgba(203,208,235,0.06)");
+
     const c = createChart(box.current, {
       layout: {
         // The canvas paints its own background; without this it is white.
@@ -101,8 +129,8 @@ export function PriceChart({
         fontFamily: "var(--font-mono), monospace",
       },
       grid: {
-        vertLines: { color: "rgba(243,233,216,0.04)" },
-        horzLines: { color: "rgba(243,233,216,0.04)" },
+        vertLines: { color: GRID },
+        horzLines: { color: GRID },
       },
       crosshair: { mode: CrosshairMode.Normal },
       localization: {
@@ -119,8 +147,8 @@ export function PriceChart({
           return p.toPrecision(3);
         },
       },
-      rightPriceScale: { borderColor: "rgba(243,233,216,0.10)" },
-      timeScale: { borderColor: "rgba(243,233,216,0.10)", timeVisible: true },
+      rightPriceScale: { borderColor: LINE },
+      timeScale: { borderColor: LINE, timeVisible: true },
       autoSize: true,
     });
 
@@ -201,7 +229,11 @@ export function PriceChart({
       candles.map((d) => ({
         time: d.time,
         value: d.volume,
-        color: volumeColor(d),
+        color: volumeColor(
+          d,
+          token("--color-up", "#21c95e"),
+          token("--color-down", "#ff622e"),
+        ),
       })) as never,
     );
     chart.current?.timeScale().fitContent();
@@ -230,6 +262,79 @@ export function PriceChart({
     setLegend(next);
   }, [livePrice, barSeconds]);
 
+  /*
+   * WHO TRADED, ON THE CHART.
+   *
+   * fomo puts trader avatars directly on their candles, and it is the single
+   * detail that makes their chart look inhabited rather than plotted. The
+   * data has been sitting in CHART_MARKS unused since the mock was written.
+   *
+   * lightweight-charts can only draw its own marker shapes, so these are DOM
+   * nodes positioned over the canvas: timeToCoordinate for x, priceToCoordinate
+   * for y. Which means they have to be recomputed on every pan, zoom and new
+   * bar, or they drift off the candle they belong to.
+   *
+   * These three hooks sit above the empty-candles early return, not next to
+   * the markup they feed. `candles` is empty on the first render while the
+   * fetch is in flight, so declaring them after the return runs fewer hooks on
+   * that pass and React throws "Rendered fewer hooks than expected" the moment
+   * the data lands.
+   */
+  const [marks, setMarks] = useState<
+    { key: string; who: string; side: "buy" | "sell"; x: number; y: number }[]
+  >([]);
+
+  const placeMarks = useCallback(() => {
+    const c = chart.current;
+    const price = priceSeries.current;
+    if (!c || !price || candles.length === 0) return setMarks([]);
+
+    const ts = c.timeScale();
+    const next: typeof marks = [];
+
+    // The pane's own height, to keep a marker inside it — see the clamp below.
+    const height = box.current?.clientHeight ?? 0;
+    const PAD = 14;
+
+    for (const m of CHART_MARKS) {
+      const bar = candles[Math.round(m.at * (candles.length - 1))];
+      if (!bar) continue;
+
+      const x = ts.timeToCoordinate(bar.time as never);
+      // Sit buys under the low and sells above the high, so a marker never
+      // covers the candle it refers to.
+      const y = price.priceToCoordinate(m.side === "buy" ? bar.low : bar.high);
+      if (x === null || y === null) continue;
+
+      /*
+       * Clamp into the pane. A buy on a bar at the bottom of the visible
+       * range gets pushed 16px below it, which is past the time axis — the
+       * marker then hangs over the axis labels, half cut off. Clamping keeps
+       * it on the candle's side of the chart and inside the frame.
+       */
+      const offY = Number(y) + (m.side === "buy" ? 16 : -16);
+      const clamped = Math.min(Math.max(offY, PAD), height - PAD);
+
+      next.push({
+        key: `${m.who}${m.at}`,
+        who: m.who,
+        side: m.side,
+        x: Number(x),
+        y: clamped,
+      });
+    }
+    setMarks(next);
+  }, [candles]);
+
+  useEffect(() => {
+    const c = chart.current;
+    if (!c) return;
+    placeMarks();
+    const ts = c.timeScale();
+    ts.subscribeVisibleLogicalRangeChange(placeMarks);
+    return () => ts.unsubscribeVisibleLogicalRangeChange(placeMarks);
+  }, [placeMarks, generation]);
+
   if (candles.length === 0) {
     return (
       <div className="flex h-full min-h-[240px] items-center justify-center rounded-2xl border border-line bg-panel">
@@ -243,6 +348,29 @@ export function PriceChart({
   return (
     <div className="relative h-full w-full">
       <div ref={box} className="h-full w-full" />
+
+      {/*
+        pointer-events-none on the layer: it covers the whole canvas, and
+        swallowing the mouse would kill the crosshair and the drag-to-pan.
+      */}
+      <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
+        {marks.map((m) => (
+          <span
+            key={m.key}
+            className="absolute -translate-x-1/2 -translate-y-1/2"
+            style={{ left: m.x, top: m.y }}
+          >
+            <span
+              className="block rounded-full p-[1.5px]"
+              style={{
+                background: m.side === "buy" ? "var(--color-up)" : "var(--color-down)",
+              }}
+            >
+              <Avatar who={m.who} size={20} />
+            </span>
+          </span>
+        ))}
+      </div>
 
       {legend && (
         /* pointer-events-none: the legend sits over the canvas, and swallowing

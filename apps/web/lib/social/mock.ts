@@ -39,8 +39,16 @@ export interface Flock {
 }
 
 export interface ChartMark {
-  /** Bars back from the newest. Negative. */
-  offset: number;
+  /**
+   * Where along the loaded history this trade sits, 0 = oldest bar, 1 = newest.
+   *
+   * This was a count of bars back from the newest, which broke twice over:
+   * a mark at -742 simply vanished whenever the feed returned fewer than 742
+   * bars, and switching interval moved every mark to a different date because
+   * the same bar count is a different span at 1m and at 1d. A fraction lands
+   * in the same place in the window whatever the feed sends.
+   */
+  at: number;
   who: string;
   side: "buy" | "sell";
   amountUsd: number;
@@ -90,11 +98,19 @@ export const LEADERS: { who: string; pnl: string; wins: string; medal: string }[
 ];
 
 /** Trades pinned to the chart. "you" renders in the accent colour. */
+/*
+ * Spread across the window rather than bunched at the right edge, because the
+ * point of putting faces on the chart is that the history looks inhabited.
+ */
 export const CHART_MARKS: ChartMark[] = [
-  { offset: -58, who: "mochi", side: "buy", amountUsd: 420 },
-  { offset: -41, who: "kaito", side: "buy", amountUsd: 300 },
-  { offset: -24, who: "you", side: "buy", amountUsd: 250 },
-  { offset: -11, who: "vex", side: "sell", amountUsd: 900 },
+  { at: 0.16, who: "unipcs", side: "buy", amountUsd: 12_000 },
+  { at: 0.29, who: "kaito", side: "buy", amountUsd: 300 },
+  { at: 0.41, who: "crayon", side: "sell", amountUsd: 1_400 },
+  { at: 0.54, who: "mochi", side: "buy", amountUsd: 420 },
+  { at: 0.66, who: "ogle", side: "buy", amountUsd: 5_100 },
+  { at: 0.78, who: "you", side: "buy", amountUsd: 250 },
+  { at: 0.88, who: "vex", side: "sell", amountUsd: 900 },
+  { at: 0.96, who: "kaito", side: "sell", amountUsd: 780 },
 ];
 
 export const STRIP_ITEMS = [
