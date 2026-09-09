@@ -212,7 +212,10 @@ export function Polly({ price }: { price: number | undefined }) {
   }
 
   return (
-    <div className="flex shrink-0 flex-col rounded-2xl border border-line bg-panel px-3 pb-3">
+    /* Narrow and centred rather than spanning the terminal. A command bar
+       that runs the full width reads as a footer; at this width it reads as
+       the thing you talk to, which is what it is. */
+    <div className="mx-auto flex w-full max-w-2xl shrink-0 flex-col rounded-2xl border border-line bg-panel px-3 pb-3">
       {turns.length > 0 && (
         <div
           ref={streamRef}
