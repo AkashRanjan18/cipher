@@ -108,15 +108,9 @@ export interface Major {
   marketCap: number | null;
 }
 
-/**
- * Chart intervals the UI offers.
- *
- * A closed union, not a string, because these map to a specific
- * (timeframe, aggregate) pair upstream — GeckoTerminal has no "4h" endpoint,
- * it has "hour" aggregated by 4. Letting a component pass an arbitrary string
- * would push that translation into the UI.
- */
-export type Interval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+/* Interval moved to packages/shared — the Intent union needs it, and shared
+   cannot import upward from an app. Re-exported so nothing else changed. */
+export type { Interval } from "@cipher/shared";
 
 /** One executed swap in the pool. The tape. */
 export interface Trade {

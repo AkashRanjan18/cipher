@@ -1,0 +1,181 @@
+import type { Interval } from "./market.ts";
+import type { OrderSpec } from "./order.ts";
+
+/**
+ * What Sana is allowed to do.
+ *
+ * This union IS the boundary. The prompt bar can do exactly what the UI can
+ * do and nothing else — no web search, no external lookups, no general
+ * questions — and that rule is enforced HERE, in the type system, rather than
+ * in a prompt.
+ *
+ * The difference matters. A model told "only answer trading questions" will
+ * eventually answer something else, because instructions are advisory. A model
+ * handed this union as its output schema cannot return a web search, because
+ * there is no field to put one in. The boundary holds even when the prompt
+ * fails, and it holds identically for the grammar path, which has no prompt at
+ * all.
+ *
+ * It is also the cost control. Inference is cheap — a compile is a fraction of
+ * a cent. What is expensive is per-query search and token-data APIs, where the
+ * user decides how many calls you pay for. None of that is reachable from
+ * here.
+ *
+ * ADDING A CAPABILITY means adding a member to this union, which means every
+ * switch downstream stops compiling until it is handled. That is deliberate:
+ * a new thing Sana can do should be impossible to add without deciding what
+ * the validator, the readback and the UI do about it.
+ */
+
+export const INTENT_VERSION = 1;
+
+/**
+ * Place a trade, or arm exits against a position.
+ *
+ * The only kind that moves money, and the only one that has to pass through a
+ * readback the user approves before anything happens. Everything else here is
+ * reversible by looking at the screen.
+ */
+export interface OrderIntent {
+  kind: "order";
+  spec: OrderSpec;
+}
+
+/**
+ * Change what the terminal is looking at.
+ *
+ * Deliberately not "open a URL" — a closed set of the things the UI itself can
+ * switch between, so an unknown market or interval fails at compile rather
+ * than producing a navigation to nowhere.
+ */
+export interface NavigateIntent {
+  kind: "navigate";
+  /** A Binance pair from MARKETS. Validated against the allowlist, never trusted. */
+  symbol?: string;
+  interval?: Interval;
+  panel?: "alerts" | "tokens" | "leaders" | "feed";
+}
+
+/**
+ * Read something already on screen.
+ *
+ * Every one of these is answerable from state the client ALREADY holds — the
+ * account, the loaded candles, the poll that feeds the market list. None of
+ * them is allowed to trigger a fetch, which is the whole point: a question can
+ * never cost money.
+ *
+ * If a question needs data cipher does not have, it is a refusal, not a query.
+ */
+export interface QueryIntent {
+  kind: "query";
+  subject:
+    /** What you hold, and what it is worth. */
+    | "position"
+    /** Spendable cash. */
+    | "cash"
+    /** Cash plus holdings, marked at the live price. */
+    | "equity"
+    /** Realised, unrealised, or both. */
+    | "pnl"
+    /** Your fill history. */
+    | "fills"
+    /** Price, market cap, 24h change, volume, liquidity for the open market. */
+    | "market"
+    /** Fees paid so far. */
+    | "fees";
+  /** Narrows a query to one market. Defaults to whatever is open. */
+  symbol?: string;
+}
+
+/**
+ * Operate the interface itself.
+ *
+ * Small, and worth having: these are the controls people never find. Nobody
+ * discovers Alt+R, and "make the chart bigger" is a sentence everyone can say.
+ */
+export interface UiIntent {
+  kind: "ui";
+  action:
+    | "collapsePanel"
+    | "expandPanel"
+    | "splitBottom"
+    | "splitRight"
+    | "resetChart";
+}
+
+/**
+ * The boundary, made explicit.
+ *
+ * Three reasons, because the UI should respond differently to each and
+ * collapsing them into one "sorry" is how a product feels stupid:
+ *
+ *   outOfScope   — cipher does not do this and never will. "What is the
+ *                  weather", "find me new tokens on Twitter". Say so plainly;
+ *                  do not apologise for a decision.
+ *   notUnderstood — shaped like something cipher does, but unparseable. Worth
+ *                  offering an example, because the user is close.
+ *   notBuilt     — understood exactly, and the capability does not exist yet.
+ *                  "Sell a third at 2x" is THIS one today: the grammar parses
+ *                  it perfectly and nothing watches the price. Never let this
+ *                  masquerade as notUnderstood — telling someone you did not
+ *                  understand a sentence you understood completely is the one
+ *                  refusal that destroys trust in the parser.
+ */
+export interface RefusalIntent {
+  kind: "refusal";
+  reason: "outOfScope" | "notUnderstood" | "notBuilt";
+  /** Shown to the user verbatim. Say what happened and what to do instead. */
+  message: string;
+}
+
+export type Intent =
+  | OrderIntent
+  | NavigateIntent
+  | QueryIntent
+  | UiIntent
+  | RefusalIntent;
+
+/**
+ * A compiled sentence, with its provenance.
+ *
+ * `source` exists to be measured. If the grammar covers 85% of real traffic
+ * the model is a rounding error on the bill; if it covers 30% the grammar
+ * needs work, and you cannot know which without counting. Log it from the
+ * first day the model path exists.
+ *
+ * NOTE ON DUPLICATION: OrderSpec carries its own `source` and `warnings`, and
+ * they are not these. An armed rule outlives many compiles, so the spec's
+ * copies are persisted WITH the rule; these describe this one compilation and
+ * are thrown away with it.
+ */
+export interface Compiled {
+  version: typeof INTENT_VERSION;
+  intent: Intent;
+  source: "grammar" | "model";
+  /** Understood but not actionable. Surfaced in the readback, never silently. */
+  warnings: string[];
+}
+
+/**
+ * What the compiler is allowed to know.
+ *
+ * DELIBERATELY THIN, and the omissions are the point.
+ *
+ * The open market is here because "buy $500 of this" cannot be resolved
+ * without it. Balance and price are NOT, and must never be added: give a model
+ * the account and it starts making decisions — "you only have $200, so I will
+ * buy $200" — and that is discretion. cipher's regulatory position is that it
+ * transcribes an instruction and does not exercise judgement, and the moment
+ * the compiler knows what you can afford, that stops being true.
+ *
+ * Whether an order is affordable is validate.ts's job, in deterministic code,
+ * after compilation.
+ */
+export interface CompileContext {
+  /** The market currently open, e.g. "SOLUSDT". Resolves "this" and "it". */
+  symbol: string;
+  /** The interval currently shown, so "zoom out" has a reference point. */
+  interval: Interval;
+  /** True when the user holds the open market. Resolves "sell half" vs a refusal. */
+  hasPosition: boolean;
+}
