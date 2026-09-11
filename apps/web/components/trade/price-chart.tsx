@@ -156,14 +156,14 @@ export function PriceChart({
   useEffect(() => {
     if (!box.current) return;
 
-    const INK = token("--color-ink", "#060510");
-    const ASH = token("--color-ash", "#9899a3");
-    const UP = token("--color-up", "#21c95e");
-    const DOWN = token("--color-down", "#ff622e");
+    const INK = token("--color-ink", "#06070a");
+    const ASH = token("--color-ash", "#7c8291");
+    const UP = token("--color-up", "#2ebd85");
+    const DOWN = token("--color-down", "#f6465d");
     // The grid and the axis borders are the same translucent lavender the
     // panels use, so the chart is bounded like every other surface.
-    const LINE = token("--color-line", "rgba(203,208,235,0.1)");
-    const GRID = token("--color-hairline", "rgba(203,208,235,0.06)");
+    const LINE = token("--color-line", "#1e212b");
+    const GRID = token("--color-hairline", "#171a22");
 
     const c = createChart(box.current, {
       layout: {
@@ -280,8 +280,8 @@ export function PriceChart({
         value: d.volume,
         color: volumeColor(
           d,
-          token("--color-up", "#21c95e"),
-          token("--color-down", "#ff622e"),
+          token("--color-up", "#2ebd85"),
+          token("--color-down", "#f6465d"),
         ),
       })) as never,
     );

@@ -190,7 +190,7 @@ function Stat({
   dir?: "up" | "down" | null;
 }) {
   return (
-    <div className="min-w-[86px] rounded-lg border border-line bg-slate px-3 py-1 text-center">
+    <div className="min-w-[86px] rounded-[10px] border border-line bg-slate px-3 py-1 text-center">
       <div className="whitespace-nowrap font-sans text-[11px] text-ash">{label}</div>
       <div
         className={`font-mono text-[14px] font-bold leading-tight tabular-nums ${

@@ -6,95 +6,80 @@
  */
 @theme {
   /*
-   * THE PALETTE IS FOMO'S, MEASURED OFF THEIR LIVE TOKEN PAGE.
+   * THE PALETTE, from the spec you handed me.
    *
-   * Not guessed from a screenshot — read out of getComputedStyle on
-   * fomo.family/tokens/solana/Gbbes…, so these are their actual values.
+   * A deliberate move away from fomo's ground. Theirs is violet-cast
+   * (#060510 — twice as much blue as red) which warms everything sitting on
+   * it. This one is neutral and cool: #06070a, with the surfaces stepping up
+   * through near-black blue-greys rather than purples.
    *
-   * Three things about it are worth more than the hexes:
-   *
-   * 1. The ground is not neutral black. #060510 has twice as much blue as
-   *    red, so every warm colour on top of it reads warmer than it is. A
-   *    neutral #0b0910 ground was making our greens look muddy.
-   * 2. The borders are TRANSLUCENT COOL LAVENDER, not opaque grey. That is
-   *    most of why their panels look lit and ours looked drawn: a light
-   *    border at 10% picks up whatever is behind it, so a panel edge
-   *    brightens where the content behind it is bright.
-   * 3. Down is ORANGE-RED (#ff622e), not pink-red. Pink reads as alarm.
-   *    Orange sits next to their green as a pair rather than a warning.
+   * Direction colours are the exchange standard — #2ebd85 and #f6465d, the
+   * pair Binance uses and therefore the pair every trader already reads
+   * without thinking. fomo's orange-red is gone.
    */
 
-  /* Warm off-white, not pure white. Pure white glares over video and floats
-     off dark grounds; this sits into them.
-
-     THE ONE DELIBERATE DIVERGENCE. fomo's body text is #f7f7f7, a cool
-     near-white. Champagne is the whole cipher identity — the wordmark, the
-     hero, the display face are built on it, and swapping it for their grey
-     would leave us with fomo's page and no brand. Everything else here is
-     theirs. To go all the way, set this to #f7f7f7. */
+  /*
+   * Warm off-white, and THE ONE DIVERGENCE from the spec, which calls for a
+   * cool #f2f3f5.
+   *
+   * Champagne is the whole cipher identity — the wordmark, the hero, the
+   * display face. And it works harder here than it did on fomo's ground: warm
+   * text on a cool near-black is a stronger pairing than warm on warm. Set
+   * this to #f2f3f5 to take the spec literally.
+   */
   --color-champagne: #f3e9d8;
 
-  /* The surface ladder, four steps, all fomo's. Each one is barely above the
-     last — the separation on their page comes from the borders, not from
-     contrast between fills. Lightening these is the mistake that makes a
-     dark UI look like grey cardboard. */
-  --color-ink: #060510;
-  --color-slate: #12111a;
-  --color-panel: #161522;
-  --color-raised: #1e1d2b;
+  /* The surface ladder. Page, then sections, then boxes inside them, then
+     controls on top of those. Each step is small — separation comes from the
+     borders, not from contrast between fills. */
+  --color-ink: #06070a;
+  --color-panel: #0a0b0f;
+  --color-slate: #12141b;
+  --color-raised: #191d26;
+
+  /* Borders, opaque rather than the translucent lavender fomo uses. On a
+     neutral ground a solid line is cleaner and reads the same. */
+  --color-line: #1e212b;
+  --color-hairline: #171a22;
+
+  /* Three text weights. Labels recede to ash, the least important to mute. */
+  --color-ash: #7c8291;
+  --color-mute: #565c6b;
 
   /*
-   * The two border weights, as fomo draws them: one cool light at two
-   * alphas. A single hairline value cannot do both "divides rows" and
-   * "bounds a panel", and an opaque grey cannot do either as well as this.
-   */
-  --color-line: rgba(203, 208, 235, 0.1);
-  --color-hairline: rgba(203, 208, 235, 0.06);
-
-  /* The text ladder. We had two steps and needed three — the third is what
-     lets a label recede without disappearing. */
-  --color-ash: #9899a3;
-  --color-mute: #474b52;
-
-  /*
-   * Semantic market colours.
+   * Direction. The single most repeated signal on a trading screen, so it
+   * gets one definition — these were scattered as raw Tailwind shades across
+   * a dozen call sites, which is why nothing cohered.
    *
-   * Direction is the single most repeated signal on a trading screen, so it
-   * gets one definition. The -bright pair is for small marks that would lose
-   * against a dark fill; the -soft pair is the 20% wash fomo puts behind
-   * their Buy button, which is how you get a coloured control that does not
-   * shout.
+   * -soft is the 20% wash behind a coloured control, which is how you tint a
+   * button without making it shout.
    */
-  --color-up: #21c95e;
-  --color-up-bright: #45fe82;
-  --color-up-soft: rgba(33, 201, 94, 0.2);
-  --color-down: #ff622e;
-  --color-down-soft: rgba(255, 98, 46, 0.2);
+  --color-up: #2ebd85;
+  --color-up-bright: #3fe8a5;
+  --color-up-soft: rgba(46, 189, 133, 0.2);
+  --color-down: #f6465d;
+  --color-down-soft: rgba(246, 70, 93, 0.2);
 
   /*
-   * Action blue — links, secondary CTAs, anything that is neither a
-   * direction nor yours. cipher had no such colour and was spending the
-   * accent on it, which is why "yours" stopped meaning anything.
+   * Action blue — links and secondary CTAs. Deliberately NOT the spec's
+   * #5bc0a8 brand teal, which sits too close to the up-green; a link that
+   * reads as "profit" at a glance is a bug.
    */
   --color-action: #516af6;
   --color-action-bright: #4356ff;
 
   /*
    * Accent. Champagne cannot do this job — it is the body text colour, so
-   * anything painted with it disappears into the page. This is the one hue
-   * that means "yours": your chart markers, your position, focus rings.
-   *
-   * Amber rather than orange, and now more load-bearing than before: down is
-   * orange too, so the accent has to stay clearly on the yellow side of it.
+   * anything painted with it disappears. This is the one hue meaning "yours":
+   * your position, your marker, focus rings. Amber gains contrast on a cool
+   * ground, and no longer has to fight an orange down-colour for space.
    */
   --color-accent: #e2a445;
 
   /*
-   * Identity colours for people and flocks, assigned by hashing the handle.
-   * Rebuilt out of fomo's bright family — sky, blue and orange are their
-   * exact values. Deliberately none of accent/up/down, and coral is pushed
-   * to peach because down is orange now and an avatar must never read as a
-   * direction.
+   * Identity colours for people and flocks, hashed from the handle.
+   * Currently unused — components/trade/avatar.tsx is orphaned since the feed
+   * and the chart markers were removed. Both return with the social layer.
    */
   --color-id-violet: #a37cff;
   --color-id-cyan: #73ccff;
