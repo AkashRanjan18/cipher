@@ -58,7 +58,7 @@ function Fills() {
     return (
       <p className="p-4 text-center font-sans text-xs leading-relaxed text-ash">
         No trades yet. You have {usd(account.usdc)} of paper money — buy something on the right,
-        or just tell Polly what you want.
+        or just tell Sana what you want.
       </p>
     );
   }
@@ -96,7 +96,7 @@ function Fills() {
               }`}
             >
               {f.side === "buy" ? "Buy" : "Sell"}
-              {f.source === "polly" && <span className="ml-1 text-ash">🦜</span>}
+              {f.source === "sana" && <span className="ml-1 text-ash">✦</span>}
             </td>
             <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums">
               {f.qty.toFixed(4)} SOL

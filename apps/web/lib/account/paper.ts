@@ -52,7 +52,7 @@ export interface Fill {
   /** Realised P&L booked by this fill. Always 0 on a buy. */
   realisedUsd: number;
   squawk: string;
-  source: "ticket" | "polly";
+  source: "ticket" | "sana";
 }
 
 export interface Account {

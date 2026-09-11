@@ -14,7 +14,7 @@ import { StatusBar } from "./status-bar";
 import { useMajors } from "./use-majors";
 import { MyTrades } from "./my-trades";
 import { Ticket } from "./ticket";
-import { Polly } from "./polly";
+import { Sana } from "./sana";
 import { Flow } from "./flow";
 
 /**
@@ -26,7 +26,7 @@ import { Flow } from "./flow";
  * the whole time, which is the arrangement that makes the design work.
  *
  * The right column is cipher's and stays cipher's: the ticket, the flow panel,
- * and Polly along the bottom. That is where the product differs, so that is
+ * and Sana along the bottom. That is where the product differs, so that is
  * where the layout should.
  *
  * This component owns the five things that change without a navigation: the
@@ -356,7 +356,7 @@ function TerminalBody({
           must never sit on top of it. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-11 z-30 flex justify-center px-2">
         <div className="pointer-events-auto w-full">
-          <Polly price={last} market={market.base} />
+          <Sana price={last} market={market.base} />
         </div>
       </div>
     </div>

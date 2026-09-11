@@ -41,7 +41,7 @@ type Side = "buy" | "sell";
  * Market is the only one that can execute today: a limit order that is not
  * immediately fillable has to REST, and resting means something watches the
  * price and fires later. That is the trigger engine, and it does not exist
- * yet — the same reason Polly refuses to arm exits.
+ * yet — the same reason Sana refuses to arm exits.
  *
  * A marketable limit is different and does work: a buy limit at or above the
  * current price, or a sell limit at or below it, can be filled right now. So

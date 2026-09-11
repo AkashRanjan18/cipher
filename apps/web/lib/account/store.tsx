@@ -62,6 +62,22 @@ function load(): Account | null {
     const parsed = JSON.parse(raw) as Account;
     // Shape check, not a schema. Corrupt state should reset, never throw.
     if (typeof parsed?.usdc !== "number" || !Array.isArray(parsed.fills)) return null;
+
+    /*
+     * The prompt bar was called Polly and is now Sana, and Fill.source is a
+     * PERSISTED string — so every fill already sitting in a browser still says
+     * "polly" and would quietly stop being recognised as prompt-placed.
+     *
+     * Rewriting it on read rather than leaving the old value in the union: a
+     * type that carries a dead name forever is how a rename becomes permanent
+     * technical debt. This costs one pass over an array that is at most a few
+     * hundred long, and it can be deleted once nobody has a pre-rename
+     * account — which, for paper money with a Reset button, is soon.
+     */
+    for (const f of parsed.fills) {
+      if ((f.source as string) === "polly") f.source = "sana";
+    }
+
     return parsed;
   } catch {
     return null;

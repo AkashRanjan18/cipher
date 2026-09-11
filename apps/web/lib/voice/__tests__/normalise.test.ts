@@ -29,7 +29,7 @@ test("the canonical sentence survives being spoken", () => {
 
 test("the raw transcript would NOT have compiled", () => {
   /* The reason this file exists. Without normalisation the grammar returns
-     null and Polly refuses — correct behaviour, but it reads as voice being
+     null and Sana refuses — correct behaviour, but it reads as voice being
      broken rather than as the compiler protecting the user. */
   const heard = "by five hundred dollars of soul, sell a third at two x, stop the rest at fifty percent";
   assert.equal(parseWithGrammar(heard), null);

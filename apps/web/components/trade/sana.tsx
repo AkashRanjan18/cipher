@@ -11,14 +11,14 @@ import { resolveQty, allInPrice } from "@/lib/account/paper";
 import { usd } from "@/lib/format";
 
 /**
- * Polly — the conversational bar along the bottom.
+ * Sana — the conversational bar along the bottom.
  *
  * Parrot's shape, with one substitution that matters: it drives the REAL
  * compiler in lib/compiler, not the regex Parrot shipped. So an order card
  * here is the same OrderSpec and the same readback that would arm a rule,
  * rather than a mock that agrees with itself.
  *
- * The consequence is that Polly refuses more than Parrot's version did. The
+ * The consequence is that Sana refuses more than Parrot's version did. The
  * grammar returns null rather than half-parsing, because a partial readback
  * looks plausible and gets approved — and approving a misread order is the
  * one failure this product cannot have.
@@ -42,12 +42,12 @@ const COMMANDS: [string, string][] = [
   ["/copy", "Mirror a friend's trades"],
   ["/flock", "See what your flocks are holding"],
   ["/squawk", "Post a note to your flock"],
-  ["/help", "What Polly understands"],
+  ["/help", "What Sana understands"],
 ];
 
 let nextId = 0;
 
-export function Polly({
+export function Sana({
   price,
   market = "SOL",
 }: {
@@ -144,7 +144,7 @@ export function Polly({
      * Everything else goes to the grammar. It handles the sentences people
      * actually type, in under 10ms with no network and no chance of a misread.
      * When it returns null the model would take over — that route is not
-     * built yet, so Polly says so rather than pretending.
+     * built yet, so Sana says so rather than pretending.
      */
     /*
      * normaliseSpeech runs on TYPED input too, not just dictation.
@@ -186,7 +186,7 @@ export function Polly({
    * The exits are deliberately not armed. There is no trigger engine yet, and
    * a card that says "stop set at -50%" when nothing is watching the price is
    * the single worst lie this product could tell — the user would size the
-   * position believing they are protected. So the entry fills and Polly says
+   * position believing they are protected. So the entry fills and Sana says
    * plainly that the exits did not arm.
    */
   function approve(t: Turn) {
@@ -202,7 +202,7 @@ export function Polly({
       return;
     }
 
-    const r = trade({ side: entry.side, qty, mark: price, source: "polly" });
+    const r = trade({ side: entry.side, qty, mark: price, source: "sana" });
     if ("refusal" in r) {
       resolve(t.id, r.refusal);
       return;
@@ -333,9 +333,9 @@ export function Polly({
             }}
             onKeyDown={(e) => e.key === "Escape" && setSlashOpen(false)}
             placeholder={
-              speech.listening ? "Listening…" : "Ask Polly, place a trade, or /copy a friend"
+              speech.listening ? "Listening…" : "Ask Sana, place a trade, or /copy a friend"
             }
-            aria-label="Ask Polly or type a command"
+            aria-label="Ask Sana or type a command"
             className="min-w-0 flex-1 bg-transparent font-sans text-sm text-ink placeholder:text-ink/45 focus:outline-none"
           />
 
@@ -364,7 +364,7 @@ export function Polly({
           <span className="shrink-0 font-mono text-[10.5px] text-ink/40">⏎</span>
           <button
             type="submit"
-            aria-label="Send to Polly"
+            aria-label="Send to Sana"
             className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-ink text-champagne hover:brightness-150"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
