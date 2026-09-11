@@ -11,6 +11,7 @@ import {
   allInPrice,
 } from "@/lib/account/paper";
 import { usd, pct } from "@/lib/format";
+import { DEFAULTS } from "@cipher/shared";
 
 /**
  * The trade ticket. Buy, sell, position. Nothing else.
@@ -53,17 +54,45 @@ type OrderType = "market" | "limit";
 const BUY_PRESETS = [10, 100, 500, 1000];
 const SELL_PRESETS = [25, 50, 75, 100];
 
+/**
+ * Slippage presets, in bps.
+ *
+ * fomo puts this behind a gear beside the amount presets and picks the default
+ * for you, which is the right call: most people set it worse than the default
+ * would have been, and on a public mempool a wide tolerance is not a safety
+ * margin — it is the budget you are offering a sandwich bot.
+ *
+ * The four are the real decision points. 0.5% is a deep liquid major, 1% is
+ * normal, 3% is our default and lands on a moving memecoin, 10% is "I need
+ * this fill and I know what it costs".
+ */
+const SLIPPAGE_PRESETS = [50, 100, 300, 1000];
+
 export function Ticket({
   price,
   market = "SOL",
+  depthUsd = null,
 }: {
   price: number | undefined;
   /** The market the chart is showing. See tradable below. */
   market?: string;
+  /** Resting book depth, for pricing this order's impact. Null when unknown. */
+  depthUsd?: number | null;
 }) {
   const { account, hydrated, trade } = usePaperAccount();
   const [side, setSide] = useState<Side>("buy");
   const [orderType, setOrderType] = useState<OrderType>("market");
+  /* Defaults come from packages/shared, not from a literal here, so the ticket
+     and the prompt compiler can never disagree about what "unstated" means. */
+  /* Explicit generics: DEFAULTS is `as const`, so these infer as the literal
+     types 300 and true and then refuse every other value. Widen here rather
+     than loosening the constant — it being literal is what makes it a
+     constant. */
+  const [slippageBps, setSlippageBps] = useState<number>(DEFAULTS.slippageBps);
+  const [privateSubmission, setPrivateSubmission] = useState<boolean>(
+    DEFAULTS.privateSubmission,
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [limit, setLimit] = useState("");
   const [amount, setAmount] = useState("");
   const [receipt, setReceipt] = useState<{ ok: boolean; text: string } | null>(null);
@@ -113,7 +142,7 @@ export function Ticket({
     price && limitPrice > 0 ? ((limitPrice - price) / price) * 100 : null;
 
   const qty = !price ? 0 : sellAll && !buying ? account.sol : value / fillPrice(price, side);
-  const q = price ? quote(account, side, qty, price) : null;
+  const q = price ? quote(account, side, qty, price, { depthUsd, slippageBps }) : null;
 
   /* Only block on a refusal once the real balance is known. Before hydration
      the account is the opening default, and refusing against it would be a
@@ -317,7 +346,7 @@ export function Ticket({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="relative flex items-center gap-1.5">
         {(buying ? BUY_PRESETS : SELL_PRESETS).map((n) => (
           <button
             key={n}
@@ -327,6 +356,96 @@ export function Ticket({
             {buying ? `$${n}` : `${n}%`}
           </button>
         ))}
+
+        {/*
+          * The gear, where fomo puts it: beside the presets, out of the path.
+          *
+          * Slippage and routing do not belong in the main flow. Most people
+          * set them worse than the default would have been, and on a public
+          * mempool a wide tolerance is not a safety margin — it is the budget
+          * you are offering a sandwich bot. Pick well, hide it, let the ones
+          * who know go looking.
+          */}
+        <button
+          onClick={() => setSettingsOpen((o) => !o)}
+          aria-expanded={settingsOpen}
+          aria-label="Execution settings"
+          title={`${(slippageBps / 100).toFixed(2)}% slippage · ${privateSubmission ? "private" : "public"}`}
+          className={`shrink-0 rounded-lg border px-2 py-1.5 font-mono text-[12px] transition-colors ${
+            settingsOpen
+              ? "border-accent/50 bg-raised text-accent"
+              : "border-line bg-slate text-ash hover:text-champagne"
+          }`}
+        >
+          ⚙
+        </button>
+
+        {settingsOpen && (
+          <div className="absolute right-0 top-full z-30 mt-1.5 w-full rounded-xl border border-line bg-panel p-3 shadow-2xl">
+            <div className="flex items-baseline justify-between">
+              <span className="font-sans text-[10px] font-bold uppercase tracking-[0.11em] text-ash">
+                Max slippage
+              </span>
+              <span className="font-mono text-[11px] tabular-nums text-champagne">
+                {(slippageBps / 100).toFixed(2)}%
+              </span>
+            </div>
+
+            <div className="mt-1.5 flex gap-1">
+              {SLIPPAGE_PRESETS.map((bps) => (
+                <button
+                  key={bps}
+                  onClick={() => setSlippageBps(bps)}
+                  aria-pressed={slippageBps === bps}
+                  className={`flex-1 rounded-lg border py-1 font-mono text-[11px] tabular-nums transition-colors ${
+                    slippageBps === bps
+                      ? "border-accent/50 bg-accent/10 text-accent"
+                      : "border-line bg-slate text-ash hover:text-champagne"
+                  }`}
+                >
+                  {bps / 100}%
+                </button>
+              ))}
+            </div>
+
+            {/* Routing. Private is the default and the label says what it
+                buys, because "private submission" means nothing to anyone who
+                has not already been sandwiched. */}
+            <label className="mt-3 flex cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                checked={privateSubmission}
+                onChange={(e) => setPrivateSubmission(e.target.checked)}
+                className="peer sr-only"
+              />
+              <span
+                aria-hidden
+                className={`mt-px grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] border text-[9px] font-bold transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent ${
+                  privateSubmission
+                    ? "border-action bg-action text-white"
+                    : "border-line bg-slate text-transparent"
+                }`}
+              >
+                ✓
+              </span>
+              <span className="font-sans text-[11px] leading-snug text-ash">
+                <b className="font-bold text-champagne">Private submission</b>
+                <br />
+                Hides the order until it lands, so nothing can trade in front of it.
+              </span>
+            </label>
+
+            {/* cipher: neither setting reaches an execution path yet — the
+                paper account models impact from book depth, and there is no
+                mempool to be private from. They are stored, shown, and
+                enforced against the impact model; they become real with the
+                relayer. */}
+            <p className="mt-2.5 border-t border-hairline pt-2 font-sans text-[10px] leading-relaxed text-mute">
+              Applied to the impact model on paper. Real routing lands with the
+              Solana engine.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* What you can actually use, and a one-tap way to use all of it. */}

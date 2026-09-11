@@ -103,6 +103,27 @@ export function feeFor(notionalUsd: number): number {
 const SPREAD_BPS = 10;
 
 /**
+ * Price impact: what YOUR order does to the price, as distinct from the
+ * spread, which is what the venue charges everyone.
+ *
+ * A first-order approximation — trade 1% of the resting depth and move the
+ * price roughly 1%. The real curve is convex and gets much worse past a few
+ * percent of the book, so this UNDERSTATES large orders; it is here because
+ * the previous model understated them by charging a flat 10bps whether you
+ * bought fifty dollars or five hundred thousand.
+ *
+ * cipher: replaced by a real quote when aggregator routing lands. A router
+ * returns the actual expected output for the actual size across the actual
+ * pools, and no local model beats that.
+ */
+export function impactBps(notionalUsd: number, depthUsd: number | null): number {
+  if (!depthUsd || depthUsd <= 0 || notionalUsd <= 0) return 0;
+  // Capped: past a third of the book this model stops meaning anything, and
+  // an uncapped figure would print slippage of several hundred percent.
+  return Math.min(5_000, (notionalUsd / depthUsd) * 10_000);
+}
+
+/**
  * The price you actually get, which is never the price on the chart.
  *
  * cipher: a flat spread. The real number comes from route depth — a $50 order
@@ -110,8 +131,9 @@ const SPREAD_BPS = 10;
  * quoting in phase 1. A flat 10bps is honest about the direction of the error
  * without inventing a depth model we do not have.
  */
-export function fillPrice(mark: number, side: "buy" | "sell"): number {
-  return side === "buy" ? mark * (1 + SPREAD_BPS / 10_000) : mark * (1 - SPREAD_BPS / 10_000);
+export function fillPrice(mark: number, side: "buy" | "sell", extraBps = 0): number {
+  const bps = SPREAD_BPS + Math.max(0, extraBps);
+  return side === "buy" ? mark * (1 + bps / 10_000) : mark * (1 - bps / 10_000);
 }
 
 /**
@@ -179,6 +201,8 @@ export interface Quote {
   feeUsd: number;
   /** What leaves the USDC balance on a buy, or lands in it on a sell. */
   cashUsd: number;
+  /** How far THIS order moves the price, in bps. 0 when depth is unknown. */
+  impactBps: number;
   /** Null when the order is executable; a sentence for the user when it is not. */
   refusal: string | null;
 }
@@ -190,14 +214,42 @@ export interface Quote {
  * never disagree. Two code paths for "what will this cost" is how a screen
  * ends up promising one number and charging another.
  */
-export function quote(a: Account, side: "buy" | "sell", qty: number, mark: number): Quote {
-  const price = fillPrice(mark, side);
+export function quote(
+  a: Account,
+  side: "buy" | "sell",
+  qty: number,
+  mark: number,
+  /*
+   * Execution conditions. Optional and defaulted, so every existing caller and
+   * every existing test is unaffected — a signature change here would ripple
+   * through the ticket, Sana and thirty tests for a feature neither of them
+   * has to care about.
+   */
+  opts?: { depthUsd?: number | null; slippageBps?: number },
+): Quote {
+  const gross = qty * mark;
+  const impact = impactBps(gross, opts?.depthUsd ?? null);
+  const price = fillPrice(mark, side, impact);
   const notionalUsd = qty * price;
   const feeUsd = feeFor(notionalUsd);
   const cashUsd = side === "buy" ? notionalUsd + feeUsd : notionalUsd - feeUsd;
 
   let refusal: string | null = null;
-  if (!Number.isFinite(qty) || qty <= 0) {
+
+  /*
+   * Tolerance, checked BEFORE affordability.
+   *
+   * A trade that would breach slippage does not happen, so telling the user
+   * they cannot afford it is answering a question that no longer applies —
+   * and it sends them to top up their balance to fix a problem that is about
+   * order size against a thin book.
+   */
+  const tolerance = opts?.slippageBps;
+  if (tolerance !== undefined && impact > tolerance) {
+    refusal =
+      `That size moves the price about ${(impact / 100).toFixed(2)}% and your limit is ` +
+      `${(tolerance / 100).toFixed(2)}%. Trade smaller, or raise the tolerance in settings.`;
+  } else if (!Number.isFinite(qty) || qty <= 0) {
     refusal = "That is not an amount.";
   } else if (side === "buy" && cashUsd > a.usdc) {
     refusal = `That needs $${cashUsd.toFixed(2)} with the fee and you have $${a.usdc.toFixed(2)}.`;
@@ -212,7 +264,7 @@ export function quote(a: Account, side: "buy" | "sell", qty: number, mark: numbe
     refusal = `The fee on that is $${feeUsd.toFixed(2)} and the sale is only $${notionalUsd.toFixed(2)}.`;
   }
 
-  return { side, qty, price, notionalUsd, feeUsd, cashUsd, refusal };
+  return { side, qty, price, notionalUsd, feeUsd, cashUsd, impactBps: impact, refusal };
 }
 
 /**

@@ -335,7 +335,7 @@ function TerminalBody({
             second one let flexbox compress it, and its internal overflow then
             clipped the account panel mid-row. */}
         <aside className="flex min-h-0 flex-col">
-          <Ticket price={last} market={market.base} />
+          <Ticket price={last} market={market.base} depthUsd={depth} />
           <Flow candles={candles} last={last} />
         </aside>
       </div>

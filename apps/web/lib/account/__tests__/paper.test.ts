@@ -234,3 +234,66 @@ test("the all-in price accounts for every dollar that moved", () => {
   const { fill: f } = fill(a, "buy", 10, 100);
   assert.equal(allInPrice(f), allInPrice(qb));
 });
+
+/*
+ * PRICE IMPACT AND SLIPPAGE TOLERANCE
+ *
+ * These cannot be exercised through the UI at a $10,000 paper balance: that
+ * order against SOL's multi-million-dollar book moves the price by about a
+ * seventh of one percent, so the tolerance never binds. It binds on a thin
+ * memecoin pool, which is the case that actually matters and the one nobody
+ * can click their way to. Hence tests.
+ */
+
+test("depth is optional, and without it nothing changes", () => {
+  const a = openAccount(10_000);
+  assert.equal(quote(a, "buy", 10, 100).impactBps, 0);
+  assert.equal(quote(a, "buy", 10, 100).price, quote(a, "buy", 10, 100, {}).price);
+});
+
+test("impact scales with size against the book", () => {
+  const a = openAccount(1_000_000);
+  // $1,000 into a $1,000,000 book is a tenth of a percent.
+  const small = quote(a, "buy", 10, 100, { depthUsd: 1_000_000 });
+  assert.ok(Math.abs(small.impactBps - 10) < 1e-9);
+
+  // Ten times the size, ten times the impact.
+  const big = quote(a, "buy", 100, 100, { depthUsd: 1_000_000 });
+  assert.ok(Math.abs(big.impactBps - 100) < 1e-9);
+
+  assert.ok(big.price > small.price, "a bigger buy fills worse");
+});
+
+test("a thin pool refuses an order that breaches tolerance", () => {
+  const a = openAccount(100_000);
+  // $5,000 into a $40,000 pool is 12.5%, well past a 3% tolerance.
+  const q = quote(a, "buy", 50, 100, { depthUsd: 40_000, slippageBps: 300 });
+  assert.ok(q.refusal);
+  assert.match(q.refusal!, /12\.50%.*3\.00%/);
+});
+
+/*
+ * Tolerance is checked BEFORE affordability. A trade that breaches slippage
+ * does not happen, so "you cannot afford it" answers a question that no longer
+ * applies — and it sends the user to top up a balance to fix a problem that is
+ * really about order size against a thin book.
+ */
+test("the tolerance refusal wins over the affordability refusal", () => {
+  const a = openAccount(100);
+  const q = quote(a, "buy", 50, 100, { depthUsd: 40_000, slippageBps: 300 });
+  assert.match(q.refusal!, /moves the price/);
+});
+
+test("the same order passes when the tolerance allows it", () => {
+  const a = openAccount(100_000);
+  const q = quote(a, "buy", 50, 100, { depthUsd: 40_000, slippageBps: 2_000 });
+  assert.equal(q.refusal, null);
+});
+
+/* Past a third of the book this model stops describing anything real, so it
+   is capped rather than printing slippage of several hundred percent. */
+test("impact is capped at 50%", () => {
+  const a = openAccount(10_000_000);
+  const q = quote(a, "buy", 10_000, 100, { depthUsd: 1_000 });
+  assert.equal(q.impactBps, 5_000);
+});
