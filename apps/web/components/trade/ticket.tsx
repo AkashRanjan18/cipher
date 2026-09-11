@@ -35,6 +35,21 @@ import { usd, pct } from "@/lib/format";
 
 type Side = "buy" | "sell";
 
+/**
+ * Market or limit.
+ *
+ * Market is the only one that can execute today: a limit order that is not
+ * immediately fillable has to REST, and resting means something watches the
+ * price and fires later. That is the trigger engine, and it does not exist
+ * yet — the same reason Polly refuses to arm exits.
+ *
+ * A marketable limit is different and does work: a buy limit at or above the
+ * current price, or a sell limit at or below it, can be filled right now. So
+ * the tab is not decoration — roughly half the orders people type into it
+ * will go through.
+ */
+type OrderType = "market" | "limit";
+
 const BUY_PRESETS = [10, 100, 500, 1000];
 const SELL_PRESETS = [25, 50, 75, 100];
 
@@ -48,6 +63,8 @@ export function Ticket({
 }) {
   const { account, hydrated, trade } = usePaperAccount();
   const [side, setSide] = useState<Side>("buy");
+  const [orderType, setOrderType] = useState<OrderType>("market");
+  const [limit, setLimit] = useState("");
   const [amount, setAmount] = useState("");
   const [receipt, setReceipt] = useState<{ ok: boolean; text: string } | null>(null);
   /*
@@ -74,6 +91,26 @@ export function Ticket({
 
   const buying = side === "buy";
   const value = parseFloat(amount.replace(/,/g, "")) || 0;
+  const limitPrice = parseFloat(limit.replace(/,/g, "")) || 0;
+  const limiting = orderType === "limit";
+
+  /*
+   * Would this limit fill right now?
+   *
+   * A buy limit is marketable at or ABOVE the market — you are willing to pay
+   * more than it costs, so it crosses. A sell limit is marketable at or below.
+   * The inverted case is the one that has to rest, and resting is what we
+   * cannot do yet.
+   */
+  const marketable =
+    !limiting ||
+    !price ||
+    limitPrice <= 0 ||
+    (buying ? limitPrice >= price : limitPrice <= price);
+
+  /* How far the limit sits from the market, for the hint under the box. */
+  const limitGapPct =
+    price && limitPrice > 0 ? ((limitPrice - price) / price) * 100 : null;
 
   const qty = !price ? 0 : sellAll && !buying ? account.sol : value / fillPrice(price, side);
   const q = price ? quote(account, side, qty, price) : null;
@@ -81,7 +118,12 @@ export function Ticket({
   /* Only block on a refusal once the real balance is known. Before hydration
      the account is the opening default, and refusing against it would be a
      refusal about the wrong account. */
-  const blocked = hydrated ? (q?.refusal ?? null) : null;
+  const restingRefusal =
+    limiting && limitPrice > 0 && !marketable
+      ? `That would rest ${Math.abs(limitGapPct ?? 0).toFixed(2)}% ${buying ? "below" : "above"} the market, and nothing is watching the price yet. Move it through the market to fill now, or use Market.`
+      : null;
+
+  const blocked = hydrated ? (restingRefusal ?? q?.refusal ?? null) : null;
 
   /** What you can spend on a buy, what the position is worth on a sell. */
   const available =
@@ -159,6 +201,35 @@ export function Ticket({
      * DOM, correct in every number, and invisible.
      */
     <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto rounded-2xl border border-line bg-panel p-3 [&>*]:shrink-0">
+      {/*
+        * Order type sits ABOVE side, because it is the wider decision: it
+        * changes what the ticket asks you for, while side only changes which
+        * direction the same question runs in. A segmented strip rather than
+        * two more big buttons — three stacked pairs of equal-weight buttons
+        * and the eye has no idea which one is the primary control.
+        */}
+      <div className="flex gap-0.5 rounded-lg bg-slate p-0.5">
+        {(["market", "limit"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => {
+              setOrderType(t);
+              setReceipt(null);
+              if (t === "market") setLimit("");
+              // Seed the box with the live price so the first edit is a nudge
+              // from where the market actually is, not a guess from zero.
+              if (t === "limit" && price) setLimit(price.toFixed(price >= 1 ? 2 : 6));
+            }}
+            aria-pressed={orderType === t}
+            className={`flex-1 rounded-md py-1 font-sans text-[11.5px] font-bold capitalize transition-colors ${
+              orderType === t ? "bg-raised text-champagne" : "text-ash hover:text-champagne"
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 gap-2">
         {(["buy", "sell"] as const).map((s) => (
           <button
@@ -182,6 +253,45 @@ export function Ticket({
           </button>
         ))}
       </div>
+
+      {limiting && (
+        <div>
+          <div className="flex items-center gap-2 rounded-xl border border-line bg-slate px-3.5 py-2 focus-within:border-accent/50">
+            <label
+              htmlFor="tk-limit"
+              className="shrink-0 font-sans text-[10px] font-bold uppercase tracking-[0.11em] text-ash"
+            >
+              Limit
+            </label>
+            <input
+              id="tk-limit"
+              inputMode="decimal"
+              value={limit}
+              onChange={(e) => {
+                if (e.target.value === "" || /^\d*\.?\d*$/.test(e.target.value)) {
+                  setLimit(e.target.value);
+                  setReceipt(null);
+                }
+              }}
+              placeholder="0.00"
+              className="min-w-0 flex-1 bg-transparent text-right font-mono text-[15px] font-bold tabular-nums text-champagne placeholder:text-ash focus:outline-none"
+            />
+          </div>
+          {/* Distance from the market, signed and coloured. A price in
+              isolation says nothing; the gap is the whole decision. */}
+          {limitGapPct !== null && (
+            <p
+              className={`mt-1 px-1 font-mono text-[10.5px] tabular-nums ${
+                marketable ? "text-ash" : buying ? "text-down" : "text-up"
+              }`}
+            >
+              {limitGapPct >= 0 ? "+" : "−"}
+              {Math.abs(limitGapPct).toFixed(2)}% vs market
+              {marketable && limitPrice > 0 ? " · fills now" : ""}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="rounded-xl border border-line bg-slate px-3.5 py-3 focus-within:border-accent/50">
         <div className="flex items-baseline gap-1.5">
@@ -229,7 +339,11 @@ export function Ticket({
       </button>
 
       <button
-        disabled={!tradable || !price || !!blocked || value <= 0}
+        // A limit order with no limit price would fall through and submit as
+        // a market order — the one substitution a ticket must never make.
+        disabled={
+          !tradable || !price || !!blocked || value <= 0 || (limiting && limitPrice <= 0)
+        }
         onClick={submit}
         className={`rounded-xl py-3 font-display text-[15px] font-bold transition-transform active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-40 ${
           !tradable
@@ -239,7 +353,9 @@ export function Ticket({
               : "bg-down text-ink"
         }`}
       >
-        {tradable ? `${buying ? "Buy" : "Sell"} SOL` : `${market} is chart-only`}
+        {!tradable
+          ? `${market} is chart-only`
+          : `${buying ? "Buy" : "Sell"} SOL${limiting && marketable && limitPrice > 0 ? " at limit" : ""}`}
       </button>
 
       {/* The refusal shows even while the button is disabled — a dead button
