@@ -369,10 +369,16 @@ function TerminalBody({
             pending={pending}
           />
 
-          {/* A real height again. The column no longer fills the viewport —
-              it is content inside a scrolling region — so there is nothing for
-              flex-1 to take a share of. */}
-          <div className="h-[55vh] min-h-[320px]">
+          {/*
+            * A real height again. The column no longer fills the viewport —
+            * it is content inside a scrolling region — so there is nothing for
+            * flex-1 to take a share of.
+            *
+            * data-wheel-lock: the chart owns the wheel over itself. Without it
+            * a zoom also scrolled the region, so the candles came closer and
+            * the whole column slid at the same time. See Scroller.
+            */}
+          <div data-wheel-lock className="h-[55vh] min-h-[320px]">
             <PriceChart
               candles={candles}
               livePrice={live}

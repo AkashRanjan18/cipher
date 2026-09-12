@@ -88,8 +88,39 @@ export function Scroller({
      * listeners as PASSIVE — preventDefault inside a React handler is ignored
      * and logs a console warning, so the page would keep scrolling at full
      * speed and the multiplier would look like it did nothing.
+     *
+     * CAPTURE PHASE, and that is not optional. Scrolling is the wheel event's
+     * DEFAULT ACTION on the nearest scrollable ancestor — stopPropagation does
+     * not stop it, only preventDefault does. The chart stops propagation, so a
+     * bubble-phase listener here never ran, never called preventDefault, and
+     * the region scrolled natively underneath a zoom. Capture runs before the
+     * chart sees the event, so the default can still be suppressed; the chart
+     * then receives it and zooms as normal.
      */
     const onWheel = (e: WheelEvent) => {
+      /*
+       * SOME THINGS OWN THEIR OWN WHEEL.
+       *
+       * The chart zooms on wheel. That event bubbles up here, so a zoom also
+       * scrolled the region under it — the candles got closer and the whole
+       * column slid at the same time.
+       *
+       * preventDefault and return, rather than just return: returning alone
+       * leaves the browser to scroll the container natively, which is the
+       * behaviour we are trying to stop. The chart's own handler has already
+       * run by now — wheel bubbles from the target upward — so suppressing the
+       * default here cannot undo its zoom.
+       *
+       * An explicit attribute rather than checking defaultPrevented, because
+       * that would make this depend on a third-party library continuing to
+       * call preventDefault in every case, including at its zoom limits.
+       */
+      const target = e.target as Element | null;
+      if (target?.closest?.("[data-wheel-lock]")) {
+        e.preventDefault();
+        return;
+      }
+
       /*
        * At either end, do nothing and let the event through. Swallowing it
        * would trap the pointer: a panel scrolled to its bottom would eat every
@@ -102,7 +133,7 @@ export function Scroller({
       e.preventDefault();
       el.scrollTop += e.deltaY * WHEEL_RATE;
     };
-    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("wheel", onWheel, { passive: false, capture: true });
 
     el.addEventListener("scroll", measure, { passive: true });
     /*
@@ -115,7 +146,7 @@ export function Scroller({
     if (el.firstElementChild) ro.observe(el.firstElementChild);
 
     return () => {
-      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("wheel", onWheel, { capture: true });
       el.removeEventListener("scroll", measure);
       ro.disconnect();
     };
