@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { AFTER_LOGIN } from "./login-modal";
@@ -15,52 +15,52 @@ import { AFTER_LOGIN } from "./login-modal";
  * the hero whenever the URL carries an OAuth code, so the marketing page is
  * never built on that pass and there is nothing on screen to read.
  *
- * Deliberately blank. A wordmark here turns a transition into a page, which
- * is the thing being fixed.
- *
- * THE REDIRECT LIVES HERE, and it watches `authenticated` rather than a
- * callback. useLoginWithOAuth's onComplete is documented to fire on the return
- * leg and does not appear to after a full page redirect — the browser lands,
- * Privy exchanges the code, `authenticated` flips true, and onComplete never
- * runs. `authenticated` is the signal we have actually observed changing on
- * this page, so it is the one to act on.
- *
- * No "did they just log in" guard is needed, unlike everywhere else in the
- * app: this component only exists because there is an OAuth code in the URL,
- * which is not a state anyone reaches by browsing.
+ * Deliberately blank. A wordmark here turns a transition into a page, which is
+ * the thing being fixed.
  */
+
+/**
+ * How long to wait for Privy before going anyway.
+ *
+ * THIS SCREEN MUST NOT BE ABLE TO DEAD-END, and two attempts at "leave when
+ * the login reports success" both hung: useLoginWithOAuth's onComplete does
+ * not fire on the return leg of a redirect, and `authenticated` has been
+ * observed sitting false for more than ten seconds after a real sign-in —
+ * Privy's login is documented to complete only after it has also CREATED THE
+ * EMBEDDED WALLET, and Solana wallets are currently disabled on the app, so
+ * that second half can never finish. A login that can never announce itself
+ * is not something to wait on.
+ *
+ * So: go when Privy says so, and go anyway if it does not. /trade is public
+ * and renders signed-out, the Privy provider lives in the root layout and
+ * survives this navigation, and the header fills itself in when the session
+ * lands. Worst case is a terminal that signs you in a moment late. Best case
+ * — once the dashboard has Solana on — the timer never fires at all.
+ *
+ * Long enough that Privy has read the code off the URL on mount, which must
+ * happen before the router drops the query string. Effects run child-first, so
+ * this component's effect fires BEFORE the provider's; leaving immediately
+ * would throw the code away.
+ */
+const GIVE_UP_MS = 1500;
+
 export function SignInHandoff() {
   const { ready, authenticated } = usePrivy();
   const router = useRouter();
 
+  /*
+   * No "did they just log in" guard, unlike everywhere else in the app: this
+   * component only exists because there is an OAuth code in the URL, which is
+   * not a state anyone reaches by browsing.
+   */
   useEffect(() => {
     if (ready && authenticated) router.replace(AFTER_LOGIN);
   }, [ready, authenticated, router]);
 
-  /*
-   * The one thing this screen must not do is trap someone.
-   *
-   * If the exchange fails there is no dialog open to show the error in, and a
-   * blank ground stays blank. Ten seconds is far longer than the handoff has
-   * ever taken; past that, something is wrong and there needs to be a way out.
-   */
-  const [stalled, setStalled] = useState(false);
   useEffect(() => {
-    const t = window.setTimeout(() => setStalled(true), 10_000);
+    const t = window.setTimeout(() => router.replace(AFTER_LOGIN), GIVE_UP_MS);
     return () => window.clearTimeout(t);
-  }, []);
+  }, [router]);
 
-  return (
-    <div className="flex min-h-dvh items-center justify-center bg-ink px-6 text-center">
-      {stalled && (
-        <p className="max-w-sm font-sans text-sm leading-relaxed text-ash">
-          This is taking longer than it should.{" "}
-          <a href="/" className="text-champagne underline">
-            Go back and try again
-          </a>
-          .
-        </p>
-      )}
-    </div>
-  );
+  return <div className="min-h-dvh bg-ink" />;
 }
