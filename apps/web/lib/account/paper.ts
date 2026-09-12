@@ -286,9 +286,16 @@ export function execute(
     ts: number;
     squawk?: string;
     source?: Fill["source"];
+    /* Execution conditions, same shape quote() takes. Threaded rather than
+       re-derived, so the price the user approved is the price they get. */
+    depthUsd?: number | null;
+    slippageBps?: number;
   },
 ): { account: Account; fill: Fill } | { refusal: string } {
-  const q = quote(a, input.side, input.qty, input.mark);
+  const q = quote(a, input.side, input.qty, input.mark, {
+    depthUsd: input.depthUsd,
+    slippageBps: input.slippageBps,
+  });
   if (q.refusal) return { refusal: q.refusal };
 
   const next: Account = { ...a, fills: [...a.fills] };

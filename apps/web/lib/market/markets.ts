@@ -156,3 +156,28 @@ export async function fetchDepth(symbol: string): Promise<number> {
 
   return side(book.bids) + side(book.asks);
 }
+
+/**
+ * What the user called it, resolved to a market.
+ *
+ * The grammar captures whatever word follows an amount — "sol", "solana",
+ * "SOL" — and until now nothing checked it against the market actually open.
+ * That was a live bug: "buy $500 of BONK" while SOL was on screen bought SOL,
+ * silently, because execution used the loaded price and never looked at the
+ * token in the sentence.
+ *
+ * Matches the ticker or the name, both case-insensitively. Returns null rather
+ * than guessing — a wrong guess here spends real money on the wrong asset, and
+ * "I do not know that one" is always the safer answer.
+ *
+ * cipher: a fourteen-row table. On Solana this becomes a mint lookup against a
+ * verified list, and the symbol stops being an identifier entirely — anyone
+ * can mint a token called BONK.
+ */
+export function resolveMarket(token: string): MarketDef | null {
+  const t = token.trim().toLowerCase();
+  if (!t) return null;
+  return (
+    MARKETS.find((m) => m.base.toLowerCase() === t || m.name.toLowerCase() === t) ?? null
+  );
+}

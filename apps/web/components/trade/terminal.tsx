@@ -356,7 +356,7 @@ function TerminalBody({
           must never sit on top of it. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-11 z-30 flex justify-center px-2">
         <div className="pointer-events-auto w-full">
-          <Sana price={last} market={market.base} />
+          <Sana price={last} market={market.base} depthUsd={depth} />
         </div>
       </div>
     </div>

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { OrderSpec } from "@cipher/shared";
 import { parseWithGrammar } from "@/lib/compiler/grammar";
+import { resolveMarket } from "@/lib/market";
+import { validateOrder, blocks } from "@/lib/compiler/validate";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
 import { usePaperAccount } from "@/lib/account/store";
 import { useSpeech } from "@/lib/voice/use-speech";
@@ -32,6 +34,8 @@ interface Turn {
   lines?: ReadbackLine[];
   /** The spec behind those lines, so approving can execute the exact thing shown. */
   spec?: OrderSpec;
+  /** Non-blocking notes from the validator. Shown on the card, never hidden. */
+  warnings?: string[];
   /** Set once the user has answered the card, so it stops asking. */
   resolved?: string;
 }
@@ -50,10 +54,13 @@ let nextId = 0;
 export function Sana({
   price,
   market = "SOL",
+  depthUsd = null,
 }: {
   price: number | undefined;
   /** The open market, so the chip names what a prompt would actually trade. */
   market?: string;
+  /** Book depth, so a sentence's fill is priced the same way the ticket's is. */
+  depthUsd?: number | null;
 }) {
   const { account, trade } = usePaperAccount();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -166,10 +173,81 @@ export function Sana({
       return;
     }
 
+    /*
+     * THE TOKEN IN THE SENTENCE MUST BE THE MARKET ON SCREEN.
+     *
+     * This was a live bug and a bad one: nothing checked, so "buy $500 of
+     * BONK" while SOL was open bought SOL. Execution used the loaded price
+     * and never looked at what the user had actually named.
+     *
+     * Three outcomes, and they are deliberately different sentences — "I do
+     * not know that token" and "I know it and cannot trade it here" are
+     * different problems with different fixes.
+     */
+    if (spec.entry) {
+      const named = resolveMarket(spec.entry.token);
+      if (!named) {
+        push({
+          mine: false,
+          text: `I don't know "${spec.entry.token}". Pick it from the list on the left and I'll trade whatever is open.`,
+        });
+        return;
+      }
+      if (named.base.toUpperCase() !== market.toUpperCase()) {
+        push({
+          mine: false,
+          text: `You asked for ${named.base} and ${market} is open. Switch markets first — I won't trade one thing while you're looking at another.`,
+        });
+        return;
+      }
+
+      /*
+       * Resolved, so record it. Otherwise the validator keeps warning "I have
+       * not resolved solana to a specific token" on a card where we have just
+       * proved that we have.
+       *
+       * The field is named `mint` for the Solana leg. On a centralised pair
+       * there is no mint, and the venue's own symbol IS the identity — it is
+       * what the exchange guarantees and what the URL is keyed on. When the
+       * Solana leg lands this becomes a real mint address from a verified
+       * list, and the symbol goes back to being a display string.
+       */
+      spec.entry.mint = named.symbol;
+    }
+
+    /*
+     * VALIDATE BEFORE THE READBACK, never after.
+     *
+     * The readback is the trust surface: the user approves what it renders.
+     * Rendering a confident card for an order that cannot execute — or worse,
+     * one that executes and does the opposite of what it says, like a
+     * take-profit set below the entry — is the single worst failure this
+     * product has.
+     */
+    const problems = validateOrder(spec, {
+      cashUsd: account.usdc,
+      position: account.sol,
+      price: price ?? null,
+    });
+
+    if (blocks(problems)) {
+      push({
+        mine: false,
+        text: problems
+          .filter((p) => p.severity === "error")
+          .map((p) => p.message)
+          .join(" "),
+      });
+      return;
+    }
+
     push({
       mine: false,
       text: "I read that as an order. Check it before it goes anywhere.",
       lines: readback(spec),
+      /* Warnings ride along on the card rather than blocking it — they are
+         things worth seeing before approving, not reasons to refuse. */
+      warnings: problems.map((p) => p.message),
       spec,
     });
   }
@@ -202,7 +280,21 @@ export function Sana({
       return;
     }
 
-    const r = trade({ side: entry.side, qty, mark: price, source: "sana" });
+    /*
+     * The sentence's OWN slippage, not a default.
+     *
+     * grammar.ts has always parsed "max 3% slippage" into the spec, and this
+     * call threw it away — the one differentiator the product is built on,
+     * understood correctly and then discarded on the way to the fill.
+     */
+    const r = trade({
+      side: entry.side,
+      qty,
+      mark: price,
+      source: "sana",
+      depthUsd,
+      slippageBps: entry.slippageBps,
+    });
     if ("refusal" in r) {
       resolve(t.id, r.refusal);
       return;
@@ -258,6 +350,25 @@ export function Sana({
                           </div>
                         ))}
                       </dl>
+
+                      {/* Warnings sit between the order and the approve
+                          button, on purpose. Below the button they would be
+                          read after the decision; above the readback they
+                          would be read before there is anything to apply them
+                          to. */}
+                      {t.warnings && t.warnings.length > 0 && !t.resolved && (
+                        <ul className="mt-2.5 flex flex-col gap-1 border-t border-accent/20 pt-2">
+                          {t.warnings.map((w) => (
+                            <li
+                              key={w}
+                              className="flex gap-1.5 font-sans text-[11px] leading-snug text-ash"
+                            >
+                              <span aria-hidden className="shrink-0 text-accent">!</span>
+                              {w}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
 
                       {t.resolved ? (
                         <p className="mt-2.5 font-sans text-[11.5px] text-champagne">

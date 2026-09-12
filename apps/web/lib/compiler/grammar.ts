@@ -71,12 +71,23 @@ function parseAmount(raw: string): Amount | null {
   return null;
 }
 
-/** "2x", "3.5x" → priceMultiple */
+/**
+ * "2x", "3.5x" → priceMultiple
+ *
+ * Accepts ANY positive multiple, including ones below 1. That looks wrong and
+ * is not: a take-profit at 0.8x is a real sentence with a real mistake in it,
+ * and this used to reject it silently — the exit never entered the spec, the
+ * readback said "no exit is armed", and the user was never told that the thing
+ * they asked for had been dropped.
+ *
+ * The grammar parses. validate.ts judges. Swallowing an instruction is the one
+ * thing neither of them is allowed to do.
+ */
 function parseMultiple(s: string): Trigger | null {
   const m = s.match(/^([\d.]+)\s*x$/i);
   if (!m) return null;
   const v = Number(m[1]);
-  return v > 1 ? { kind: "priceMultiple", value: v } : null;
+  return v > 0 ? { kind: "priceMultiple", value: v } : null;
 }
 
 export function parseWithGrammar(input: string): OrderSpec | null {

@@ -49,6 +49,10 @@ interface Ctx {
     mark: number;
     squawk?: string;
     source?: Fill["source"];
+    /* Execution conditions. Passed straight through to the engine — the
+       ticket's gear and a sentence's "max 3% slippage" arrive the same way. */
+    depthUsd?: number | null;
+    slippageBps?: number;
   }): { fill: Fill } | { refusal: string };
   reset(): void;
 }

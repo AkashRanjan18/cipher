@@ -44,12 +44,23 @@ function token(name: string, fallback: string): string {
   return v.trim() || fallback;
 }
 
-/** fomo washes their volume bars back to a fifth. Solid bars fight the candles. */
+/**
+ * Volume bars, washed back so they do not fight the candles.
+ *
+ * ALPHA rather than the pre-flattened solids (#146737 / #83331F): over the
+ * chart ground the maths is identical, but alpha also composites correctly
+ * over the grid lines crossing behind the bars, where a solid would paint
+ * straight over them. It also survives a change of ground colour, which a hex
+ * baked against one background does not.
+ */
 function wash(hex: string, alpha: number): string {
   const h = hex.replace("#", "");
   const n = parseInt(h.length === 3 ? h.replace(/./g, (c) => c + c) : h, 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
+
+/** 0.5, per spec. Was 0.3, which left volume nearly invisible on a dark ground. */
+const VOLUME_ALPHA = 0.5;
 
 /**
  * How many decimals this series needs.
@@ -90,7 +101,7 @@ const DEFAULT_BAR_SPACING = 9;
 const RIGHT_OFFSET = 12;
 
 const volumeColor = (c: Candle, up: string, down: string) =>
-  c.close >= c.open ? wash(up, 0.3) : wash(down, 0.3);
+  c.close >= c.open ? wash(up, VOLUME_ALPHA) : wash(down, VOLUME_ALPHA);
 
 export function PriceChart({
   candles,
