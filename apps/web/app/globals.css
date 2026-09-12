@@ -308,51 +308,56 @@ body {
   50%      { transform: scale(1.2); opacity: 0.85; }
 }
 
-/* The base the blobs float in. Dark enough that the bright ones read as light
-   rather than as paint. */
+/*
+ * The base. Near-black with a violet cast, so the bright blobs read as light
+ * rather than as paint on a grey disc.
+ */
 .sana-orb {
-  background: #04081f;
+  background: #07060f;
 }
 
 /*
- * Sphere shading, over the blobs rather than under them.
+ * Sphere shading, ABOVE the blobs rather than under them.
  *
- * Without it the disc is a flat coloured circle whatever is moving inside it:
- * a sphere is read from its EDGE going dark and one spot staying bright, and
- * both of those have to sit above the colour to survive it drifting. The
- * highlight is off-centre because a centred one reads as a button with a
- * gloss rather than as a lit object.
+ * A sphere is read from its edge going dark and one spot staying bright, and
+ * both of those have to survive the colour drifting underneath. Put this below
+ * and the disc flattens to a coloured circle every time a bright blob passes
+ * the rim. The highlight is off-centre because a centred one reads as a button
+ * with a gloss rather than as a lit object.
  */
 .sana-shade {
   background:
-    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.45), transparent 34%),
-    radial-gradient(circle at 50% 50%, transparent 46%, rgba(2, 4, 16, 0.75) 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.5), transparent 30%),
+    radial-gradient(circle at 50% 50%, transparent 40%, rgba(3, 2, 10, 0.85) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
-/* Cyan highlight — the brightest thing in the orb, and the smallest. */
+/*
+ * The three colours of the reference, in its proportions: magenta through the
+ * middle, cyan to one side, violet behind. Blue alone read as a status light;
+ * it is the magenta meeting the cyan that makes it look like the thing it is
+ * copying.
+ */
 .sana-blob-a {
-  background: radial-gradient(circle at 38% 36%, #67e8f9, #0891b2 45%, transparent 66%);
+  background: radial-gradient(circle at 32% 46%, #a5f3fc, #06b6d4 40%, transparent 60%);
   filter: blur(4px);
   animation: sana-drift-a 5.5s ease-in-out infinite;
 }
 
-/* The body of it. */
 .sana-blob-b {
-  background: radial-gradient(circle at 60% 64%, #3b82f6, #1d4ed8 50%, transparent 72%);
-  filter: blur(5px);
+  background: radial-gradient(circle at 60% 52%, #f0abfc, #c026d3 42%, transparent 66%);
+  filter: blur(4px);
   animation: sana-drift-b 7.5s ease-in-out infinite;
 }
 
-/* Depth behind the other two, never quite visible on its own. */
 .sana-blob-c {
-  background: radial-gradient(circle at 54% 26%, #6366f1, transparent 62%);
-  filter: blur(7px);
+  background: radial-gradient(circle at 52% 70%, #7c3aed, transparent 58%);
+  filter: blur(8px);
   animation: sana-drift-c 9.5s ease-in-out infinite;
 }
 
 .sana-glow {
-  background: radial-gradient(circle, rgba(56, 189, 248, 0.5), transparent 70%);
+  background: radial-gradient(circle, rgba(192, 38, 211, 0.45), transparent 70%);
   animation: sana-breathe 3.6s ease-in-out infinite;
 }
 

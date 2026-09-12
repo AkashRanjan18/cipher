@@ -285,11 +285,15 @@ function TerminalBody({
          * land on their exact pixel widths at 1920 and stay proportional below
          * it.
          */
-        style={{
-          gridTemplateColumns: panelOpen
-            ? "26% minmax(0,1fr) 24%"
-            : "minmax(0,1fr) 24%",
-        }}
+        /*
+         * TWO columns now, not three: the market list, and everything else.
+         *
+         * Everything else scrolls as ONE region under a single bar on the far
+         * right — chart, prompt bar, fills, ticket and flow all move together.
+         * The market list does not, because it is how you navigate: scrolling
+         * it away to read a ticket is losing the thing you steer with.
+         */
+        style={{ gridTemplateColumns: panelOpen ? "26% minmax(0,1fr)" : "minmax(0,1fr)" }}
       >
         {panelOpen && (
           <div className="hidden min-h-0 lg:flex lg:flex-col">
@@ -317,6 +321,20 @@ function TerminalBody({
         )}
 
         {/*
+          * THE SCROLLING REGION. One bar, far right, 144px.
+          *
+          * Its children are a grid rather than a flex row so the chart and the
+          * ticket keep their proportions while the whole thing moves. 32% of
+          * this region is 24% of the viewport, which is the width the ticket
+          * column had when it was a top-level grid column.
+          */}
+        <Scroller className="min-h-0" barHeight={144}>
+          <div
+            className="grid gap-2 pr-2.5"
+            style={{ gridTemplateColumns: "minmax(0,1fr) 32%" }}
+          >
+
+        {/*
           * The chart column, with Sana beneath it.
           *
           * Sana used to float over the whole shell, which meant it had no
@@ -337,8 +355,8 @@ function TerminalBody({
           * the prompt bar is one line, while a chart stays legible at any
           * height above a floor.
           */}
-        <div className="relative flex min-h-0 flex-col gap-2 overflow-hidden">
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
+        <div className="relative flex flex-col gap-2">
+        <section className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel">
           <ChartHeader
             market={market}
             price={last}
@@ -351,9 +369,10 @@ function TerminalBody({
             pending={pending}
           />
 
-          {/* flex-1 with a floor: the chart is the elastic member of this
-              column, and below ~180px a candle stops being readable. */}
-          <div className="min-h-[180px] flex-1">
+          {/* A real height again. The column no longer fills the viewport —
+              it is content inside a scrolling region — so there is nothing for
+              flex-1 to take a share of. */}
+          <div className="h-[55vh] min-h-[320px]">
             <PriceChart
               candles={candles}
               livePrice={live}
@@ -439,12 +458,11 @@ function TerminalBody({
           * its own overflow, flexbox will compress it and its internal
           * overflow will clip the account panel mid-row again.
           */}
-        {/* The ticket column, ticket and flow scrolling together.
-            barHeight 144 — three times the market list's, by instruction. */}
-        <Scroller className="min-h-0" barHeight={144}>
-          <div className="flex flex-col pr-2 [&>*]:shrink-0">
-            <Ticket price={last} market={market.base} depthUsd={depth} />
-            <Flow candles={candles} last={last} />
+        {/* No scroller of its own any more — it moves with the region. */}
+        <aside className="flex flex-col [&>*]:shrink-0">
+          <Ticket price={last} market={market.base} depthUsd={depth} />
+          <Flow candles={candles} last={last} />
+        </aside>
           </div>
         </Scroller>
       </div>

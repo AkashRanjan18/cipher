@@ -645,9 +645,13 @@ export function SanaMark({ onOpen }: { onOpen: () => void }) {
           than the disc and drift past its edges; clipped, you only ever see
           colour moving inside a circle, never a blob with a shape. */}
       <span className="sana-orb pointer-events-none absolute inset-0 overflow-hidden rounded-full">
-        <span className="sana-blob-a absolute inset-[-30%]" />
-        <span className="sana-blob-b absolute inset-[-30%]" />
+        {/* PAINT ORDER IS THE DESIGN. These stack in DOM order, so violet
+            goes down first as the backdrop and the cyan sits on top —
+            reversed, the violet blankets the other two and the whole orb reads
+            as one purple circle. */}
         <span className="sana-blob-c absolute inset-[-30%]" />
+        <span className="sana-blob-b absolute inset-[-30%]" />
+        <span className="sana-blob-a absolute inset-[-30%]" />
         {/* Above the blobs: the shading has to survive them drifting under it,
             or the sphere flattens every time a bright blob passes the rim. */}
         <span className="sana-shade absolute inset-0 rounded-full" />
