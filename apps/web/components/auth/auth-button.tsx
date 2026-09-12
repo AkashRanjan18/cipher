@@ -20,11 +20,9 @@ type Variant = "ghost" | "primary";
 export function AuthButton({
   variant = "ghost",
   label,
-  labelAuthenticated,
 }: {
   variant?: Variant;
   label: string;
-  labelAuthenticated?: string;
 }) {
   const { ready, authenticated } = usePrivy();
   const { open } = useLoginModal();
@@ -66,7 +64,16 @@ export function AuthButton({
       onClick={() => (authenticated ? router.push(AFTER_LOGIN) : open())}
       className={`${styles[variant]} font-sans transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne`}
     >
-      {authenticated ? (labelAuthenticated ?? label) : label}
+      {/*
+        * THE LABEL NEVER CHANGES.
+        *
+        * These used to read "Enter" and "Open cipher" once you were signed in.
+        * That is a third state nobody asked for: the homepage has two buttons,
+        * they say what they do, and pressing either one gets you to the
+        * terminal. Whether you happen to already have a session is cipher's
+        * problem to solve silently, not a thing to rename a button over.
+        */}
+      {label}
     </button>
   );
 }

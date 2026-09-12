@@ -24,7 +24,7 @@ export default function Home() {
 
       <header className="relative z-10 flex items-center justify-between p-6 sm:p-8">
         <span className="font-display text-2xl lowercase">cipher</span>
-        <AuthButton variant="ghost" label="Log in" labelAuthenticated="Enter" />
+        <AuthButton variant="ghost" label="Log in" />
       </header>
 
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 pb-24 text-center">
@@ -44,11 +44,7 @@ export default function Home() {
         </p>
 
         <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
-          <AuthButton
-            variant="primary"
-            label="Start trading"
-            labelAuthenticated="Open cipher"
-          />
+          <AuthButton variant="primary" label="Start trading" />
           <DownloadButton />
         </div>
       </div>
