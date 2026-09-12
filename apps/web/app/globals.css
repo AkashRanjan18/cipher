@@ -195,8 +195,11 @@ body {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  /* A third of the 8px it was. Thin enough to read as a position indicator
+     rather than as a control — which is what it mostly is, since these panels
+     are scrolled with a wheel, not by dragging. */
+  width: 3px;
+  height: 3px;
 }
 
 ::-webkit-scrollbar-track {
@@ -206,16 +209,12 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--color-mute);
   border-radius: 999px;
-  /* An inset border rather than a narrower thumb: it keeps the hit area at the
-     full 8px while the visible bar reads as 6px, which is the difference
-     between "slim" and "hard to grab". */
-  border: 1px solid transparent;
-  background-clip: padding-box;
+  /* No inset border at this width. At 8px it bought a visible 6px bar with a
+     full-width hit area; at 3px it would leave one pixel of thumb. */
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-ash);
-  background-clip: padding-box;
 }
 
 /*

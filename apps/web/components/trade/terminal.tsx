@@ -326,21 +326,18 @@ function TerminalBody({
           * Inside the column it is simply the last row — bounded by the same
           * width as the chart, and nothing is underneath anything.
           */}
-        {/* SCROLLBAR 2 — the chart column. Chart, prompt bar and fills scroll as
-            one, so the chart can keep a readable height and the table below it
-            is still reachable. */}
-        <div className="relative flex min-h-0 flex-col gap-2 overflow-y-auto pr-0.5 [&>*]:shrink-0">
         {/*
-          * [&>*]:shrink-0 on the column above, and it is load-bearing.
+          * The chart column does NOT scroll. Two bars, not three.
           *
-          * A flex column compresses its children to fit before it will admit
-          * to overflowing. Without it the chart silently lost a hundred pixels
-          * of its 55vh, the fills panel was clipped, and the column reported
-          * no overflow at all — so no scrollbar appeared and the content was
-          * simply squashed instead. Children keep their height; the column
-          * scrolls.
+          * Which means everything in it has to FIT, and the chart is what
+          * absorbs the difference: the prompt bar and the fills table keep
+          * their heights and the chart takes whatever is left. That is the
+          * right way round anyway — the table is a fixed number of rows and
+          * the prompt bar is one line, while a chart stays legible at any
+          * height above a floor.
           */}
-        <section className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel">
+        <div className="relative flex min-h-0 flex-col gap-2 overflow-hidden">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
           <ChartHeader
             market={market}
             price={last}
@@ -353,13 +350,9 @@ function TerminalBody({
             pending={pending}
           />
 
-          {/*
-            * A REAL height, because flex-1 has nothing to fill any more.
-            *
-            * 55vh with a floor: tall enough to read on a laptop, short enough
-            * that what sits under it is visible without scrolling.
-            */}
-          <div className="h-[55vh] min-h-[320px]">
+          {/* flex-1 with a floor: the chart is the elastic member of this
+              column, and below ~180px a candle stops being readable. */}
+          <div className="min-h-[180px] flex-1">
             <PriceChart
               candles={candles}
               livePrice={live}
@@ -379,7 +372,7 @@ function TerminalBody({
           * form an intent, and the place to say it is the next thing down.
           */}
         <div
-          className={`overflow-hidden transition-all duration-300 ease-out ${
+          className={`shrink-0 overflow-hidden transition-all duration-300 ease-out ${
             sanaFolded ? "-mb-2 max-h-0 opacity-0" : "max-h-[70vh] opacity-100"
           }`}
           aria-hidden={sanaFolded}
@@ -396,14 +389,14 @@ function TerminalBody({
             longer needs to float: the page scrolls and the chart has a fixed
             height, so there is no gap for the panel to grow into. */}
         {sanaFolded && (
-          <div className="flex justify-center py-1">
+          <div className="flex shrink-0 justify-center py-1">
             <SanaMark onOpen={() => setSanaFolded(false)} />
           </div>
         )}
 
         {/* "Split right" gives the chart the whole column. */}
         {split === "bottom" && (
-          <section className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel">
+          <section className="flex shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
             {/*
               * The divider.
               *
