@@ -5,6 +5,7 @@ import type { Major } from "@/lib/market";
 import { MARKETS, marketOf } from "@/lib/market";
 import { usd, compactUsd, pct } from "@/lib/format";
 import { FeedList, LeaderList } from "./rail";
+import { Scroller } from "@/components/ui/scroller";
 
 /**
  * The left panel: a navigator, not a feed.
@@ -129,15 +130,13 @@ export function SidePanel({
       )}
 
       {/*
-        * SCROLLBAR 1 — and it starts HERE, not at the top of the panel.
+        * The market list scrolls; everything above it does not.
         *
-        * Everything above this is fixed: the tabs, the filter row and the fee
-        * strip. Only the list moves, so the bar's track begins level with the
-        * fee strip and runs to the split buttons at the bottom — which is
-        * exactly where a market list's bar belongs, because scrolling the
-        * tabs out of reach to see more rows is a control that fights you.
+        * The tabs, the filter row and the fee strip stay put, so the bar only
+        * exists alongside the rows — scrolling the tabs out of reach to see
+        * more markets is a control that fights you.
         */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <Scroller className="min-h-0 flex-1">
         {tab === "tokens" && (
           <TokenList
             majors={majors}
@@ -154,7 +153,7 @@ export function SidePanel({
             reports here — filled, cancelled, or still waiting.
           </p>
         )}
-      </div>
+      </Scroller>
 
       {/* ---- layout controls ----
           fomo's split buttons, wired to the one split cipher actually has:

@@ -12,6 +12,7 @@ import { ChartHeader } from "./chart-header";
 import { MarketSearch } from "./market-search";
 import { StatusBar } from "./status-bar";
 import { useMajors } from "./use-majors";
+import { Scroller } from "@/components/ui/scroller";
 import { MyTrades } from "./my-trades";
 import { Ticket } from "./ticket";
 import { Sana, SanaMark } from "./sana";
@@ -438,11 +439,14 @@ function TerminalBody({
           * its own overflow, flexbox will compress it and its internal
           * overflow will clip the account panel mid-row again.
           */}
-        {/* SCROLLBAR 3 — the ticket column, ticket and flow together. */}
-        <aside className="flex min-h-0 flex-col overflow-y-auto pr-0.5 [&>*]:shrink-0">
-          <Ticket price={last} market={market.base} depthUsd={depth} />
-          <Flow candles={candles} last={last} />
-        </aside>
+        {/* The ticket column, ticket and flow scrolling together.
+            barHeight 144 — three times the market list's, by instruction. */}
+        <Scroller className="min-h-0" barHeight={144}>
+          <div className="flex flex-col pr-2 [&>*]:shrink-0">
+            <Ticket price={last} market={market.base} depthUsd={depth} />
+            <Flow candles={candles} last={last} />
+          </div>
+        </Scroller>
       </div>
 
       {/* Sticky to the bottom for the same reason the header is sticky to the
