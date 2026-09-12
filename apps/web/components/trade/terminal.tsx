@@ -13,6 +13,7 @@ import { MarketSearch } from "./market-search";
 import { StatusBar } from "./status-bar";
 import { useMajors } from "./use-majors";
 import { Scroller } from "@/components/ui/scroller";
+import { AccountMenu } from "@/components/auth/account-menu";
 import { MyTrades } from "./my-trades";
 import { Ticket } from "./ticket";
 import { Sana, SanaMark } from "./sana";
@@ -260,9 +261,9 @@ function TerminalBody({
 
         <Bag price={last} />
 
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent font-sans text-[11px] font-extrabold text-ink">
-          AR
-        </div>
+        {/* Was a hardcoded "AR" — a placeholder indistinguishable from a
+            working account menu, which is the worst kind. */}
+        <AccountMenu />
       </header>
 
       {/* ---------------- body ---------------- */}
