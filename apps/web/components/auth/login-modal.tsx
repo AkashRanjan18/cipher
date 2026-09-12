@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
 import { useLoginWithOAuth } from "@privy-io/react-auth";
 import { GoogleIcon } from "./google-icon";
 
@@ -56,35 +55,27 @@ export const AFTER_LOGIN = "/trade";
  * mounted in the root layout, which means it is mounted on every page the
  * redirect could land on.
  *
- * onComplete ALSO FIRES FOR SOMEONE WHO WAS ALREADY SIGNED IN, immediately, on
- * mount — hence the wasAlreadyAuthenticated check. That flag is the true
- * version of what a sessionStorage "login pending" marker used to approximate
- * here: Privy knows whether this is a fresh authentication or a restored
- * session, so ask it rather than leaving ourselves a note before we go.
+ * IT DOES NOT OWN THE POST-LOGIN REDIRECT. That was tried through this hook's
+ * onComplete, which is documented to fire on the return leg and does not seem
+ * to after a full page redirect — the user landed and simply stayed there.
+ * SignInHandoff watches `authenticated` instead, which is the signal actually
+ * observed changing on that page. One mechanism, in the file named for the job.
  */
 export function LoginModalProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
   // Inlined at build time. Without it Privy cannot start an OAuth flow, so
   // say so rather than letting the button fail silently.
   const configured = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
 
   const { initOAuth, loading } = useLoginWithOAuth({
-    onComplete: ({ wasAlreadyAuthenticated }) => {
-      // Someone reading the landing page with a live session is not logging
-      // in, and must not be thrown into the terminal for loading a page.
-      if (wasAlreadyAuthenticated) return;
-      setIsOpen(false);
-      router.replace(AFTER_LOGIN);
-    },
     onError: (code) => {
       /*
        * Nearly invisible by construction: this fires after the redirect, when
        * the dialog is closed, so there is nowhere on screen to put it. The
-       * console is the honest channel and SignInHandoff carries the user's way
-       * out. Worth revisiting if it ever fires in practice.
+       * console is the honest channel, Privy draws its own failure card, and
+       * SignInHandoff carries the user's way out after ten seconds.
        */
       console.error("[cipher] Google sign-in failed after redirect:", code);
       setError("Couldn't finish signing in. Try again.");
