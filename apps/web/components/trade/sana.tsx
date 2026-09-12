@@ -599,17 +599,17 @@ export function Sana({
         * read past forever, on the row closest to the thing they are trying to
         * look at. What belongs in that space is a way out of it.
         *
-        * "Collapse" as a word rather than a chevron: a glyph in the corner of a
-        * bar is guessable at best, and this one does something people will want
-        * on their first session.
+        * A word rather than a chevron: a glyph in the corner of a bar is
+        * guessable at best, and this one does something people will want on
+        * their first session.
         */}
       <div className="flex justify-center px-1 pt-2">
         <button
           onClick={onCollapse}
-          aria-label="Collapse Sana"
+          aria-label="Close Sana"
           className="font-sans text-[10.5px] text-mute transition-colors hover:text-champagne"
         >
-          Collapse
+          Close
         </button>
       </div>
     </div>

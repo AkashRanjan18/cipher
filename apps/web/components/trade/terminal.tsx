@@ -403,13 +403,29 @@ function TerminalBody({
             * side of the mark would steal clicks from the candles behind it.
             * Auto back on for the mark itself.
             */}
-          {sanaFolded && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center">
-              <div className="pointer-events-auto">
-                <SanaMark onOpen={() => setSanaFolded(false)} />
-              </div>
+          {/*
+            * ALWAYS RENDERED, scaled to nothing when the bar is open.
+            *
+            * Mounting it on fold would pop it in at full size with no way to
+            * animate the arrival — an element cannot transition from not
+            * existing. It is absolute either way, so keeping it costs no
+            * layout.
+            *
+            * Delays mirror the bar's: appearing waits for the bar to be mostly
+            * gone, disappearing goes first.
+            */}
+          <div
+            aria-hidden={!sanaFolded}
+            className={`pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center transition-all duration-300 ease-out ${
+              sanaFolded
+                ? "scale-100 opacity-100 delay-[120ms]"
+                : "scale-50 opacity-0"
+            }`}
+          >
+            <div className={sanaFolded ? "pointer-events-auto" : ""}>
+              <SanaMark onOpen={() => setSanaFolded(false)} />
             </div>
-          )}
+          </div>
         </section>
 
         {/*
@@ -422,18 +438,36 @@ function TerminalBody({
           * It is also simply where the eye already is: you read the chart, you
           * form an intent, and the place to say it is the next thing down.
           */}
+        {/*
+          * grid-rows 1fr -> 0fr, NOT max-height.
+          *
+          * A max-height transition animates a number the content never
+          * reaches: going 70vh to 0, nothing visibly moves until the value
+          * drops below the bar's real height, so the first two thirds of the
+          * animation are dead time and the rest is a snap. Rows in fr units
+          * animate the CONTENT's own height, so the whole 300ms is motion.
+          *
+          * Opening waits 120ms for the mark to get out of the way; closing
+          * starts immediately so the bar is already shrinking as the mark
+          * arrives. Without the stagger the two cross in the middle and there
+          * is a frame with both of them at half strength.
+          */}
         <div
-          className={`shrink-0 overflow-hidden transition-all duration-300 ease-out ${
-            sanaFolded ? "-mb-2 max-h-0 opacity-0" : "max-h-[70vh] opacity-100"
+          className={`grid shrink-0 transition-all duration-300 ease-out ${
+            sanaFolded
+              ? "-mb-2 grid-rows-[0fr] opacity-0"
+              : "grid-rows-[1fr] opacity-100 delay-[120ms]"
           }`}
           aria-hidden={sanaFolded}
         >
-          <Sana
-            price={last}
-            market={market.base}
-            depthUsd={depth}
-            onCollapse={() => setSanaFolded(true)}
-          />
+          <div className="overflow-hidden">
+            <Sana
+              price={last}
+              market={market.base}
+              depthUsd={depth}
+              onCollapse={() => setSanaFolded(true)}
+            />
+          </div>
         </div>
 
         {/* "Split right" gives the chart the whole column. */}
