@@ -257,79 +257,96 @@ body {
 /*
  * SANA'S MARK.
  *
- * Three layers turning at different speeds, which is the whole trick: one
- * rotating gradient reads as a spinner — something loading — and two turning
- * against each other at different rates never repeats visibly, so it reads as
- * something alive instead.
+ * A filled orb, not a ring with a hole punched in it. The reference is Siri:
+ * colour occupies the whole disc and moves inside it like something suspended
+ * in liquid, which a rotating ring around an empty centre never reads as — a
+ * ring reads as a spinner, and a spinner means "wait".
  *
- * Conic rather than linear, because a linear gradient rotated through 360
- * degrees visibly flips when it passes the diagonal. A conic one is seamless
- * by construction: its start and end are the same angle.
+ * Built from three blurred radial blobs drifting over a deep navy base, at
+ * different speeds and on different paths. Nothing rotates. Rotation is what
+ * gives a spinner away; drift has no period the eye can lock onto, so the
+ * movement stays ambiguous and alive.
  *
- * Blue-forward with cyan, violet and pink behind it.
+ * Blue-dominant by instruction: sky and blue carry it, with one violet blob
+ * behind for depth. All three are clipped by the disc and softened well past
+ * their own edges, so no individual blob is ever visible as a shape.
  */
-@keyframes sana-spin {
-  to {
-    transform: rotate(1turn);
-  }
+@keyframes sana-drift-a {
+  0%, 100% { transform: translate(-8%, -6%) scale(1); }
+  50%      { transform: translate(10%, 8%) scale(1.25); }
 }
 
-@keyframes sana-spin-reverse {
-  to {
-    transform: rotate(-1turn);
-  }
+@keyframes sana-drift-b {
+  0%, 100% { transform: translate(8%, 6%) scale(1.15); }
+  50%      { transform: translate(-10%, -4%) scale(0.9); }
+}
+
+@keyframes sana-drift-c {
+  0%, 100% { transform: translate(4%, -10%) scale(1.1); }
+  50%      { transform: translate(-6%, 10%) scale(1.3); }
 }
 
 @keyframes sana-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.55;
-  }
-  50% {
-    transform: scale(1.18);
-    opacity: 0.9;
-  }
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50%      { transform: scale(1.2); opacity: 0.85; }
 }
 
-.sana-ring {
-  background: conic-gradient(
-    from 0deg,
-    #2563eb,
-    #22d3ee,
-    #a855f7,
-    #ec4899,
-    #2563eb
-  );
-  animation: sana-spin 6s linear infinite;
-}
-
-/* Counter-turning and blurred, so the edge of the mark shifts hue rather than
-   sweeping — the movement is felt before it is seen. */
-.sana-halo {
-  background: conic-gradient(
-    from 180deg,
-    #22d3ee,
-    #6366f1,
-    #ec4899,
-    #22d3ee
-  );
-  filter: blur(7px);
-  animation: sana-spin-reverse 9s linear infinite;
-}
-
-.sana-glow {
-  background: radial-gradient(circle, rgba(37, 99, 235, 0.55), transparent 70%);
-  animation: sana-breathe 3.4s ease-in-out infinite;
+/* The base the blobs float in. Dark enough that the bright ones read as light
+   rather than as paint. */
+.sana-orb {
+  background: #04081f;
 }
 
 /*
- * Someone who asked their OS to stop moving things gets a still mark rather
- * than no mark. The gradient is the identity; only the motion is decoration.
+ * Sphere shading, over the blobs rather than under them.
+ *
+ * Without it the disc is a flat coloured circle whatever is moving inside it:
+ * a sphere is read from its EDGE going dark and one spot staying bright, and
+ * both of those have to sit above the colour to survive it drifting. The
+ * highlight is off-centre because a centred one reads as a button with a
+ * gloss rather than as a lit object.
+ */
+.sana-shade {
+  background:
+    radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.45), transparent 34%),
+    radial-gradient(circle at 50% 50%, transparent 46%, rgba(2, 4, 16, 0.75) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* Cyan highlight — the brightest thing in the orb, and the smallest. */
+.sana-blob-a {
+  background: radial-gradient(circle at 38% 36%, #67e8f9, #0891b2 45%, transparent 66%);
+  filter: blur(4px);
+  animation: sana-drift-a 5.5s ease-in-out infinite;
+}
+
+/* The body of it. */
+.sana-blob-b {
+  background: radial-gradient(circle at 60% 64%, #3b82f6, #1d4ed8 50%, transparent 72%);
+  filter: blur(5px);
+  animation: sana-drift-b 7.5s ease-in-out infinite;
+}
+
+/* Depth behind the other two, never quite visible on its own. */
+.sana-blob-c {
+  background: radial-gradient(circle at 54% 26%, #6366f1, transparent 62%);
+  filter: blur(7px);
+  animation: sana-drift-c 9.5s ease-in-out infinite;
+}
+
+.sana-glow {
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.5), transparent 70%);
+  animation: sana-breathe 3.6s ease-in-out infinite;
+}
+
+/*
+ * Someone who asked their OS to stop moving things gets a still orb rather
+ * than no orb. The colour is the identity; only the drift is decoration.
  */
 @media (prefers-reduced-motion: reduce) {
-  .sana-ring,
-  .sana-halo,
+  .sana-blob-a,
+  .sana-blob-b,
+  .sana-blob-c,
   .sana-glow {
     animation: none;
   }

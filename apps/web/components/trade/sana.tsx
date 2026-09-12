@@ -635,17 +635,23 @@ export function SanaMark({ onOpen }: { onOpen: () => void }) {
       aria-label="Open Sana"
       aria-expanded={false}
       title="Open Sana"
-      className="relative grid h-12 w-12 place-items-center rounded-full shadow-lg shadow-black/50 transition-transform hover:scale-110 active:scale-95"
+      className="relative h-12 w-12 rounded-full transition-transform hover:scale-110 active:scale-95"
     >
-      {/* Outside the disc, so it reads as light coming off the mark rather
-          than as a fourth ring drawn on it. */}
+      {/* Outside the disc, so it reads as light coming off the orb rather than
+          as another layer drawn on it. */}
       <span className="sana-glow pointer-events-none absolute -inset-2 rounded-full" />
-      <span className="sana-halo pointer-events-none absolute inset-0 rounded-full" />
-      <span className="sana-ring pointer-events-none absolute inset-0 rounded-full" />
-      {/* Core on the panel colour, not ink: the mark floats over the chart's
-          bottom edge, and a hole punched to the page colour would show as one. */}
-      <span className="pointer-events-none absolute inset-[2.5px] rounded-full bg-panel" />
-      <span className="relative font-display text-[15px] font-bold text-champagne">S</span>
+
+      {/* overflow-hidden is what makes the blobs a sphere. They are far larger
+          than the disc and drift past its edges; clipped, you only ever see
+          colour moving inside a circle, never a blob with a shape. */}
+      <span className="sana-orb pointer-events-none absolute inset-0 overflow-hidden rounded-full">
+        <span className="sana-blob-a absolute inset-[-30%]" />
+        <span className="sana-blob-b absolute inset-[-30%]" />
+        <span className="sana-blob-c absolute inset-[-30%]" />
+        {/* Above the blobs: the shading has to survive them drifting under it,
+            or the sphere flattens every time a bright blob passes the rim. */}
+        <span className="sana-shade absolute inset-0 rounded-full" />
+      </span>
     </button>
   );
 }
