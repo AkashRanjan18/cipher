@@ -8,10 +8,8 @@
   /*
    * THE PALETTE, from the spec you handed me.
    *
-   * A deliberate move away from fomo's ground. Theirs is violet-cast
-   * (#060510 — twice as much blue as red) which warms everything sitting on
-   * it. This one is neutral and cool: #06070a, with the surfaces stepping up
-   * through near-black blue-greys rather than purples.
+   * Graded to fomo's own values, read off their header: a violet-cast ground
+   * at #060510 and cool near-white text at #f7f7f7.
    *
    * Direction colours: #21c95e and #ff622e, by instruction. Warmer and
    * brighter than the Binance pair, and they carry harder against a cool
@@ -19,32 +17,52 @@
    */
 
   /*
-   * Warm off-white, and THE ONE DIVERGENCE from the spec, which calls for a
-   * cool #f2f3f5.
+   * PRIMARY TEXT — #f7f7f7, measured off fomo's own header.
    *
-   * Champagne is the whole cipher identity — the wordmark, the hero, the
-   * display face. And it works harder here than it did on fomo's ground: warm
-   * text on a cool near-black is a stronger pairing than warm on warm. Set
-   * this to #f2f3f5 to take the spec literally.
+   * THE TOKEN NAME IS HISTORICAL. It was champagne (#f3e9d8), a warm cream,
+   * and it is now a cool near-white. The name stays only because it is on
+   * roughly a hundred call sites and `text-champagne` reads better than
+   * anything a rename would produce; if that ever stops being true, rename it
+   * in one pass rather than letting a second text token appear beside it.
+   *
+   * Placeholder and disabled text are this at 50%, which is what their input
+   * does — see the placeholder: rules on the search and prompt fields.
    */
-  --color-champagne: #f3e9d8;
+  --color-champagne: #f7f7f7;
 
-  /* The surface ladder. Page, then sections, then boxes inside them, then
-     controls on top of those. Each step is small — separation comes from the
-     borders, not from contrast between fills. */
-  --color-ink: #06070a;
-  --color-panel: #0a0b0f;
-  --color-slate: #12141b;
-  --color-raised: #191d26;
+  /*
+   * The surface ladder, re-cast violet.
+   *
+   * The ground is #060510, which is fomo's exact value and is NOT neutral —
+   * it carries nearly three times as much blue as red, and that tint is most
+   * of why warm colours look warmer on their page than on a grey-black one.
+   *
+   * The steps above it keep the spacing from the spec but take the same cast,
+   * because a neutral grey panel sitting on a violet ground reads as a
+   * different shade of dirty rather than as a step up.
+   */
+  --color-ink: #060510;
+  --color-panel: #0b0a16;
+  --color-slate: #121120;
+  --color-raised: #1a1828;
 
-  /* Borders, opaque rather than the translucent lavender fomo uses. On a
-     neutral ground a solid line is cleaner and reads the same. */
-  --color-line: #1e212b;
-  --color-hairline: #171a22;
+  /*
+   * Borders.
+   *
+   * NOT the #f7f7f7 that an element inspector reports. Browsers default
+   * outline-color to currentColor, so a readout of "border/outline: white" on
+   * a text element is the focus outline inheriting the text colour — it is
+   * not a border anyone drew. fomo's real panel edges measure
+   * rgba(203, 208, 235, 0.1): a translucent cool light, which is why their
+   * panels look lit rather than outlined. These are the opaque equivalents on
+   * this ground.
+   */
+  --color-line: #23212f;
+  --color-hairline: #191825;
 
-  /* Three text weights. Labels recede to ash, the least important to mute. */
-  --color-ash: #7c8291;
-  --color-mute: #565c6b;
+  /* Secondary and tertiary text, both from fomo's header. */
+  --color-ash: #9899a3;
+  --color-mute: #5f6270;
 
   /*
    * Direction. The single most repeated signal on a trading screen, so it
@@ -93,6 +111,22 @@
   --font-display: var(--font-display), system-ui, sans-serif;
   --font-sans: var(--font-sans), system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, monospace;
+}
+
+/*
+ * Placeholders at 50% of whatever the input's own text colour is.
+ *
+ * currentColor, NOT the text token. The first version used the token and
+ * blanked the prompt bar: that input sits on a light surface with dark text,
+ * so 50% of the page's near-white painted white-on-white and the placeholder
+ * simply vanished.
+ *
+ * currentColor makes the rule true on any surface — light placeholder on the
+ * dark panels, dark placeholder on the light bar — and it stays true for any
+ * input added later without anyone remembering this existed.
+ */
+::placeholder {
+  color: color-mix(in srgb, currentColor 50%, transparent);
 }
 
 html,

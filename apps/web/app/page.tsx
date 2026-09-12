@@ -16,7 +16,7 @@ export default function Home() {
       </video>
 
       {/* Fallback ground, visible until the video lands. */}
-      <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[#141824] via-ink to-black" />
+      <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[#171334] via-ink to-black" />
 
       {/* Scrim — video brightness swings frame to frame, and without this the
           wordmark vanishes whenever something bright crosses centre. */}
