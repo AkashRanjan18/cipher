@@ -49,8 +49,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${sans.variable}`}>
-      <body className="antialiased">
+    <html lang="en" className={`${display.variable} ${sans.variable} h-full`}>
+      <body className="min-h-full antialiased">
         <Privy>
           <LoginModalProvider>{children}</LoginModalProvider>
         </Privy>

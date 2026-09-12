@@ -63,7 +63,7 @@ export function SidePanel({
   const [filter, setFilter] = useState<Filter>("Crypto");
 
   return (
-    <section className="flex flex-col rounded-2xl border border-line bg-panel">
+    <section className="flex min-h-0 flex-col rounded-2xl border border-line bg-panel">
       {/* ---- tabs ---- */}
       <div className="flex items-center gap-0.5 border-b border-hairline px-1.5">
         {TABS.map(([k, label]) => (
@@ -128,9 +128,16 @@ export function SidePanel({
         </>
       )}
 
-      {/* No inner scroll: the page scrolls now, so the list is simply as long
-          as it is and the browser's own bar handles it. */}
-      <div className="flex-1">
+      {/*
+        * SCROLLBAR 1 — and it starts HERE, not at the top of the panel.
+        *
+        * Everything above this is fixed: the tabs, the filter row and the fee
+        * strip. Only the list moves, so the bar's track begins level with the
+        * fee strip and runs to the split buttons at the bottom — which is
+        * exactly where a market list's bar belongs, because scrolling the
+        * tabs out of reach to see more rows is a control that fights you.
+        */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "tokens" && (
           <TokenList
             majors={majors}

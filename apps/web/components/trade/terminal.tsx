@@ -222,18 +222,14 @@ function TerminalBody({
 
   return (
     /*
-     * THE PAGE SCROLLS, the shell does not.
+     * EXACTLY THREE SCROLLBARS, one per column, and none at the browser edge.
      *
-     * This was h-dvh with overflow-hidden: the terminal was pinned to exactly
-     * one screen and every panel scrolled inside itself, which put a scrollbar
-     * in the middle of the layout for each one. fomo lets the document grow
-     * past the viewport and scroll, so there is a single bar at the browser's
-     * own edge.
-     *
-     * min-h-dvh rather than nothing, so a short page still fills the screen
-     * instead of leaving the ground colour showing under it.
+     * The shell is the viewport again. A document that grows past the screen
+     * gets a fourth bar at the browser's own edge, which is the one thing this
+     * layout must not have — the header and the ticker are meant to be fixed
+     * points, and the three columns are meant to move independently.
      */
-    <div className="relative flex min-h-dvh flex-col gap-2 bg-ink p-2">
+    <div className="relative flex h-dvh flex-col gap-2 overflow-hidden bg-ink p-2">
       {/* ---------------- header ---------------- */}
       {/*
         * Sticky, and wrapped.
@@ -245,8 +241,7 @@ function TerminalBody({
         * gap: a moving stripe of candles above a header that was supposed to
         * be covering them.
         */}
-      <div className="sticky top-0 z-30 -mx-2 -mt-2 bg-ink px-2 pb-2 pt-2">
-        <header className="flex items-center gap-3 rounded-2xl border border-line bg-panel px-3 py-2">
+      <header className="flex shrink-0 items-center gap-3 rounded-2xl border border-line bg-panel px-3 py-2">
         <a href="/" className="shrink-0 font-display text-xl lowercase text-champagne">
           cipher
         </a>
@@ -267,13 +262,12 @@ function TerminalBody({
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent font-sans text-[11px] font-extrabold text-ink">
           AR
         </div>
-        </header>
-      </div>
+      </header>
 
       {/* ---------------- body ---------------- */}
       <div
         ref={bodyRef}
-        className="grid gap-2"
+        className="grid min-h-0 flex-1 gap-2"
         // Grid template in a style rather than a class: the left column has to
         // collapse to zero when the panel is closed, and Tailwind cannot hold
         // a conditional arbitrary value without generating both classes.
@@ -297,7 +291,7 @@ function TerminalBody({
         }}
       >
         {panelOpen && (
-          <div className="hidden lg:flex lg:flex-col">
+          <div className="hidden min-h-0 lg:flex lg:flex-col">
             <SidePanel
               majors={majors}
               symbol={symbol}
@@ -332,7 +326,20 @@ function TerminalBody({
           * Inside the column it is simply the last row — bounded by the same
           * width as the chart, and nothing is underneath anything.
           */}
-        <div className="relative flex flex-col gap-2">
+        {/* SCROLLBAR 2 — the chart column. Chart, prompt bar and fills scroll as
+            one, so the chart can keep a readable height and the table below it
+            is still reachable. */}
+        <div className="relative flex min-h-0 flex-col gap-2 overflow-y-auto pr-0.5 [&>*]:shrink-0">
+        {/*
+          * [&>*]:shrink-0 on the column above, and it is load-bearing.
+          *
+          * A flex column compresses its children to fit before it will admit
+          * to overflowing. Without it the chart silently lost a hundred pixels
+          * of its 55vh, the fills panel was clipped, and the column reported
+          * no overflow at all — so no scrollbar appeared and the content was
+          * simply squashed instead. Children keep their height; the column
+          * scrolls.
+          */}
         <section className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel">
           <ChartHeader
             market={market}
@@ -438,9 +445,8 @@ function TerminalBody({
           * its own overflow, flexbox will compress it and its internal
           * overflow will clip the account panel mid-row again.
           */}
-        {/* No overflow here any more: the page scrolls, so this is simply as
-            tall as the ticket plus the flow panel. */}
-        <aside className="flex flex-col">
+        {/* SCROLLBAR 3 — the ticket column, ticket and flow together. */}
+        <aside className="flex min-h-0 flex-col overflow-y-auto pr-0.5 [&>*]:shrink-0">
           <Ticket price={last} market={market.base} depthUsd={depth} />
           <Flow candles={candles} last={last} />
         </aside>
@@ -449,9 +455,7 @@ function TerminalBody({
       {/* Sticky to the bottom for the same reason the header is sticky to the
           top: it is the only thing on the page saying what the rest of the
           market is doing. */}
-      <div className="sticky bottom-0 z-30 -mx-2 -mb-2 bg-ink px-2 pb-2 pt-2">
-        <StatusBar majors={majors} onSelect={setSymbol} />
-      </div>
+      <StatusBar majors={majors} onSelect={setSymbol} />
     </div>
   );
 }
