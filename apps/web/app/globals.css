@@ -199,30 +199,35 @@ body {
   height: 8px;
 }
 
-/*
- * The track is inset, so the bar is shorter than the panel it belongs to.
- *
- * A scrollbar running the full height of a rounded panel reads as part of the
- * frame — a line down the edge — rather than as a thing showing position.
- * Pulled in from both ends it reads as an object floating in the panel, which
- * is what it is.
- *
- * Fixed pixels rather than a percentage: percentage margins resolve against
- * the containing block's WIDTH, even for margin-block, so a percentage here
- * would scale with the panel's width and have nothing to do with its height.
- */
+/* Full height, end to end. The THUMB is what is shortened — see below. */
 ::-webkit-scrollbar-track {
   background: transparent;
-  margin-block: 72px;
 }
 
+/*
+ * A SHORTER THUMB, without touching the track.
+ *
+ * The thumb's length is not settable: browsers compute it from the ratio of
+ * visible content to total, and neither height nor max-height is honoured on
+ * this pseudo-element. What IS honoured is a transparent border with
+ * background-clip: padding-box — the element keeps its computed length and its
+ * full hit area, and only the painted part is inset.
+ *
+ * 44px top and bottom takes 88px off what you see. The horizontal 1px does the
+ * same job sideways: an 8px hit area that reads as a 6px bar.
+ *
+ * The min-height is a guard, not a preference. On a very long list the natural
+ * thumb can be 30px, and 88px of border would inset it out of existence — a
+ * scrollbar that vanishes precisely when there is most to scroll. 128px leaves
+ * at least 40px visible.
+ */
 ::-webkit-scrollbar-thumb {
   background: var(--color-mute);
   border-radius: 999px;
-  /* An inset border rather than a narrower thumb: it keeps the hit area at the
-     full 8px while the visible bar reads as 6px, which is the difference
-     between "slim" and "hard to grab". */
-  border: 1px solid transparent;
+  border-style: solid;
+  border-color: transparent;
+  border-width: 44px 1px;
+  min-height: 128px;
   background-clip: padding-box;
 }
 
