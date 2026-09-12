@@ -277,10 +277,23 @@ function TerminalBody({
         // Grid template in a style rather than a class: the left column has to
         // collapse to zero when the panel is closed, and Tailwind cannot hold
         // a conditional arbitrary value without generating both classes.
+        /*
+         * PERCENTAGES, not pixels, and they are fomo's own proportions.
+         *
+         * Measured off their page at 1920: the market list is ~496px and the
+         * ticket column ~464px, so 26% and 24%. cipher was 248px and 320px —
+         * 16% and 21% — which is why the left panel felt cramped beside
+         * theirs even though the rows were the same height.
+         *
+         * Kept as percentages because fomo's absolute widths are designed for
+         * 1920 and would leave under 600px of chart on a 1536 laptop. These
+         * land on their exact pixel widths at 1920 and stay proportional below
+         * it.
+         */
         style={{
           gridTemplateColumns: panelOpen
-            ? "248px minmax(0,1fr) 320px"
-            : "minmax(0,1fr) 320px",
+            ? "26% minmax(0,1fr) 24%"
+            : "minmax(0,1fr) 24%",
         }}
       >
         {panelOpen && (
@@ -337,8 +350,7 @@ function TerminalBody({
             * A REAL height, because flex-1 has nothing to fill any more.
             *
             * 55vh with a floor: tall enough to read on a laptop, short enough
-            * that the trades table below it is visible without scrolling, which
-            * is the whole reason to put them in the same column.
+            * that what sits under it is visible without scrolling.
             */}
           <div className="h-[55vh] min-h-[320px]">
             <PriceChart
@@ -347,73 +359,67 @@ function TerminalBody({
               barSeconds={intervalSeconds(interval)}
             />
           </div>
-
-          {/* "Split right" gives the chart the whole column. */}
-          {split === "bottom" && (
-            <>
-              {/*
-                * The divider.
-                *
-                * touch-none because a pointerdown on a scrollable panel is a
-                * scroll gesture on touch devices — without it the browser
-                * claims the pointer and the drag never starts.
-                */}
-              <div
-                onPointerDown={startDrag}
-                onDoubleClick={() => setLowerH(150)}
-                role="separator"
-                aria-orientation="horizontal"
-                aria-label="Resize trade history"
-                title="Drag to resize · double-click to reset"
-                className="group flex h-2 shrink-0 cursor-row-resize touch-none items-center justify-center border-t border-hairline transition-colors hover:bg-raised"
-              >
-                {/* A grip, so the divider reads as draggable when idle. Two
-                    pixels of hairline does not. */}
-                <span className="h-[3px] w-8 rounded-full bg-line transition-colors group-hover:bg-ash" />
-              </div>
-              <div style={{ height: lowerH }} className="shrink-0 overflow-hidden">
-                <MyTrades />
-              </div>
-            </>
-          )}
         </section>
 
-          {/*
-            * The bar collapses by losing its HEIGHT, not by disappearing.
-            *
-            * max-height rather than a conditional render, because the chart
-            * panel above is flex-1 — as this shrinks, flexbox recomputes the
-            * panel's height every frame and it grows smoothly into the space.
-            * Swapping the element out instead makes the panel jump, and the
-            * rounded corner snaps to the bottom rather than travelling there.
-            *
-            * -mt-2 while folded cancels the column's own gap, so folded really
-            * is zero rather than eight pixels of nothing.
-            */}
-          <div
-            className={`overflow-hidden transition-all duration-300 ease-out ${
-              sanaFolded ? "-mt-2 max-h-0 opacity-0" : "max-h-[70vh] opacity-100"
-            }`}
-            aria-hidden={sanaFolded}
-          >
-            <Sana
-              price={last}
-              market={market.base}
-              depthUsd={depth}
-              onCollapse={() => setSanaFolded(true)}
-            />
-          </div>
+        {/*
+          * SANA SITS BETWEEN THE CHART AND THE TABLE.
+          *
+          * It was the last thing in the column, under the fills — which put the
+          * primary input of the product below a table you scroll past to reach
+          * it. On fomo the equivalent row sits immediately under the chart.
+          *
+          * It is also simply where the eye already is: you read the chart, you
+          * form an intent, and the place to say it is the next thing down.
+          */}
+        <div
+          className={`overflow-hidden transition-all duration-300 ease-out ${
+            sanaFolded ? "-mb-2 max-h-0 opacity-0" : "max-h-[70vh] opacity-100"
+          }`}
+          aria-hidden={sanaFolded}
+        >
+          <Sana
+            price={last}
+            market={market.base}
+            depthUsd={depth}
+            onCollapse={() => setSanaFolded(true)}
+          />
+        </div>
 
-          {/* Centred, and INSIDE the panel's bottom edge rather than
-              straddling it. Straddling read better in principle and worse in
-              fact: half the mark landed on the ticker strip and covered it. */}
-          {sanaFolded && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center">
-              <div className="pointer-events-auto">
-                <SanaMark onOpen={() => setSanaFolded(false)} />
-              </div>
+        {/* Folded, the mark takes the row instead — centred, in flow. It no
+            longer needs to float: the page scrolls and the chart has a fixed
+            height, so there is no gap for the panel to grow into. */}
+        {sanaFolded && (
+          <div className="flex justify-center py-1">
+            <SanaMark onOpen={() => setSanaFolded(false)} />
+          </div>
+        )}
+
+        {/* "Split right" gives the chart the whole column. */}
+        {split === "bottom" && (
+          <section className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel">
+            {/*
+              * The divider.
+              *
+              * touch-none because a pointerdown on a scrollable panel is a
+              * scroll gesture on touch devices — without it the browser claims
+              * the pointer and the drag never starts.
+              */}
+            <div
+              onPointerDown={startDrag}
+              onDoubleClick={() => setLowerH(150)}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize trade history"
+              title="Drag to resize · double-click to reset"
+              className="group flex h-2 shrink-0 cursor-row-resize touch-none items-center justify-center transition-colors hover:bg-raised"
+            >
+              <span className="h-[3px] w-8 rounded-full bg-line transition-colors group-hover:bg-ash" />
             </div>
-          )}
+            <div style={{ height: lowerH }} className="shrink-0 overflow-hidden">
+              <MyTrades />
+            </div>
+          </section>
+        )}
         </div>
 
         {/*
