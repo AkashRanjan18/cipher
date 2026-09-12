@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { usePrivy, useLoginWithOAuth } from "@privy-io/react-auth";
+import { useLoginWithOAuth } from "@privy-io/react-auth";
 import { GoogleIcon } from "./google-icon";
 
 /**
@@ -22,7 +22,24 @@ import { GoogleIcon } from "./google-icon";
  * Mounted once in app/layout.tsx. Any button anywhere calls open().
  */
 
-const LoginModalContext = createContext<{ open: () => void }>({ open: () => {} });
+type LoginModal = {
+  /** Show the dialog. */
+  open: () => void;
+  /**
+   * Start the Google flow. On the context rather than in the dialog, so the
+   * provider's hook is the only one in the app — see the note below.
+   */
+  signInWithGoogle: () => Promise<void>;
+  loading: boolean;
+  error: string | null;
+};
+
+const LoginModalContext = createContext<LoginModal>({
+  open: () => {},
+  signInWithGoogle: async () => {},
+  loading: false,
+  error: null,
+});
 
 export const useLoginModal = () => useContext(LoginModalContext);
 
@@ -30,50 +47,81 @@ export const useLoginModal = () => useContext(LoginModalContext);
 export const AFTER_LOGIN = "/trade";
 
 /**
- * Set the instant before OAuth leaves the page, read the instant it returns.
+ * THE OAUTH HOOK LIVES HERE, not in the modal, and that is load-bearing.
  *
- * Google OAuth is a FULL PAGE REDIRECT, not a popup. Everything in React
- * memory is gone by the time the user comes back, so "did this person just log
- * in" cannot be answered from state — and the difference matters: someone who
- * just signed in wants the terminal, someone merely visiting the landing page
- * while already signed in wants to read it.
+ * Google OAuth is a FULL PAGE REDIRECT. Everything in React memory is gone by
+ * the time the browser returns, and it returns to a page where the dialog is
+ * closed and therefore unmounted — so a hook that exists only inside the
+ * dialog is not there to finish what the dialog started. This provider is
+ * mounted in the root layout, which means it is mounted on every page the
+ * redirect could land on.
  *
- * sessionStorage rather than localStorage, so it dies with the tab and cannot
- * bounce a returning visitor days later.
+ * onComplete ALSO FIRES FOR SOMEONE WHO WAS ALREADY SIGNED IN, immediately, on
+ * mount — hence the wasAlreadyAuthenticated check. That flag is the true
+ * version of what a sessionStorage "login pending" marker used to approximate
+ * here: Privy knows whether this is a fresh authentication or a restored
+ * session, so ask it rather than leaving ourselves a note before we go.
  */
-const PENDING = "cipher:login-pending";
-
 export function LoginModalProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
-  const { authenticated } = usePrivy();
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const open = useCallback(() => setIsOpen(true), []);
+  // Inlined at build time. Without it Privy cannot start an OAuth flow, so
+  // say so rather than letting the button fail silently.
+  const configured = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
+
+  const { initOAuth, loading } = useLoginWithOAuth({
+    onComplete: ({ wasAlreadyAuthenticated }) => {
+      // Someone reading the landing page with a live session is not logging
+      // in, and must not be thrown into the terminal for loading a page.
+      if (wasAlreadyAuthenticated) return;
+      setIsOpen(false);
+      router.replace(AFTER_LOGIN);
+    },
+    onError: (code) => {
+      /*
+       * Nearly invisible by construction: this fires after the redirect, when
+       * the dialog is closed, so there is nowhere on screen to put it. The
+       * console is the honest channel and SignInHandoff carries the user's way
+       * out. Worth revisiting if it ever fires in practice.
+       */
+      console.error("[cipher] Google sign-in failed after redirect:", code);
+      setError("Couldn't finish signing in. Try again.");
+    },
+  });
+
+  const open = useCallback(() => {
+    setError(null);
+    setIsOpen(true);
+  }, []);
   const close = useCallback(() => setIsOpen(false), []);
 
-  /*
-   * THE POST-LOGIN REDIRECT LIVES HERE, not in the modal.
-   *
-   * It used to be an effect inside Modal, which only runs while the modal is
-   * MOUNTED — fine for a popup flow, useless for a redirect one. Google sends
-   * the browser away and back, the modal is closed on return, the effect never
-   * fires, and the user lands on the marketing page signed in with a button to
-   * press. This provider is mounted in the root layout, so it is there to
-   * catch the return.
-   *
-   * Guarded by the pending flag so it only ever fires for a login the user
-   * just performed.
-   */
-  useEffect(() => {
-    if (!authenticated) return;
-    if (sessionStorage.getItem(PENDING) !== "1") return;
-    sessionStorage.removeItem(PENDING);
-    setIsOpen(false);
-    router.replace(AFTER_LOGIN);
-  }, [authenticated, router]);
+  const signInWithGoogle = useCallback(async () => {
+    setError(null);
+    if (!configured) {
+      setError("Auth isn't connected yet — set NEXT_PUBLIC_PRIVY_APP_ID.");
+      return;
+    }
+    try {
+      await initOAuth({ provider: "google" });
+    } catch (e) {
+      /*
+       * The user gets one sentence; the console gets the real thing.
+       *
+       * "Couldn't reach Google" is a guess dressed as a diagnosis — the same
+       * message covers a dead network, a login method that is not enabled on
+       * the Privy app, and an origin that is not on its allowlist. Those need
+       * three different fixes, and during setup the distinction is the whole
+       * problem.
+       */
+      console.error("[cipher] Google sign-in failed:", e);
+      setError("Couldn't reach Google. Try again.");
+    }
+  }, [configured, initOAuth]);
 
   return (
-    <LoginModalContext.Provider value={{ open }}>
+    <LoginModalContext.Provider value={{ open, signInWithGoogle, loading, error }}>
       {children}
       {isOpen && <Modal onClose={close} />}
     </LoginModalContext.Provider>
@@ -81,14 +129,9 @@ export function LoginModalProvider({ children }: { children: ReactNode }) {
 }
 
 function Modal({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
-  const { authenticated } = usePrivy();
-  const { initOAuth, loading } = useLoginWithOAuth();
-  const [error, setError] = useState<string | null>(null);
-
-  // Inlined at build time. Without it Privy cannot start an OAuth flow, so
-  // say that here rather than letting the buttons fail silently.
-  const configured = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
+  // Markup only. The flow, its loading state and its errors belong to the
+  // provider, because they outlive this component by a full page navigation.
+  const { signInWithGoogle, loading, error } = useLoginModal();
 
   // Escape closes. Expected of any dialog, and cheap.
   useEffect(() => {
@@ -105,40 +148,6 @@ function Modal({ onClose }: { onClose: () => void }) {
       document.body.style.overflow = prev;
     };
   }, []);
-
-  function guard() {
-    if (!configured) {
-      setError("Auth isn't connected yet — set NEXT_PUBLIC_PRIVY_APP_ID.");
-      return false;
-    }
-    return true;
-  }
-
-  async function signInWithGoogle() {
-    setError(null);
-    if (!guard()) return;
-    // Set BEFORE the redirect: after it, this code never runs again.
-    sessionStorage.setItem(PENDING, "1");
-    try {
-      await initOAuth({ provider: "google" });
-    } catch (e) {
-      /*
-       * The user gets one sentence; the console gets the real thing.
-       *
-       * "Couldn't reach Google" is a guess dressed as a diagnosis — the same
-       * message covers a dead network, a login method that is not enabled on
-       * the Privy app, and an origin that is not on its allowlist. Those need
-       * three different fixes, and during setup the distinction is the whole
-       * problem.
-       */
-      console.error("[cipher] Google sign-in failed:", e);
-      // The redirect never happened, so the flag would sit there and bounce
-      // an unrelated later visit.
-      sessionStorage.removeItem(PENDING);
-      setError("Couldn't reach Google. Try again.");
-    }
-  }
-
 
   return (
     <div

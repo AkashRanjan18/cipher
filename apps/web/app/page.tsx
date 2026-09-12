@@ -1,7 +1,34 @@
 import { AuthButton } from "@/components/auth/auth-button";
 import { DownloadButton } from "@/components/download-button";
+import { SignInHandoff } from "@/components/auth/sign-in-handoff";
 
-export default function Home() {
+/*
+ * Reading searchParams makes this route dynamic, which a static marketing page
+ * would rather not be.
+ *
+ * It buys the only thing that removes the flash completely. Google redirects
+ * back to "/" carrying the OAuth code, and the browser paints whatever HTML
+ * the server sends for that URL — before React hydrates, before Privy has
+ * exchanged anything, before any effect can decide to redirect. Hiding the
+ * hero on the client is therefore always one paint too late. Deciding here,
+ * on the server, means the hero is never sent at all.
+ *
+ * cipher: the cost is a per-request render of a page with no data in it. If
+ * that ever matters, the alternative is a blocking inline script in <head>
+ * that sets a data attribute before first paint — same result, more machinery.
+ */
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ privy_oauth_code?: string; privy_oauth_error?: string }>;
+}) {
+  const q = await searchParams;
+
+  // A code and no error means the browser is mid-handoff: it left for Google
+  // from this page and is passing back through on its way to the terminal.
+  // An error means the flow failed, and the way out is the homepage itself.
+  if (q.privy_oauth_code && !q.privy_oauth_error) return <SignInHandoff />;
+
   return (
     <section className="relative flex min-h-dvh flex-col overflow-hidden">
       <video
