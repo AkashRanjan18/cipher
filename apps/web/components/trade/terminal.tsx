@@ -278,21 +278,18 @@ function TerminalBody({
         )}
 
         {/*
-          * mb-[104px] on the CENTRE column only.
+          * The chart column, with Sana beneath it.
           *
-          * The prompt bar floats over the bottom of the page, and the fills
-          * table was running underneath it — rows visible through nothing,
-          * half a row peeking out below. Padding the scroll area was not
-          * enough: it let the rows clear the bar, but the panel still ENDED
-          * behind it, so the last row was always partly covered.
+          * Sana used to float over the whole shell, which meant it had no
+          * column to belong to: it was centred on the PAGE, so it sat off
+          * centre against the chart, and the fills table had to carry a 104px
+          * margin to stay out from under it.
           *
-          * The clearance goes here rather than on the shell because the prompt
-          * is centred and about 640px wide: it only ever covers this column.
-          * Putting it on the shell would pull the market list and the ticket
-          * up too, and leave the dead strip either side of the bar that the
-          * float was introduced to remove.
+          * Inside the column it is simply the last row — bounded by the same
+          * width as the chart, and nothing is underneath anything.
           */}
-        <section className="mb-[104px] flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
+        <div className="flex min-h-0 flex-col gap-2">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
           <ChartHeader
             market={market}
             price={last}
@@ -343,6 +340,9 @@ function TerminalBody({
           )}
         </section>
 
+          <Sana price={last} market={market.base} depthUsd={depth} />
+        </div>
+
         {/*
           * ONE SCROLLER FOR THE WHOLE COLUMN, with its bar at the far right.
           *
@@ -366,24 +366,6 @@ function TerminalBody({
       </div>
 
       <StatusBar majors={majors} onSelect={setSymbol} />
-
-      {/*
-        * The prompt bar FLOATS over the bottom rather than taking a row.
-        *
-        * It is centred and about 640px wide, so as a flex row it reserved
-        * ~90px of full-width height and left two dead black bands either side
-        * of itself — the panels stopped well short of the bottom of the screen
-        * for no reason. Positioned instead, it stays exactly where it was and
-        * the columns get the height back.
-        */}
-      {/* bottom-11 clears the status bar (h-8 plus the shell's padding). The
-          bar is chrome you read, not content you scroll past, so the prompt
-          must never sit on top of it. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-11 z-30 flex justify-center px-2">
-        <div className="pointer-events-auto w-full">
-          <Sana price={last} market={market.base} depthUsd={depth} />
-        </div>
-      </div>
     </div>
   );
 }

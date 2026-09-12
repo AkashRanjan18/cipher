@@ -69,8 +69,17 @@ export function Sana({
   const streamRef = useRef<HTMLDivElement>(null);
   /** The whole bar, so an outside click can be told from an inside one. */
   const shellRef = useRef<HTMLDivElement>(null);
-  /** Whether the conversation is showing. The input bar never hides. */
+  /** Whether the conversation is showing. The input bar stays. */
   const [open, setOpen] = useState(true);
+  /**
+   * Whether the whole bar is folded to its mark.
+   *
+   * Distinct from `open`, and the distinction matters: `open` hides the
+   * conversation and keeps the input, this hides everything. A trader who
+   * wants the chart wants ALL of it, not a chart with a text field across the
+   * bottom of it.
+   */
+  const [collapsed, setCollapsed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   /*
@@ -370,14 +379,49 @@ export function Sana({
     );
   }
 
+  /*
+   * Folded to its mark.
+   *
+   * Placed at the LEFT of the row the bar occupied, so expanding does not move
+   * the page: the mark grows into the bar rather than the bar appearing
+   * somewhere the mark was not.
+   */
+  if (collapsed) {
+    return (
+      <div className="mx-auto flex w-full max-w-5xl shrink-0 justify-start pb-1">
+        <button
+          onClick={() => setCollapsed(false)}
+          aria-label="Open Sana"
+          aria-expanded={false}
+          title="Open Sana"
+          className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full shadow-lg shadow-black/40 transition-transform hover:scale-105 active:scale-95"
+        >
+          {/* A halo, a gradient ring and a dark core. A flat disc reads as a
+              button; the layered version reads as something listening, which
+              is the whole reason for the shape. */}
+          <span className="absolute inset-0 animate-pulse rounded-full bg-accent/25 blur-md" />
+          <span className="absolute inset-0 rounded-full bg-gradient-to-br from-accent via-id-coral to-id-violet" />
+          <span className="absolute inset-[3px] rounded-full bg-panel" />
+          <span className="relative font-display text-[15px] font-bold text-champagne">S</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
-    /* Narrow and centred rather than spanning the terminal. A command bar
-       that runs the full width reads as a footer; at this width it reads as
-       the thing you talk to, which is what it is. */
     <div
       ref={shellRef}
       onMouseDown={() => setOpen(true)}
-      className="mx-auto flex w-full max-w-2xl shrink-0 flex-col rounded-2xl border border-line bg-panel px-3 pb-3"
+      /*
+       * Spans the chart column rather than a narrow strip inside it.
+       *
+       * It was max-w-2xl — 672px sitting in a column half again as wide, with
+       * dead space either side and the readback cards wrapping inside a box
+       * narrower than they needed. Capped at max-w-5xl rather than uncapped:
+       * on a very wide monitor a command bar running the full span stops
+       * reading as something you talk to and starts reading as a footer.
+       */
+      className="mx-auto flex w-full max-w-5xl shrink-0 flex-col rounded-2xl border border-line bg-panel px-3 pb-3"
     >
       {/*
         * Collapsed, with history behind it.
@@ -577,14 +621,25 @@ export function Sana({
         </p>
       )}
 
-      <div className="flex flex-wrap gap-4 px-1 pt-2 font-sans text-[10.5px] text-ash">
-        <span>
-          Live Binance prices, <b className="text-champagne">paper money</b>. Handles and
-          squawks around them are placeholder.
-        </span>
-        <span>
-          Hit <b className="text-champagne">/</b> to type, or the mic to say it out loud.
-        </span>
+      {/*
+        * One word where two lines of hints used to be.
+        *
+        * The hints told a first-time user things a second-time user has to
+        * read past forever, on the row closest to the thing they are trying to
+        * look at. What belongs in that space is a way out of it.
+        *
+        * "Collapse" as a word rather than a chevron: a glyph in the corner of a
+        * bar is guessable at best, and this one does something people will want
+        * on their first session.
+        */}
+      <div className="flex justify-end px-1 pt-2">
+        <button
+          onClick={() => setCollapsed(true)}
+          aria-label="Collapse Sana"
+          className="font-sans text-[10.5px] text-mute transition-colors hover:text-champagne"
+        >
+          Collapse
+        </button>
       </div>
     </div>
   );
