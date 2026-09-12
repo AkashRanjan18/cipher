@@ -37,10 +37,9 @@ export function MyTrades() {
         )}
       </div>
 
-      {/* pb-24: the prompt bar floats over the bottom of this panel, so the
-          last rows need somewhere to scroll to. Without it they can never be
-          brought out from under it. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-24">
+      {/* The column now ends above the prompt bar (see terminal.tsx), so the
+          old pb-24 compensating for the overlap is gone. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2.5">
         <Fills />
       </div>
     </div>

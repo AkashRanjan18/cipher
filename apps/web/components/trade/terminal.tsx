@@ -277,7 +277,22 @@ function TerminalBody({
           </button>
         )}
 
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
+        {/*
+          * mb-[104px] on the CENTRE column only.
+          *
+          * The prompt bar floats over the bottom of the page, and the fills
+          * table was running underneath it — rows visible through nothing,
+          * half a row peeking out below. Padding the scroll area was not
+          * enough: it let the rows clear the bar, but the panel still ENDED
+          * behind it, so the last row was always partly covered.
+          *
+          * The clearance goes here rather than on the shell because the prompt
+          * is centred and about 640px wide: it only ever covers this column.
+          * Putting it on the shell would pull the market list and the ticket
+          * up too, and leave the dead strip either side of the bar that the
+          * float was introduced to remove.
+          */}
+        <section className="mb-[104px] flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
           <ChartHeader
             market={market}
             price={last}

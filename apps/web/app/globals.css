@@ -126,6 +126,86 @@ body {
 }
 
 /*
+ * SCROLLBARS.
+ *
+ * The default Windows scrollbar is a chunky opaque grey column that belongs to
+ * no palette on this page — it sat against the market list, the ticket and the
+ * fills panel looking like part of the operating system rather than part of
+ * the product. fomo styles theirs; so does every terminal worth copying.
+ *
+ * Two declarations, and the @supports guard between them is load-bearing.
+ *
+ * Chrome 121+ gives the STANDARD properties precedence and then ignores every
+ * ::-webkit-scrollbar rule on the page. Set both unguarded — which is what
+ * every snippet on the internet tells you to do — and Chrome silently drops
+ * the width, the radius and the arrow suppression, leaving the OS scrollbar
+ * with stepper arrows and a square thumb. It looks like the CSS did not load.
+ *
+ * So: the standard properties apply only where ::-webkit-scrollbar does NOT
+ * exist, which is Firefox. Chrome, Edge and Safari take the webkit block and
+ * with it full control of size, radius and the arrows.
+ *
+ * Track is transparent rather than coloured: a scrollable panel already has a
+ * surface, and painting a second one inside it draws a stripe down the edge of
+ * every list on the page.
+ *
+ * Thumb sits at mute and lifts to ash on hover — present enough to grab,
+ * quiet enough that a list of fourteen markets does not read as fifteen
+ * columns.
+ */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-mute) transparent;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-mute);
+  border-radius: 999px;
+  /* An inset border rather than a narrower thumb: it keeps the hit area at the
+     full 8px while the visible bar reads as 6px, which is the difference
+     between "slim" and "hard to grab". */
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ash);
+  background-clip: padding-box;
+}
+
+/*
+ * The stepper arrows at each end.
+ *
+ * Windows draws them by default and nothing else on this page has a control
+ * that small — they read as artefacts rather than buttons, and nobody has
+ * clicked a scrollbar arrow on purpose in fifteen years. Suppressed at zero
+ * size as well as display:none, because Chrome still reserves the track space
+ * for them otherwise and the thumb ends up floating short of both ends.
+ */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Where two scrollbars meet. Unstyled it is a small grey square that nothing
+   else on the page explains. */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/*
  * A scrollable strip that does not advertise it.
  *
  * The tab row overflows at narrow widths and must stay swipeable, but a
