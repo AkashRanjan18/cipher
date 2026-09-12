@@ -27,6 +27,15 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
  * container is a real overflow-y-auto element — only the INDICATOR is ours.
  * Dragging it is handled below; everything else is the browser's.
  */
+/**
+ * Wheel distance, as a fraction of what the browser would move.
+ *
+ * 0.6 by instruction. The default is tuned for documents; in a panel of 48px
+ * rows it overshoots by two or three rows on a single notch, and you arrive
+ * somewhere you have to scroll back from.
+ */
+const WHEEL_RATE = 0.6;
+
 export function Scroller({
   children,
   className = "",
@@ -72,6 +81,29 @@ export function Scroller({
     if (!el) return;
     measure();
 
+    /*
+     * A slower wheel.
+     *
+     * Bound by hand rather than with onWheel, because React attaches wheel
+     * listeners as PASSIVE — preventDefault inside a React handler is ignored
+     * and logs a console warning, so the page would keep scrolling at full
+     * speed and the multiplier would look like it did nothing.
+     */
+    const onWheel = (e: WheelEvent) => {
+      /*
+       * At either end, do nothing and let the event through. Swallowing it
+       * would trap the pointer: a panel scrolled to its bottom would eat every
+       * notch instead of passing it to whatever is behind.
+       */
+      const max = el.scrollHeight - el.clientHeight;
+      if ((e.deltaY < 0 && el.scrollTop <= 0) || (e.deltaY > 0 && el.scrollTop >= max - 1)) {
+        return;
+      }
+      e.preventDefault();
+      el.scrollTop += e.deltaY * WHEEL_RATE;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+
     el.addEventListener("scroll", measure, { passive: true });
     /*
      * Content changes without a scroll event — a market list filtering down, a
@@ -83,6 +115,7 @@ export function Scroller({
     if (el.firstElementChild) ro.observe(el.firstElementChild);
 
     return () => {
+      el.removeEventListener("wheel", onWheel);
       el.removeEventListener("scroll", measure);
       ro.disconnect();
     };
