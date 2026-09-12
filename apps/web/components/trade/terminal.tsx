@@ -343,13 +343,23 @@ function TerminalBody({
           )}
         </section>
 
-        {/* The column ended at the account box and left a third of the
-            screen empty. Flow fills it with the only data visualisation on
-            the page outside the chart itself. */}
-        {/* No overflow here — Ticket is its own scroll container. Nesting a
-            second one let flexbox compress it, and its internal overflow then
-            clipped the account panel mid-row. */}
-        <aside className="flex min-h-0 flex-col">
+        {/*
+          * ONE SCROLLER FOR THE WHOLE COLUMN, with its bar at the far right.
+          *
+          * The ticket used to scroll inside itself while Flow sat pinned below
+          * it — two independent scroll regions stacked, and the bar appeared in
+          * the middle of the page against the ticket's inner edge rather than
+          * at the edge of the screen. fomo scrolls the entire right column as
+          * one: ticket, then panels, then positions, one bar at the rightmost
+          * end.
+          *
+          * This is the exact inverse of the arrangement that broke before, so
+          * it only works if the CHILDREN stop being flexible. Ticket is now
+          * shrink-0 at its natural height; if it ever goes back to flex-1 with
+          * its own overflow, flexbox will compress it and its internal
+          * overflow will clip the account panel mid-row again.
+          */}
+        <aside className="flex min-h-0 flex-col overflow-y-auto pr-0.5">
           <Ticket price={last} market={market.base} depthUsd={depth} />
           <Flow candles={candles} last={last} />
         </aside>

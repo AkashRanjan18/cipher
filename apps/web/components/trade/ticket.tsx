@@ -222,14 +222,16 @@ export function Ticket({
 
   return (
     /*
-     * [&>*]:shrink-0 on the children, not decoration.
+     * shrink-0 and NO overflow: the column around this scrolls now, not the
+     * ticket. See the aside in terminal.tsx.
      *
-     * This column scrolls, so flexbox is free to compress its children to fit
-     * — and a child carrying overflow-hidden has no content floor to push
-     * back with. The position card collapsed to 2.65px tall: present in the
-     * DOM, correct in every number, and invisible.
+     * [&>*]:shrink-0 on the children stays, and is not decoration. In a flex
+     * column, children are free to compress to fit — and a child carrying
+     * overflow-hidden has no content floor to push back with. The position
+     * card once collapsed to 2.65px tall: present in the DOM, correct in every
+     * number, and invisible.
      */
-    <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto rounded-2xl border border-line bg-panel p-3 [&>*]:shrink-0">
+    <div className="flex shrink-0 flex-col gap-2.5 rounded-2xl border border-line bg-panel p-3 [&>*]:shrink-0">
       {/*
         * Order type sits ABOVE side, because it is the wider decision: it
         * changes what the ticket asks you for, while side only changes which
