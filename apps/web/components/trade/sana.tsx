@@ -67,6 +67,10 @@ export function Sana({
   const [input, setInput] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
+  /** The whole bar, so an outside click can be told from an inside one. */
+  const shellRef = useRef<HTMLDivElement>(null);
+  /** Whether the conversation is showing. The input bar never hides. */
+  const [open, setOpen] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   /*
@@ -110,6 +114,9 @@ export function Sana({
   function handle(raw: string) {
     const text = raw.trim();
     if (!text) return;
+    // Anything the user says reopens the stream — otherwise the reply lands
+    // in a collapsed panel and looks like nothing happened.
+    setOpen(true);
     push({ mine: true, text });
 
     const low = text.toLowerCase();
@@ -252,6 +259,33 @@ export function Sana({
     });
   }
 
+  /*
+   * Clicking away collapses the conversation.
+   *
+   * The stream grows all session and then sits over the chart, and the chart
+   * is what the user came for. Collapsing is not the same as clearing —
+   * everything is still there, and typing brings it straight back.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (shellRef.current?.contains(e.target as Node)) return;
+      /*
+       * EXCEPT when a card is waiting to be approved.
+       *
+       * An unanswered order is a pending decision, and hiding it on a stray
+       * click is ambiguous in the worst possible way: the user cannot tell
+       * whether it was cancelled, or is still sitting there about to be
+       * approved by their next keystroke. Decisions stay on screen until
+       * they are decided.
+       */
+      if (turns.some((t) => t.spec && !t.resolved)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open, turns]);
+
   function resolve(id: number, answer: string) {
     setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, resolved: answer } : t)));
   }
@@ -314,8 +348,34 @@ export function Sana({
     /* Narrow and centred rather than spanning the terminal. A command bar
        that runs the full width reads as a footer; at this width it reads as
        the thing you talk to, which is what it is. */
-    <div className="mx-auto flex w-full max-w-2xl shrink-0 flex-col rounded-2xl border border-line bg-panel px-3 pb-3">
-      {turns.length > 0 && (
+    <div
+      ref={shellRef}
+      onMouseDown={() => setOpen(true)}
+      className="mx-auto flex w-full max-w-2xl shrink-0 flex-col rounded-2xl border border-line bg-panel px-3 pb-3"
+    >
+      {/*
+        * Collapsed, with history behind it.
+        *
+        * A panel that vanishes with no trace of itself reads as lost rather
+        * than hidden. One line, the last thing said, and the whole thing comes
+        * back on a click — so the collapse is obviously reversible without
+        * having to discover that typing reopens it.
+        */}
+      {!open && turns.length > 0 && (
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-2 overflow-hidden px-1 pb-2 pt-2.5 text-left transition-opacity hover:opacity-80"
+        >
+          <span className="shrink-0 rounded-full bg-raised px-1.5 py-px font-mono text-[9.5px] text-ash">
+            {turns.length}
+          </span>
+          <span className="truncate font-sans text-[11.5px] text-mute">
+            {turns[turns.length - 1].text}
+          </span>
+        </button>
+      )}
+
+      {open && turns.length > 0 && (
         <div
           ref={streamRef}
           aria-live="polite"
