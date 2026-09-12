@@ -117,6 +117,26 @@ export function Sana({
     // Anything the user says reopens the stream — otherwise the reply lands
     // in a collapsed panel and looks like nothing happened.
     setOpen(true);
+
+    /*
+     * A new instruction supersedes an unanswered old one.
+     *
+     * Otherwise "Yep, do it" stays live on a card from ten minutes and four
+     * sentences ago. Approving it would execute against the CURRENT price an
+     * intent the user formed at a different one — the readback they approved
+     * describes a trade that no longer exists.
+     *
+     * Superseded rather than deleted: the card stays visible with its outcome
+     * written on it, which is how every other resolution here works.
+     */
+    setTurns((prev) =>
+      prev.map((t) =>
+        t.spec && !t.resolved
+          ? { ...t, resolved: "Superseded — you asked for something else." }
+          : t,
+      ),
+    );
+
     push({ mine: true, text });
 
     const low = text.toLowerCase();
@@ -271,15 +291,21 @@ export function Sana({
     const onDown = (e: MouseEvent) => {
       if (shellRef.current?.contains(e.target as Node)) return;
       /*
-       * EXCEPT when a card is waiting to be approved.
+       * EXCEPT when the LAST thing said is a card waiting to be approved.
        *
-       * An unanswered order is a pending decision, and hiding it on a stray
-       * click is ambiguous in the worst possible way: the user cannot tell
-       * whether it was cancelled, or is still sitting there about to be
-       * approved by their next keystroke. Decisions stay on screen until
-       * they are decided.
+       * An unanswered order is a live decision, and hiding it on a stray click
+       * is ambiguous in the worst way: the user cannot tell whether it was
+       * cancelled or is still sitting there about to be approved by their next
+       * keystroke.
+       *
+       * The LAST one, not any one. Checking the whole history meant a single
+       * card left unanswered ten messages ago blocked collapsing for the rest
+       * of the session — and cards accumulate, so in practice it stopped
+       * collapsing at all. A buried card is not a live decision; the user
+       * moved on.
        */
-      if (turns.some((t) => t.spec && !t.resolved)) return;
+      const last = turns[turns.length - 1];
+      if (last?.spec && !last.resolved) return;
       setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
