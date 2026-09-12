@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import localFont from "next/font/local";
 import { Privy } from "./providers/privy";
 import { LoginModalProvider } from "@/components/auth/login-modal";
+import { EnsureWallet } from "@/components/auth/ensure-wallet";
 import "./globals.css";
 
 /*
@@ -52,7 +53,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={`${display.variable} ${sans.variable} h-full`}>
       <body className="min-h-full antialiased">
         <Privy>
-          <LoginModalProvider>{children}</LoginModalProvider>
+          <LoginModalProvider>
+            {/* Renders nothing. Present on every page because the page a
+                new user lands on after Google is "/", not the terminal. */}
+            <EnsureWallet />
+            {children}
+          </LoginModalProvider>
         </Privy>
       </body>
     </html>

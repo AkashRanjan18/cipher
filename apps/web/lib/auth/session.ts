@@ -1,5 +1,5 @@
-import { PrivyClient } from "@privy-io/server-auth";
 import { cookies } from "next/headers";
+import { privy } from "./privy";
 
 /**
  * Server-side session verification.
@@ -8,28 +8,39 @@ import { cookies } from "next/headers";
  * client — verify the Privy access token and take the id from the claims.
  */
 
-let client: PrivyClient | null = null;
-
-function privy(): PrivyClient {
-  if (client) return client;
-  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-  const appSecret = process.env.PRIVY_APP_SECRET;
-  if (!appId || !appSecret) {
-    throw new Error(
-      "PRIVY_APP_SECRET and NEXT_PUBLIC_PRIVY_APP_ID must be set to verify sessions",
-    );
-  }
-  client = new PrivyClient(appId, appSecret);
-  return client;
-}
-
 export interface Session {
   userId: string;
 }
 
-/** Returns the session, or null if the caller is not signed in. */
-export async function getSession(): Promise<Session | null> {
-  const token = (await cookies()).get("privy-token")?.value;
+/**
+ * The token, from wherever it is.
+ *
+ * TWO SOURCES, ON PURPOSE. The cookie is what a plain page navigation carries
+ * and needs nothing from the caller. The Authorization header is what a fetch
+ * from a client component sends after calling getAccessToken(), and it is the
+ * one that always works: the cookie depends on Privy's cookie behaviour and on
+ * the browser's same-site rules, neither of which cipher controls.
+ *
+ * Header first, because a caller that went to the trouble of attaching a token
+ * means that token.
+ */
+function tokenFrom(request: Request | undefined, cookie: string | undefined): string | null {
+  const header = request?.headers.get("authorization");
+  if (header?.startsWith("Bearer ")) {
+    const bearer = header.slice("Bearer ".length).trim();
+    if (bearer) return bearer;
+  }
+  return cookie ?? null;
+}
+
+/**
+ * Returns the session, or null if the caller is not signed in.
+ *
+ * Pass the Request in a route handler. Omit it in a server component, where
+ * there is no request object to hand and the cookie is the only source.
+ */
+export async function getSession(request?: Request): Promise<Session | null> {
+  const token = tokenFrom(request, (await cookies()).get("privy-token")?.value);
   if (!token) return null;
 
   try {
@@ -42,8 +53,8 @@ export async function getSession(): Promise<Session | null> {
 }
 
 /** Use in gated route handlers. Throws if unauthenticated. */
-export async function requireUser(): Promise<Session> {
-  const session = await getSession();
+export async function requireUser(request?: Request): Promise<Session> {
+  const session = await getSession(request);
   if (!session) throw new UnauthorizedError();
   return session;
 }
