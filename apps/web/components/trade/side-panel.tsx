@@ -63,7 +63,7 @@ export function SidePanel({
   const [filter, setFilter] = useState<Filter>("Crypto");
 
   return (
-    <section className="flex min-h-0 flex-col rounded-2xl border border-line bg-panel">
+    <section className="flex flex-col rounded-2xl border border-line bg-panel">
       {/* ---- tabs ---- */}
       <div className="flex items-center gap-0.5 border-b border-hairline px-1.5">
         {TABS.map(([k, label]) => (
@@ -128,7 +128,9 @@ export function SidePanel({
         </>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* No inner scroll: the page scrolls now, so the list is simply as long
+          as it is and the browser's own bar handles it. */}
+      <div className="flex-1">
         {tab === "tokens" && (
           <TokenList
             majors={majors}
