@@ -14,7 +14,7 @@ import { StatusBar } from "./status-bar";
 import { useMajors } from "./use-majors";
 import { MyTrades } from "./my-trades";
 import { Ticket } from "./ticket";
-import { Sana } from "./sana";
+import { Sana, SanaMark } from "./sana";
 import { Flow } from "./flow";
 
 /**
@@ -74,6 +74,14 @@ function TerminalBody({
   const dragging = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  /*
+   * Sana, folded.
+   *
+   * Held here rather than inside Sana because folding changes the layout
+   * AROUND the bar — the chart panel grows into the space it leaves — and a
+   * component cannot resize its own sibling.
+   */
+  const [sanaFolded, setSanaFolded] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const market = marketOf(symbol);
@@ -288,7 +296,7 @@ function TerminalBody({
           * Inside the column it is simply the last row — bounded by the same
           * width as the chart, and nothing is underneath anything.
           */}
-        <div className="flex min-h-0 flex-col gap-2">
+        <div className="relative flex min-h-0 flex-col gap-2">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-panel">
           <ChartHeader
             market={market}
@@ -340,7 +348,42 @@ function TerminalBody({
           )}
         </section>
 
-          <Sana price={last} market={market.base} depthUsd={depth} />
+          {/*
+            * The bar collapses by losing its HEIGHT, not by disappearing.
+            *
+            * max-height rather than a conditional render, because the chart
+            * panel above is flex-1 — as this shrinks, flexbox recomputes the
+            * panel's height every frame and it grows smoothly into the space.
+            * Swapping the element out instead makes the panel jump, and the
+            * rounded corner snaps to the bottom rather than travelling there.
+            *
+            * -mt-2 while folded cancels the column's own gap, so folded really
+            * is zero rather than eight pixels of nothing.
+            */}
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-out ${
+              sanaFolded ? "-mt-2 max-h-0 opacity-0" : "max-h-[70vh] opacity-100"
+            }`}
+            aria-hidden={sanaFolded}
+          >
+            <Sana
+              price={last}
+              market={market.base}
+              depthUsd={depth}
+              onCollapse={() => setSanaFolded(true)}
+            />
+          </div>
+
+          {/* Centred, and INSIDE the panel's bottom edge rather than
+              straddling it. Straddling read better in principle and worse in
+              fact: half the mark landed on the ticker strip and covered it. */}
+          {sanaFolded && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center">
+              <div className="pointer-events-auto">
+                <SanaMark onOpen={() => setSanaFolded(false)} />
+              </div>
+            </div>
+          )}
         </div>
 
         {/*

@@ -169,8 +169,8 @@ export function PriceChart({
 
     const INK = token("--color-ink", "#06070a");
     const ASH = token("--color-ash", "#7c8291");
-    const UP = token("--color-up", "#2ebd85");
-    const DOWN = token("--color-down", "#f6465d");
+    const UP = token("--color-up", "#21c95e");
+    const DOWN = token("--color-down", "#ff622e");
     // The grid and the axis borders are the same translucent lavender the
     // panels use, so the chart is bounded like every other surface.
     const LINE = token("--color-line", "#1e212b");
@@ -291,8 +291,8 @@ export function PriceChart({
         value: d.volume,
         color: volumeColor(
           d,
-          token("--color-up", "#2ebd85"),
-          token("--color-down", "#f6465d"),
+          token("--color-up", "#21c95e"),
+          token("--color-down", "#ff622e"),
         ),
       })) as never,
     );

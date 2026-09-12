@@ -13,9 +13,9 @@
    * it. This one is neutral and cool: #06070a, with the surfaces stepping up
    * through near-black blue-greys rather than purples.
    *
-   * Direction colours are the exchange standard — #2ebd85 and #f6465d, the
-   * pair Binance uses and therefore the pair a trader already reads without
-   * thinking about it. Chosen over the warmer #21c95e/#ff622e on 12 Sep 2026.
+   * Direction colours: #21c95e and #ff622e, by instruction. Warmer and
+   * brighter than the Binance pair, and they carry harder against a cool
+   * ground than an exchange teal does.
    */
 
   /*
@@ -54,11 +54,11 @@
    * -soft is the 20% wash behind a coloured control, which is how you tint a
    * button without making it shout.
    */
-  --color-up: #2ebd85;
-  --color-up-bright: #3fe8a5;
-  --color-up-soft: rgba(46, 189, 133, 0.2);
-  --color-down: #f6465d;
-  --color-down-soft: rgba(246, 70, 93, 0.2);
+  --color-up: #21c95e;
+  --color-up-bright: #45fe82;
+  --color-up-soft: rgba(33, 201, 94, 0.2);
+  --color-down: #ff622e;
+  --color-down-soft: rgba(255, 98, 46, 0.2);
 
   /*
    * Action blue — links and secondary CTAs. Deliberately NOT the spec's
@@ -218,4 +218,85 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/*
+ * SANA'S MARK.
+ *
+ * Three layers turning at different speeds, which is the whole trick: one
+ * rotating gradient reads as a spinner — something loading — and two turning
+ * against each other at different rates never repeats visibly, so it reads as
+ * something alive instead.
+ *
+ * Conic rather than linear, because a linear gradient rotated through 360
+ * degrees visibly flips when it passes the diagonal. A conic one is seamless
+ * by construction: its start and end are the same angle.
+ *
+ * Blue-forward with cyan, violet and pink behind it.
+ */
+@keyframes sana-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes sana-spin-reverse {
+  to {
+    transform: rotate(-1turn);
+  }
+}
+
+@keyframes sana-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.9;
+  }
+}
+
+.sana-ring {
+  background: conic-gradient(
+    from 0deg,
+    #2563eb,
+    #22d3ee,
+    #a855f7,
+    #ec4899,
+    #2563eb
+  );
+  animation: sana-spin 6s linear infinite;
+}
+
+/* Counter-turning and blurred, so the edge of the mark shifts hue rather than
+   sweeping — the movement is felt before it is seen. */
+.sana-halo {
+  background: conic-gradient(
+    from 180deg,
+    #22d3ee,
+    #6366f1,
+    #ec4899,
+    #22d3ee
+  );
+  filter: blur(7px);
+  animation: sana-spin-reverse 9s linear infinite;
+}
+
+.sana-glow {
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.55), transparent 70%);
+  animation: sana-breathe 3.4s ease-in-out infinite;
+}
+
+/*
+ * Someone who asked their OS to stop moving things gets a still mark rather
+ * than no mark. The gradient is the identity; only the motion is decoration.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .sana-ring,
+  .sana-halo,
+  .sana-glow {
+    animation: none;
+  }
 }

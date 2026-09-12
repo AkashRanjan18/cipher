@@ -55,12 +55,21 @@ export function Sana({
   price,
   market = "SOL",
   depthUsd = null,
+  onCollapse,
 }: {
   price: number | undefined;
   /** The open market, so the chip names what a prompt would actually trade. */
   market?: string;
   /** Book depth, so a sentence's fill is priced the same way the ticket's is. */
   depthUsd?: number | null;
+  /**
+   * Fold the bar away.
+   *
+   * Owned by the terminal, not by Sana, because collapsing changes the LAYOUT
+   * AROUND the bar — the chart panel grows into the space it leaves — and a
+   * component cannot resize its own sibling.
+   */
+  onCollapse?: () => void;
 }) {
   const { account, trade } = usePaperAccount();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -71,15 +80,6 @@ export function Sana({
   const shellRef = useRef<HTMLDivElement>(null);
   /** Whether the conversation is showing. The input bar stays. */
   const [open, setOpen] = useState(true);
-  /**
-   * Whether the whole bar is folded to its mark.
-   *
-   * Distinct from `open`, and the distinction matters: `open` hides the
-   * conversation and keeps the input, this hides everything. A trader who
-   * wants the chart wants ALL of it, not a chart with a text field across the
-   * bottom of it.
-   */
-  const [collapsed, setCollapsed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   /*
@@ -379,35 +379,6 @@ export function Sana({
     );
   }
 
-  /*
-   * Folded to its mark.
-   *
-   * Placed at the LEFT of the row the bar occupied, so expanding does not move
-   * the page: the mark grows into the bar rather than the bar appearing
-   * somewhere the mark was not.
-   */
-  if (collapsed) {
-    return (
-      <div className="mx-auto flex w-full max-w-5xl shrink-0 justify-start pb-1">
-        <button
-          onClick={() => setCollapsed(false)}
-          aria-label="Open Sana"
-          aria-expanded={false}
-          title="Open Sana"
-          className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full shadow-lg shadow-black/40 transition-transform hover:scale-105 active:scale-95"
-        >
-          {/* A halo, a gradient ring and a dark core. A flat disc reads as a
-              button; the layered version reads as something listening, which
-              is the whole reason for the shape. */}
-          <span className="absolute inset-0 animate-pulse rounded-full bg-accent/25 blur-md" />
-          <span className="absolute inset-0 rounded-full bg-gradient-to-br from-accent via-id-coral to-id-violet" />
-          <span className="absolute inset-[3px] rounded-full bg-panel" />
-          <span className="relative font-display text-[15px] font-bold text-champagne">S</span>
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div
       ref={shellRef}
@@ -632,9 +603,9 @@ export function Sana({
         * bar is guessable at best, and this one does something people will want
         * on their first session.
         */}
-      <div className="flex justify-end px-1 pt-2">
+      <div className="flex justify-center px-1 pt-2">
         <button
-          onClick={() => setCollapsed(true)}
+          onClick={onCollapse}
           aria-label="Collapse Sana"
           className="font-sans text-[10.5px] text-mute transition-colors hover:text-champagne"
         >
@@ -642,5 +613,39 @@ export function Sana({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Sana's mark: the bar, folded.
+ *
+ * Lives here because it is Sana's identity, but it is RENDERED by the terminal,
+ * because where it sits is a layout decision — when the bar folds, the chart
+ * panel grows into the space, and the mark floats over the boundary rather
+ * than occupying a row of its own.
+ *
+ * The motion is three layers turning at different speeds. See .sana-ring and
+ * friends in globals.css for why two counter-rotating gradients read as alive
+ * where one reads as loading.
+ */
+export function SanaMark({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      onClick={onOpen}
+      aria-label="Open Sana"
+      aria-expanded={false}
+      title="Open Sana"
+      className="relative grid h-12 w-12 place-items-center rounded-full shadow-lg shadow-black/50 transition-transform hover:scale-110 active:scale-95"
+    >
+      {/* Outside the disc, so it reads as light coming off the mark rather
+          than as a fourth ring drawn on it. */}
+      <span className="sana-glow pointer-events-none absolute -inset-2 rounded-full" />
+      <span className="sana-halo pointer-events-none absolute inset-0 rounded-full" />
+      <span className="sana-ring pointer-events-none absolute inset-0 rounded-full" />
+      {/* Core on the panel colour, not ink: the mark floats over the chart's
+          bottom edge, and a hole punched to the page colour would show as one. */}
+      <span className="pointer-events-none absolute inset-[2.5px] rounded-full bg-panel" />
+      <span className="relative font-display text-[15px] font-bold text-champagne">S</span>
+    </button>
   );
 }
