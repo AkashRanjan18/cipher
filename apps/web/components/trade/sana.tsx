@@ -635,11 +635,11 @@ export function SanaMark({ onOpen }: { onOpen: () => void }) {
       aria-label="Open Sana"
       aria-expanded={false}
       title="Open Sana"
-      className="relative h-12 w-12 rounded-full transition-transform hover:scale-110 active:scale-95"
+      className="relative h-6 w-6 rounded-full transition-transform hover:scale-110 active:scale-95"
     >
       {/* Outside the disc, so it reads as light coming off the orb rather than
           as another layer drawn on it. */}
-      <span className="sana-glow pointer-events-none absolute -inset-2 rounded-full" />
+      <span className="sana-glow pointer-events-none absolute -inset-1 rounded-full" />
 
       {/* overflow-hidden is what makes the blobs a sphere. They are far larger
           than the disc and drift past its edges; clipped, you only ever see

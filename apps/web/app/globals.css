@@ -309,11 +309,11 @@ body {
 }
 
 /*
- * The base. Near-black with a violet cast, so the bright blobs read as light
- * rather than as paint on a grey disc.
+ * The base. Near-black, so the greys above it read as light on an object
+ * rather than as a flat swatch.
  */
 .sana-orb {
-  background: #07060f;
+  background: #0d0e13;
 }
 
 /*
@@ -327,37 +327,38 @@ body {
  */
 .sana-shade {
   background:
-    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.5), transparent 30%),
-    radial-gradient(circle at 50% 50%, transparent 40%, rgba(3, 2, 10, 0.85) 100%);
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.22), transparent 34%),
+    radial-gradient(circle at 50% 50%, transparent 42%, rgba(4, 4, 8, 0.8) 100%);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 /*
- * The three colours of the reference, in its proportions: magenta through the
- * middle, cyan to one side, violet behind. Blue alone read as a status light;
- * it is the magenta meeting the cyan that makes it look like the thing it is
- * copying.
+ * Three greys rather than three colours.
+ *
+ * The blur values are halved with the disc: a 4px blur on a 24px circle is a
+ * third of its width, which smears the three layers into one flat tone and
+ * loses the movement entirely.
  */
 .sana-blob-a {
-  background: radial-gradient(circle at 32% 46%, #a5f3fc, #06b6d4 40%, transparent 60%);
-  filter: blur(4px);
+  background: radial-gradient(circle at 32% 46%, #9ca3af, #6b7280 42%, transparent 62%);
+  filter: blur(2px);
   animation: sana-drift-a 5.5s ease-in-out infinite;
 }
 
 .sana-blob-b {
-  background: radial-gradient(circle at 60% 52%, #f0abfc, #c026d3 42%, transparent 66%);
-  filter: blur(4px);
+  background: radial-gradient(circle at 60% 52%, #6b7280, #4b5563 44%, transparent 66%);
+  filter: blur(2px);
   animation: sana-drift-b 7.5s ease-in-out infinite;
 }
 
 .sana-blob-c {
-  background: radial-gradient(circle at 52% 70%, #7c3aed, transparent 58%);
-  filter: blur(8px);
+  background: radial-gradient(circle at 52% 70%, #374151, transparent 60%);
+  filter: blur(4px);
   animation: sana-drift-c 9.5s ease-in-out infinite;
 }
 
 .sana-glow {
-  background: radial-gradient(circle, rgba(192, 38, 211, 0.45), transparent 70%);
+  background: radial-gradient(circle, rgba(107, 114, 128, 0.35), transparent 70%);
   animation: sana-breathe 3.6s ease-in-out infinite;
 }
 
