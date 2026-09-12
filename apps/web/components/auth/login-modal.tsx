@@ -96,7 +96,17 @@ function Modal({ onClose }: { onClose: () => void }) {
     if (!guard()) return;
     try {
       await initOAuth({ provider: "google" });
-    } catch {
+    } catch (e) {
+      /*
+       * The user gets one sentence; the console gets the real thing.
+       *
+       * "Couldn't reach Google" is a guess dressed as a diagnosis — the same
+       * message covers a dead network, a login method that is not enabled on
+       * the Privy app, and an origin that is not on its allowlist. Those need
+       * three different fixes, and during setup the distinction is the whole
+       * problem.
+       */
+      console.error("[cipher] Google sign-in failed:", e);
       setError("Couldn't reach Google. Try again.");
     }
   }
