@@ -27,13 +27,50 @@ const LoginModalContext = createContext<{ open: () => void }>({ open: () => {} }
 export const useLoginModal = () => useContext(LoginModalContext);
 
 /** Where a successful login lands. */
-const AFTER_LOGIN = "/trade";
+export const AFTER_LOGIN = "/trade";
+
+/**
+ * Set the instant before OAuth leaves the page, read the instant it returns.
+ *
+ * Google OAuth is a FULL PAGE REDIRECT, not a popup. Everything in React
+ * memory is gone by the time the user comes back, so "did this person just log
+ * in" cannot be answered from state — and the difference matters: someone who
+ * just signed in wants the terminal, someone merely visiting the landing page
+ * while already signed in wants to read it.
+ *
+ * sessionStorage rather than localStorage, so it dies with the tab and cannot
+ * bounce a returning visitor days later.
+ */
+const PENDING = "cipher:login-pending";
 
 export function LoginModalProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
+  const { authenticated } = usePrivy();
+  const router = useRouter();
 
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
+
+  /*
+   * THE POST-LOGIN REDIRECT LIVES HERE, not in the modal.
+   *
+   * It used to be an effect inside Modal, which only runs while the modal is
+   * MOUNTED — fine for a popup flow, useless for a redirect one. Google sends
+   * the browser away and back, the modal is closed on return, the effect never
+   * fires, and the user lands on the marketing page signed in with a button to
+   * press. This provider is mounted in the root layout, so it is there to
+   * catch the return.
+   *
+   * Guarded by the pending flag so it only ever fires for a login the user
+   * just performed.
+   */
+  useEffect(() => {
+    if (!authenticated) return;
+    if (sessionStorage.getItem(PENDING) !== "1") return;
+    sessionStorage.removeItem(PENDING);
+    setIsOpen(false);
+    router.replace(AFTER_LOGIN);
+  }, [authenticated, router]);
 
   return (
     <LoginModalContext.Provider value={{ open }}>
@@ -52,20 +89,6 @@ function Modal({ onClose }: { onClose: () => void }) {
   // Inlined at build time. Without it Privy cannot start an OAuth flow, so
   // say that here rather than letting the buttons fail silently.
   const configured = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
-
-  /*
-   * The redirect lives here rather than in the provider on purpose. If it
-   * watched `authenticated` globally, an already-signed-in visitor landing on
-   * the marketing page would be bounced to /trade before they could read it.
-   * Mounted only while the modal is open, it fires solely for a login the
-   * user just performed.
-   */
-  useEffect(() => {
-    if (authenticated) {
-      onClose();
-      router.push(AFTER_LOGIN);
-    }
-  }, [authenticated, onClose, router]);
 
   // Escape closes. Expected of any dialog, and cheap.
   useEffect(() => {
@@ -94,6 +117,8 @@ function Modal({ onClose }: { onClose: () => void }) {
   async function signInWithGoogle() {
     setError(null);
     if (!guard()) return;
+    // Set BEFORE the redirect: after it, this code never runs again.
+    sessionStorage.setItem(PENDING, "1");
     try {
       await initOAuth({ provider: "google" });
     } catch (e) {
@@ -107,6 +132,9 @@ function Modal({ onClose }: { onClose: () => void }) {
        * problem.
        */
       console.error("[cipher] Google sign-in failed:", e);
+      // The redirect never happened, so the flag would sit there and bounce
+      // an unrelated later visit.
+      sessionStorage.removeItem(PENDING);
       setError("Couldn't reach Google. Try again.");
     }
   }

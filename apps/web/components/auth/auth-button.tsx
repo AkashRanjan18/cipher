@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
-import { useLoginModal } from "./login-modal";
+import { AFTER_LOGIN, useLoginModal } from "./login-modal";
 
 type Variant = "ghost" | "primary";
 
@@ -27,6 +28,7 @@ export function AuthButton({
 }) {
   const { ready, authenticated } = usePrivy();
   const { open } = useLoginModal();
+  const router = useRouter();
 
   // Inlined at build time, so a client component can read it.
   const configured = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
@@ -54,7 +56,14 @@ export function AuthButton({
 
   return (
     <button
-      onClick={open}
+      /*
+       * Already signed in? Go. Do not ask again.
+       *
+       * This called open() unconditionally, so a signed-in visitor pressing
+       * "Open cipher" got the login modal — asked to sign in to an account
+       * they were already signed into, with no way through except the X.
+       */
+      onClick={() => (authenticated ? router.push(AFTER_LOGIN) : open())}
       className={`${styles[variant]} font-sans transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne`}
     >
       {authenticated ? (labelAuthenticated ?? label) : label}
