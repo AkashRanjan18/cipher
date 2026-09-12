@@ -356,7 +356,7 @@ function TerminalBody({
           * height above a floor.
           */}
         <div className="relative flex flex-col gap-2">
-        <section className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel">
+        <section className="relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel">
           <ChartHeader
             market={market}
             price={last}
@@ -385,6 +385,31 @@ function TerminalBody({
               barSeconds={intervalSeconds(interval)}
             />
           </div>
+
+          {/*
+            * THE MARK OVERLAYS. It takes no layout space at all.
+            *
+            * It used to be a centred row of its own, so folding the bar
+            * swapped a 90px block for a 60px one rather than removing it — a
+            * gap where the bar had been, with a dot floating in it. Absolute,
+            * so the chart and the table close right up and the mark sits on
+            * whatever happens to be underneath.
+            *
+            * At the bottom edge of the chart because that is exactly where the
+            * bar collapses from: clicking it expands in place rather than
+            * making the page jump to somewhere the mark was not.
+            *
+            * pointer-events-none on the layer, or the full-width strip either
+            * side of the mark would steal clicks from the candles behind it.
+            * Auto back on for the mark itself.
+            */}
+          {sanaFolded && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center">
+              <div className="pointer-events-auto">
+                <SanaMark onOpen={() => setSanaFolded(false)} />
+              </div>
+            </div>
+          )}
         </section>
 
         {/*
@@ -410,15 +435,6 @@ function TerminalBody({
             onCollapse={() => setSanaFolded(true)}
           />
         </div>
-
-        {/* Folded, the mark takes the row instead — centred, in flow. It no
-            longer needs to float: the page scrolls and the chart has a fixed
-            height, so there is no gap for the panel to grow into. */}
-        {sanaFolded && (
-          <div className="flex shrink-0 justify-center py-1">
-            <SanaMark onOpen={() => setSanaFolded(false)} />
-          </div>
-        )}
 
         {/* "Split right" gives the chart the whole column. */}
         {split === "bottom" && (
