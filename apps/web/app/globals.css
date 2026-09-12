@@ -13,10 +13,9 @@
    * it. This one is neutral and cool: #06070a, with the surfaces stepping up
    * through near-black blue-greys rather than purples.
    *
-   * Direction colours are NOT from that spec. It calls for Binance's
-   * #2ebd85/#f6465d; these are the pair that was here before it, kept by
-   * instruction. They are warmer and brighter, and they carry better against
-   * a cool ground than the exchange teal did.
+   * Direction colours are the exchange standard — #2ebd85 and #f6465d, the
+   * pair Binance uses and therefore the pair a trader already reads without
+   * thinking about it. Chosen over the warmer #21c95e/#ff622e on 12 Sep 2026.
    */
 
   /*
@@ -55,11 +54,11 @@
    * -soft is the 20% wash behind a coloured control, which is how you tint a
    * button without making it shout.
    */
-  --color-up: #21c95e;
-  --color-up-bright: #45fe82;
-  --color-up-soft: rgba(33, 201, 94, 0.2);
-  --color-down: #ff622e;
-  --color-down-soft: rgba(255, 98, 46, 0.2);
+  --color-up: #2ebd85;
+  --color-up-bright: #3fe8a5;
+  --color-up-soft: rgba(46, 189, 133, 0.2);
+  --color-down: #f6465d;
+  --color-down-soft: rgba(246, 70, 93, 0.2);
 
   /*
    * Action blue — links and secondary CTAs. Deliberately NOT the spec's
@@ -74,9 +73,8 @@
    * anything painted with it disappears. This is the one hue meaning "yours":
    * your position, your marker, focus rings.
    *
-   * Amber, and it has to stay clearly on the yellow side of the down-orange
-   * next to it. If those two ever read as the same colour, "yours" and
-   * "losing" become the same signal.
+   * Amber has more room now that down is pink-red rather than orange — it no
+   * longer has to fight the loss colour for the warm end of the spectrum.
    */
   --color-accent: #e2a445;
 
