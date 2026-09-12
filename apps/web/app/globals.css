@@ -205,35 +205,33 @@ body {
 }
 
 /*
- * A SHORTER THUMB, without touching the track.
+ * A SHORT GREY BAR, whatever the thumb's actual length.
  *
- * The thumb's length is not settable: browsers compute it from the ratio of
- * visible content to total, and neither height nor max-height is honoured on
- * this pseudo-element. What IS honoured is a transparent border with
- * background-clip: padding-box — the element keeps its computed length and its
- * full hit area, and only the painted part is inset.
+ * The thumb's length is not settable — browsers compute it from the ratio of
+ * visible content to total, and height/max-height are ignored here. The
+ * previous attempt subtracted a fixed inset with a transparent border, and it
+ * could not work for both panels: the ticket column barely overflows, so its
+ * thumb is naturally about 89% of the track and no fixed subtraction leaves it
+ * looking short.
  *
- * 44px top and bottom takes 88px off what you see. The horizontal 1px does the
- * same job sideways: an 8px hit area that reads as a 6px bar.
+ * So the thumb keeps its computed length — which is what makes dragging and
+ * the hit area behave — and PAINTS only a fixed 48px, centred. A background
+ * sized in pixels with no-repeat does exactly that.
  *
- * The min-height is a guard, not a preference. On a very long list the natural
- * thumb can be 30px, and 88px of border would inset it out of existence — a
- * scrollbar that vanishes precisely when there is most to scroll. 128px leaves
- * at least 40px visible.
+ * The trade is real and worth stating: the bar's length no longer tells you
+ * how much content there is. Its POSITION still tells you where you are, which
+ * is the part anyone actually reads.
  */
 ::-webkit-scrollbar-thumb {
-  background: var(--color-mute);
-  border-radius: 999px;
-  border-style: solid;
-  border-color: transparent;
-  border-width: 44px 1px;
-  min-height: 128px;
-  background-clip: padding-box;
+  background-color: transparent;
+  background-image: linear-gradient(var(--color-mute), var(--color-mute));
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 6px 48px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-ash);
-  background-clip: padding-box;
+  background-image: linear-gradient(var(--color-ash), var(--color-ash));
 }
 
 /*
