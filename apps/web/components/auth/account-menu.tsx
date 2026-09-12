@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
+import { useLoginModal } from "./login-modal";
 
 /**
  * Who you are, and the way out.
@@ -44,6 +46,8 @@ function initials(email: string | null, name: string | null): string {
 
 export function AccountMenu() {
   const { ready, authenticated, user, logout } = usePrivy();
+  const { open: openLogin } = useLoginModal();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -65,14 +69,33 @@ export function AccountMenu() {
   }, [open]);
 
   /*
-   * Reserve the space while Privy restores the session.
+   * Restoring. Reserve the 32px and show nothing in it.
    *
-   * Rendering nothing until ready makes the whole header shift sideways a
-   * beat after load, which is the single most noticeable jump on the page
-   * because it moves the balance the user is looking at.
+   * Rendering nothing at all until ready shifts the whole header sideways a
+   * beat after load, and what it moves is the balance the user is looking at.
    */
-  if (!ready || !authenticated || !user) {
+  if (!ready) {
     return <div className="h-8 w-8 shrink-0 rounded-full bg-raised" aria-hidden />;
+  }
+
+  /*
+   * Signed out, and that is a legitimate state here — /trade is public, the
+   * middleware is a jurisdiction gate rather than an auth gate, and the paper
+   * account works without an account.
+   *
+   * So this needs a way IN. The first version left the placeholder disc
+   * rendering forever after a sign-out: a dead grey circle where the avatar
+   * had been, with nothing to click and no way back.
+   */
+  if (!authenticated || !user) {
+    return (
+      <button
+        onClick={openLogin}
+        className="shrink-0 whitespace-nowrap rounded-full border border-line px-3 py-1.5 font-sans text-[11px] font-bold text-ash transition-colors hover:border-ash hover:text-champagne"
+      >
+        Log in
+      </button>
+    );
   }
 
   const email = user.google?.email ?? user.email?.address ?? null;
@@ -160,9 +183,18 @@ export function AccountMenu() {
           </div>
 
           <button
-            onClick={() => {
+            onClick={async () => {
               setOpen(false);
-              logout();
+              await logout();
+              /*
+               * logout() ENDS THE SESSION; IT DOES NOT NAVIGATE.
+               *
+               * Without this you stay on /trade, signed out, watching the
+               * avatar turn into a placeholder — which reads as the button
+               * having half worked. Sign out should land where sign in
+               * started.
+               */
+              router.push("/");
             }}
             role="menuitem"
             className="w-full border-t border-hairline px-3 py-2.5 text-left font-sans text-[12px] font-bold text-ash transition-colors hover:bg-slate hover:text-down"
