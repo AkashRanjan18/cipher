@@ -1,5 +1,5 @@
 import { DEFAULTS, type Rule } from "@cipher/shared";
-import { execute, resolveQty, type Account, type Fill } from "../account/paper.ts";
+import { execute, fillPrice, resolveQty, type Account, type Fill } from "../account/paper.ts";
 
 /**
  * What happens when a rule comes due.
@@ -42,6 +42,44 @@ export type Outcome =
  * floor to sweep dust is the kind of thing users notice once and never forget.
  */
 const DUST_USD = 1;
+
+/**
+ * THE OTHER HALF OF A LIMIT ORDER.
+ *
+ * A trigger decides WHEN. On its own that is a delayed market order: the rule
+ * fires on the crossing and then fills at whatever the spread gives, which can
+ * be worse than the price the user named. Seen in testing — a "limit sell at
+ * $101.75" filled at $100.70, a dollar below the number on the card.
+ *
+ * A real limit order also says AT WHAT PRICE, and on chain that is the swap's
+ * `minimumOutAmount`, set from the user's limit rather than from a slippage
+ * percentage: the program itself refuses a worse fill, so it fills at-or-better
+ * or it reverts. This is that rule, enforced by the ledger instead of by a
+ * program, so the paper version behaves the way the real one will.
+ *
+ * ONLY FOR priceAbsolute, and the exclusion is the point. A stop is a
+ * market order by design — "-50%" means get me out, and a stop that refuses to
+ * fill because the price kept falling is a stop that does not work in exactly
+ * the crash it exists for. Multiples, drawdowns, trailing stops and timed
+ * exits all fill at the market. Real venues draw the same line: stop-market
+ * versus stop-limit.
+ *
+ * Returning `failed` rather than `moot` means it retries on the next tick,
+ * which is precisely what a resting order on a real book does while the price
+ * is on the wrong side: nothing, until it is not.
+ */
+function worseThanLimit(rule: Rule, price: number): string | null {
+  if (rule.trigger.kind !== "priceAbsolute") return null;
+  const limit = rule.trigger.value;
+  const fill = fillPrice(price, rule.side);
+  if (rule.side === "sell" && fill < limit) {
+    return `would have filled at $${fill.toFixed(4)}, below your limit of $${limit}`;
+  }
+  if (rule.side === "buy" && fill > limit) {
+    return `would have filled at $${fill.toFixed(4)}, above your limit of $${limit}`;
+  }
+  return null;
+}
 
 export function fireRule(
   account: Account,
@@ -112,6 +150,9 @@ export function fireRule(
   if (size * ctx.mark < DUST_USD) {
     return { kind: "moot", reason: "what is left is smaller than the fee to sell it" };
   }
+
+  const worse = worseThanLimit(rule, ctx.mark);
+  if (worse) return { kind: "failed", reason: worse };
 
   const result = execute(account, {
     side,

@@ -117,7 +117,8 @@ test("each trigger kind reads back as the instruction the user gave", () => {
   assert.equal(squawk({ kind: "priceMultiple", value: 3 }), "take profit at 3x");
   assert.equal(squawk({ kind: "drawdownFromEntry", percent: 50 }), "stop at -50%");
   assert.equal(squawk({ kind: "trailingStop", percent: 20 }), "trailing stop, 20% off the high");
-  assert.equal(squawk({ kind: "priceAbsolute", value: 250 }), "limit sell at $250");
+  // A limit sell at $250 is deliberately absent here: at a mark of 200 it
+  // refuses to fill, which is the whole point of a limit. Covered below.
   assert.equal(squawk({ kind: "duration", seconds: 60 }), "timed exit");
 });
 
@@ -135,4 +136,85 @@ test("the fee is charged exactly as a hand-placed sell would be", () => {
   // One ledger, one fee schedule. A trigger is not a different kind of trade.
   assert.equal(byRule.fill.feeUsd, byHand.fill.feeUsd);
   assert.equal(byRule.account.usdc, byHand.account.usdc);
+});
+
+/* ───────────────────── the other half of a limit order ─────────────────── */
+
+test("a limit sell will not fill below its limit", () => {
+  const account = holding(10);
+  const rule = ruleFor({ kind: "priceAbsolute", value: 250 });
+
+  /*
+   * A trigger on its own is a DELAYED MARKET ORDER. The rule fires on the
+   * crossing and then takes whatever the spread gives — which is how a "limit
+   * sell at $101.75" filled at $100.70 in testing, a dollar below the number
+   * on the card. On chain the swap's minimumOutAmount makes the program itself
+   * refuse; here the ledger does.
+   */
+  const out = fireRule(account, rule, { mark: 200, ts: TS });
+  assert.equal(out.kind, "failed");
+  if (out.kind !== "failed") return;
+  assert.match(out.reason, /below your limit/);
+});
+
+test("a limit sell fills at or above its limit", () => {
+  const account = holding(10);
+  const out = fireRule(account, ruleFor({ kind: "priceAbsolute", value: 250 }), {
+    mark: 300,
+    ts: TS,
+  });
+  assert.equal(out.kind, "filled");
+  if (out.kind !== "filled") return;
+  assert.ok(out.fill.price >= 250, `filled at ${out.fill.price}`);
+});
+
+test("a limit buy will not fill above its limit", () => {
+  const s = emptyEngine();
+  arm(s, {
+    rule: { id: "b1", trigger: { kind: "priceAbsolute", value: 95 }, amount: { kind: "usd", value: 500 } },
+    market: MKT,
+    at: T0,
+    side: "buy",
+    entryPrice: 101,
+  });
+
+  const out = fireRule(openAccount(10_000), s.rules.b1, { mark: 100, ts: TS });
+  assert.equal(out.kind, "failed");
+  if (out.kind !== "failed") return;
+  assert.match(out.reason, /above your limit/);
+});
+
+test("failing the limit retries rather than giving up", () => {
+  // Exactly what a resting order on a real book does while the price is on the
+  // wrong side: nothing, until it is not. `moot` would cancel it instead.
+  const account = holding(10);
+  const out = fireRule(account, ruleFor({ kind: "priceAbsolute", value: 250 }), {
+    mark: 200,
+    ts: TS,
+  });
+  assert.notEqual(out.kind, "moot");
+});
+
+test("a STOP still fills at the market, however far it has fallen", () => {
+  /*
+   * The exclusion is as important as the rule. "-50%" means get me out, and a
+   * stop that refuses because the price kept falling is a stop that does not
+   * work in exactly the crash it exists for. Real venues draw the same line:
+   * stop-market versus stop-limit.
+   */
+  const account = holding(10);
+  const out = fireRule(account, ruleFor({ kind: "drawdownFromEntry", percent: 50 }), {
+    mark: 20,
+    ts: TS,
+  });
+  assert.equal(out.kind, "filled");
+});
+
+test("a trailing stop is a market order too", () => {
+  const account = holding(10);
+  const out = fireRule(account, ruleFor({ kind: "trailingStop", percent: 20 }), {
+    mark: 10,
+    ts: TS,
+  });
+  assert.equal(out.kind, "filled");
 });
