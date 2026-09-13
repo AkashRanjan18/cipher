@@ -5,7 +5,7 @@ import type { Candle, Interval } from "@/lib/market";
 import { SYMBOL, intervalSeconds, subscribeCandles, marketOf } from "@/lib/market";
 import { usd, pct } from "@/lib/format";
 import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/account/store";
-import { TriggerProvider } from "@/lib/triggers/store";
+import { TriggerProvider, useTriggers } from "@/lib/triggers/store";
 import { equity } from "@/lib/account/paper";
 import { PriceChart } from "./price-chart";
 import { SidePanel } from "./side-panel";
@@ -618,6 +618,16 @@ function TerminalBody({
  */
 function Bag({ price }: { price: number | undefined }) {
   const { account, hydrated, reset } = usePaperAccount();
+  /*
+   * Resetting the account must also disarm everything.
+   *
+   * A rule references a position by percentage, and the reset it survives is a
+   * rule watching for a position that no longer exists. It would fire, find
+   * nothing, and cancel itself — harmless but bewildering, and the alerts
+   * panel would carry stops for a balance that had been wiped. The two pieces
+   * of state are one decision, so they clear together.
+   */
+  const { clearAll } = useTriggers();
   const [confirming, setConfirming] = useState(false);
 
   const value = hydrated && price ? equity(account, price) : null;
@@ -671,6 +681,7 @@ function Bag({ price }: { price: number | undefined }) {
             return;
           }
           reset();
+          clearAll();
           setConfirming(false);
         }}
         className={`rounded-lg border px-2 py-1 font-sans text-[9.5px] font-bold uppercase tracking-[0.08em] transition-colors ${

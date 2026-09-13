@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Intent, Interval, OrderSpec } from "@cipher/shared";
+import type { Compiled, CompileContext, Intent, Interval, OrderSpec } from "@cipher/shared";
 import { compile } from "@/lib/compiler/compile";
+import { compileWithModel } from "@/lib/compiler/model";
 import { resolveMarket, marketOf, type Major } from "@/lib/market";
 import { validateOrder, blocks } from "@/lib/compiler/validate";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
@@ -45,6 +46,8 @@ interface Turn {
    * patching a half-parsed spec — see ClarifyIntent for why that matters.
    */
   choices?: { label: string; sentence: string }[];
+  /** A placeholder while the model is being asked. Replaced by the answer. */
+  thinking?: boolean;
   /** Set once the user has answered the card, so it stops asking. */
   resolved?: string;
 }
@@ -111,6 +114,8 @@ export function Sana({
   const { armExits, armed, cancelRule } = useTriggers();
   /* The prop is named `price`; aliased so the answer helpers read plainly. */
   const livePrice = price;
+  /* The in-flight model request, so a new sentence can abandon the old one. */
+  const pending = useRef<AbortController | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
@@ -236,12 +241,56 @@ export function Sana({
      * union stops this file compiling until it is handled, which is the point
      * of the union existing at all.
      */
-    const compiled = compile(text.replace(/^\/(buy|sell)\s*/i, "$1 "), {
-      symbol,
-      interval,
-      hasPosition: account.sol > 0,
-    });
+    const ctx: CompileContext = { symbol, interval, hasPosition: account.sol > 0 };
+    const compiled = compile(text.replace(/^\/(buy|sell)\s*/i, "$1 "), ctx);
 
+    /*
+     * THE GRAMMAR GIVES UP, THE MODEL TRIES. In that order, always.
+     *
+     * Only `notUnderstood` falls through. A refusal for being out of scope is
+     * a DECISION, not a failure — sending "should I buy SOL?" to a model after
+     * the grammar correctly declined it would be paying to have the boundary
+     * re-litigated by something less certain about it. Same for clarify: the
+     * ambiguity is real and a model cannot resolve it either.
+     *
+     * This ordering is also the entire cost control. The grammar answers in
+     * ten milliseconds for free; this answers in a second or two for a
+     * fraction of a cent. Reverse them and every sentence is a paid request.
+     */
+    if (compiled.intent.kind === "refusal" && compiled.intent.reason === "notUnderstood") {
+      void askModel(text, ctx);
+      return;
+    }
+
+    dispatch(compiled);
+  }
+
+  /**
+   * The slow path, with something on screen while it runs.
+   *
+   * A pending turn goes up immediately and is replaced by the answer. Without
+   * it the bar looks like it swallowed the sentence for two seconds, and the
+   * reflex is to press enter again — which, for a product where enter can
+   * eventually mean a trade, is a habit not to teach.
+   */
+  async function askModel(text: string, ctx: CompileContext) {
+    /* A new sentence abandons the old request. Two answers arriving out of
+       order would resolve the wrong turn. */
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
+
+    const id = nextId++;
+    setTurns((prev) => [...prev, { id, mine: false, text: "Working that one out…", thinking: true }]);
+
+    const compiled = await compileWithModel(text, ctx, controller.signal);
+    if (controller.signal.aborted) return;
+
+    setTurns((prev) => prev.filter((t) => t.id !== id));
+    dispatch(compiled);
+  }
+
+  function dispatch(compiled: Compiled) {
     const intent = compiled.intent;
 
     switch (intent.kind) {
