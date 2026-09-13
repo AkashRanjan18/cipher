@@ -103,7 +103,16 @@ async function run(request: Request) {
      * are eleven prices — price is a property of the market, not of the person
      * watching it, which is the whole reason the index is keyed on market.
      */
-    const priced = markets.length > 0 ? await fetchPrices(markets) : new Map();
+    /*
+     * revalidate 0: the worker never reads a cached price.
+     *
+     * It runs once a minute and it is the thing deciding whether to sell
+     * someone's position. A two-second-old price is two seconds of a move it
+     * cannot see, and one uncached request a minute costs nothing against any
+     * tier.
+     */
+    const priced =
+      markets.length > 0 ? await fetchPrices(markets, { revalidate: 0 }) : new Map();
     const priceOf = new Map([...priced].map(([mint, p]) => [mint, p.usd]));
     const head = newestBlock(priced);
 

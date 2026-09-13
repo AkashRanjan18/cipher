@@ -24,7 +24,17 @@ export async function GET(request: Request) {
   const mints = asked ? asked.split(",").filter(Boolean).slice(0, 50) : ALL_MINTS;
 
   try {
-    const prices = await fetchPrices(mints);
+    /*
+     * TWO SECONDS OF CACHE IS WHAT MAKES THIS SURVIVABLE.
+     *
+     * Jupiter's keyless allowance is thirty requests a minute for the whole
+     * deployment. A thousand terminals refreshing a price board would exhaust
+     * that in under two seconds; cached, they are one request and the board
+     * stays live. Two seconds is also shorter than anyone perceives on a quote
+     * that is not being traded against — and nothing trades against this one,
+     * because the worker fetches its own uncached.
+     */
+    const prices = await fetchPrices(mints, { revalidate: 2 });
 
     /*
      * Recording is best-effort and deliberately not awaited into the failure
