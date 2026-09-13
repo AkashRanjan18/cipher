@@ -25,16 +25,24 @@ export async function GET(request: Request) {
 
   try {
     /*
-     * TWO SECONDS OF CACHE IS WHAT MAKES THIS SURVIVABLE.
+     * FIVE SECONDS, AND THE NUMBER IS ARITHMETIC RATHER THAN TASTE.
      *
-     * Jupiter's keyless allowance is thirty requests a minute for the whole
-     * deployment. A thousand terminals refreshing a price board would exhaust
-     * that in under two seconds; cached, they are one request and the board
-     * stays live. Two seconds is also shorter than anyone perceives on a quote
-     * that is not being traded against — and nothing trades against this one,
-     * because the worker fetches its own uncached.
+     * Jupiter's keyless allowance is thirty requests a minute for the WHOLE
+     * deployment. A cache window of N seconds costs at most 60/N of that
+     * budget, whatever the user count — so two seconds would have been 30/min,
+     * consuming the entire allowance on the price board alone and leaving
+     * nothing for quotes, token lookups or the worker.
+     *
+     * Five seconds is 12/min, about 40% of the keyless budget, and leaves
+     * room for everything else. It is also not slower in practice: the cache
+     * only helps when callers land inside the same window, so a window
+     * SHORTER than the client's poll interval buys nothing and spends the
+     * allowance anyway.
+     *
+     * Nothing trades against this price — the worker fetches its own,
+     * uncached, for exactly that reason.
      */
-    const prices = await fetchPrices(mints, { revalidate: 2 });
+    const prices = await fetchPrices(mints, { revalidate: 5 });
 
     /*
      * Recording is best-effort and deliberately not awaited into the failure
