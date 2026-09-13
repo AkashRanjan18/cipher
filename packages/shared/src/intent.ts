@@ -88,6 +88,54 @@ export interface QueryIntent {
 }
 
 /**
+ * Rank the market list.
+ *
+ * "Which token gave the most return today", "biggest gainer", "what's up the
+ * most", "show me today's winner" are four sentences and ONE capability:
+ * sort the markets by 24h change, descending, take the top. That collapse is
+ * the whole reason this union exists — thirty or forty capabilities absorb
+ * thousands of phrasings, and the work is enumerating the capabilities, not
+ * the sentences.
+ *
+ * Every metric here is a number already on screen in the left panel, which is
+ * the test for whether something belongs in this union at all: the prompt bar
+ * can do exactly what the UI can do.
+ *
+ * There is no `window`. cipher has ONE window — 24 hours — because that is
+ * what the market list carries. "Most return today" and "most return this
+ * hour" are different questions and only one of them is answerable, so the
+ * answer says which one it answered rather than quietly rolling a day into a
+ * calendar date.
+ */
+export interface ScreenIntent {
+  kind: "screen";
+  metric:
+    /** 24h price change. */
+    | "return"
+    /** 24h traded volume in dollars. */
+    | "volume"
+    | "marketCap"
+    | "price";
+  /** Best first, or worst first. "Biggest loser" is `bottom` on `return`. */
+  direction: "top" | "bottom";
+  /** How many rows. Capped by the caller; a sentence cannot ask for a thousand. */
+  limit: number;
+}
+
+/**
+ * Look at, or cancel, what the trigger engine is watching.
+ *
+ * New with the engine, and not optional now that one exists: the moment a
+ * sentence can arm a rule that sells without being asked twice, a sentence
+ * has to be able to take it back. "Cancel my stop" must work as well as the
+ * button does, because the person who most needs it is mid-panic.
+ */
+export interface RulesIntent {
+  kind: "rules";
+  action: "list" | "cancelAll";
+}
+
+/**
  * Operate the interface itself.
  *
  * Small, and worth having: these are the controls people never find. Nobody
@@ -128,11 +176,41 @@ export interface RefusalIntent {
   message: string;
 }
 
+/**
+ * Two readings, and no way to choose between them.
+ *
+ * "Buy 500 solana" is $500 of SOL or 500 SOL, and the sentence carries no
+ * unit marker to say which. Knowing you do not know is DETERMINISTIC — the
+ * grammar produces two parses and counts them — so this is not a case that
+ * needs a model, it is a case that needs a question.
+ *
+ * EACH OPTION CARRIES THE SENTENCE REWRITTEN UNAMBIGUOUSLY, and picking one
+ * re-runs the whole compiler on that sentence. Not "patch the half-parsed
+ * spec with the answer": a patched spec has a code path nothing else uses,
+ * and money paths must not have those. Re-running means the clarified
+ * sentence goes through the same grammar, the same validate and the same
+ * readback as anything typed by hand.
+ */
+export interface ClarifyIntent {
+  kind: "clarify";
+  /** The ambiguity, in one line. Shown above the options. */
+  question: string;
+  options: {
+    /** What the button says. "$500 worth" */
+    label: string;
+    /** The full sentence, rewritten so it can only parse one way. */
+    sentence: string;
+  }[];
+}
+
 export type Intent =
   | OrderIntent
   | NavigateIntent
   | QueryIntent
+  | ScreenIntent
+  | RulesIntent
   | UiIntent
+  | ClarifyIntent
   | RefusalIntent;
 
 /**

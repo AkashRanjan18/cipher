@@ -118,6 +118,40 @@ export function parseWithGrammar(input: string): OrderSpec | null {
     };
   }
 
+  /*
+   * ENTRY, DENOMINATED IN TOKENS — "buy 500 tokens of bonk", "sell 1.5 sol"
+   *
+   * The dollar form above is the common one, but this is the OTHER half of
+   * the ambiguity the router detects: "buy 500 solana" is either $500 of SOL
+   * or 500 SOL, and a clarify option that rewrites it as tokens has to parse.
+   * Without this the clarified sentence came back as a refusal — the question
+   * was asked, answered, and then thrown away.
+   *
+   * Guarded against the units that mean something else: a bare "%" is a size
+   * of a position, "x" is a multiple, and neither is a token count. The
+   * lookahead excludes unit WORDS too — without it "buy 500 dollars of solana"
+   * parsed as five hundred tokens of a coin called "dollars", which is the
+   * kind of bug that is funny until it fills.
+   */
+  if (!entry) {
+    const sized = text.match(
+      /\b(buy|sell)\s+(?:me\s+)?([\d.,]+)\s*(?:tokens?\s+of\s+|coins?\s+of\s+|of\s+)?(?!dollars?\b|usd\b|bucks?\b|worth\b|tokens?\b|coins?\b)([a-z][a-z0-9]{1,14})\b/,
+    );
+    if (sized && !/^[\d.,]+\s*[%x]/.test(sized[0].replace(/^\w+\s+(?:me\s+)?/, ""))) {
+      const value = Number(sized[2].replace(/,/g, ""));
+      if (value > 0) {
+        entry = {
+          side: sized[1] as "buy" | "sell",
+          token: sized[3],
+          mint: null,
+          amount: { kind: "tokens", value },
+          slippageBps: DEFAULTS.slippageBps,
+          privateSubmission: DEFAULTS.privateSubmission,
+        };
+      }
+    }
+  }
+
   /* SLIPPAGE — "max 3% slippage", "3% slippage" */
   const slip = text.match(/(?:max\s+)?([\d.]+)\s*%\s*slippage/);
   if (slip && entry) {
