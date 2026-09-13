@@ -6,6 +6,7 @@ import { MARKETS, marketOf } from "@/lib/market";
 import { usd, compactUsd, pct } from "@/lib/format";
 import { FeedList, LeaderList } from "./rail";
 import { Scroller } from "@/components/ui/scroller";
+import { AlertsList } from "./alerts";
 
 /**
  * The left panel: a navigator, not a feed.
@@ -147,12 +148,7 @@ export function SidePanel({
         )}
         {tab === "leaders" && <LeaderList />}
         {tab === "feed" && <FeedList />}
-        {tab === "alerts" && (
-          <p className="p-4 text-center font-sans text-[11.5px] leading-relaxed text-ash">
-            No alerts yet. When the trigger engine lands, every armed rule
-            reports here — filled, cancelled, or still waiting.
-          </p>
-        )}
+        {tab === "alerts" && <AlertsList />}
       </Scroller>
 
       {/* ---- layout controls ----

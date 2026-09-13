@@ -146,12 +146,22 @@ export function parseWithGrammar(input: string): OrderSpec | null {
   }
 
   /*
-   * STOP — "stop the rest at -50%", "stop at -50%", "stop loss at 40%"
+   * STOP — "stop the rest at -50%", "stop at -50%", "stop loss on SOL at 10%"
    * The sign is ignored: "stop at 50%" and "stop at -50%" mean the same thing,
    * and nobody has ever meant a stop 50% above their entry.
+   *
+   * THE LOOKBEHIND IS NOT OPTIONAL. "trailing stop at 10%" contains the exact
+   * string "stop at 10%", so without it that sentence parsed as TWO exits — a
+   * drawdown and a trailing stop, both for the whole position. The user would
+   * have been sold twice: once at -10% from entry, and again by a stop they
+   * never asked for. Found by running the user's own example through it.
+   *
+   * The token group lets a market be named mid-sentence ("stop loss on solana
+   * at 10%"). It excludes "at" explicitly, or that word would be eaten as the
+   * token and the trigger would never be found.
    */
   const stop = text.match(
-    /\bstop(?:\s+loss)?\s+(?:(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%)\s+)?(?:at|@)\s*-?\s*([\d.]+)\s*%/,
+    /(?<!\btrail\s)(?<!\btrailing\s)\bstop(?:\s+loss)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@)\s*-?\s*([\d.]+)\s*%/,
   );
   if (stop) {
     const percent = Number(stop[2]);
@@ -167,8 +177,10 @@ export function parseWithGrammar(input: string): OrderSpec | null {
     }
   }
 
-  /* TRAILING STOP — "trail 30%", "trailing stop 30%" */
-  const trail = text.match(/\btrail(?:ing)?(?:\s+stop)?\s+(?:at\s+)?([\d.]+)\s*%/);
+  /* TRAILING STOP — "trail 30%", "trailing stop 30%", "trailing stop loss at 10%" */
+  const trail = text.match(
+    /\btrail(?:ing)?(?:\s+stop)?(?:\s+loss)?\s+(?:at\s+)?([\d.]+)\s*%/,
+  );
   if (trail) {
     const percent = Number(trail[1]);
     if (percent > 0 && percent < 100) {

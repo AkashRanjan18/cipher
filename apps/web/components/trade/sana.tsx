@@ -7,6 +7,7 @@ import { resolveMarket } from "@/lib/market";
 import { validateOrder, blocks } from "@/lib/compiler/validate";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
 import { usePaperAccount } from "@/lib/account/store";
+import { useTriggers } from "@/lib/triggers/store";
 import { useSpeech } from "@/lib/voice/use-speech";
 import { normaliseSpeech } from "@/lib/voice/normalise";
 import { resolveQty, allInPrice } from "@/lib/account/paper";
@@ -54,12 +55,21 @@ let nextId = 0;
 export function Sana({
   price,
   market = "SOL",
+  symbol,
   depthUsd = null,
   onCollapse,
 }: {
   price: number | undefined;
   /** The open market, so the chip names what a prompt would actually trade. */
   market?: string;
+  /**
+   * The market's id, e.g. "SOLUSDT".
+   *
+   * Separate from `market` because that one is a LABEL — "SOL" is what the
+   * chip says — and a rule armed against a label would be watching a market
+   * the engine has never heard of.
+   */
+  symbol: string;
   /** Book depth, so a sentence's fill is priced the same way the ticket's is. */
   depthUsd?: number | null;
   /**
@@ -72,6 +82,7 @@ export function Sana({
   onCollapse?: () => void;
 }) {
   const { account, trade } = usePaperAccount();
+  const { armExits } = useTriggers();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
@@ -326,18 +337,37 @@ export function Sana({
   }
 
   /*
-   * Approving a card executes its ENTRY against the paper account, using the
-   * same engine the ticket uses, so a sentence and a button press are the
-   * same trade.
+   * Approving a card executes its entry and ARMS ITS EXITS.
    *
-   * The exits are deliberately not armed. There is no trigger engine yet, and
-   * a card that says "stop set at -50%" when nothing is watching the price is
-   * the single worst lie this product could tell — the user would size the
-   * position believing they are protected. So the entry fills and Sana says
-   * plainly that the exits did not arm.
+   * This function used to fill the entry and then tell the user, in as many
+   * words, that their stop had not been set — because nothing watched the
+   * price. That sentence is gone: the engine is real, and an approved card now
+   * does the whole of what it says.
+   *
+   * The order is deliberate. The entry fills FIRST, and the exits bind to the
+   * price it filled at — "stop at -50%" means half of what they actually paid,
+   * fee and spread included, which is not knowable until the fill exists.
    */
   function approve(t: Turn) {
     const entry = t.spec?.entry;
+
+    /*
+     * EXITS WITHOUT AN ENTRY, against a position already held.
+     *
+     * "Put a stop on my SOL at -20%" has no buy in it. The reference price is
+     * the weighted average cost of what is held — the number the user would
+     * call "my entry" — which the ledger already tracks, fees included.
+     */
+    if (!entry && t.spec && t.spec.exits.length > 0) {
+      if (account.sol <= 0) {
+        resolve(t.id, `You have no ${market} to set an exit on. Buy some first.`);
+        return;
+      }
+      armExits({ rules: t.spec.exits, market: symbol, entryPrice: account.costBasis });
+      resolve(t.id, armedLine(t.spec.exits.length, account.costBasis));
+      return;
+    }
+
     if (!entry || !price) {
       resolve(t.id, "No live price to fill against. Nothing happened.");
       return;
@@ -369,13 +399,34 @@ export function Sana({
       return;
     }
 
-    const exits = t.spec!.exits.length;
+    const filledAt = allInPrice(r.fill);
+    const exits = t.spec!.exits;
+
+    /*
+     * Bound to the ALL-IN price, not the mark.
+     *
+     * allInPrice folds the spread and the commission into a single per-unit
+     * number, which is what the user actually paid. Binding to the mark would
+     * put every stop slightly too high and every take-profit slightly too low
+     * — small, systematic, and in the direction that costs them money.
+     */
+    if (exits.length > 0) {
+      armExits({ rules: exits, market: symbol, entryPrice: filledAt });
+    }
+
     resolve(
       t.id,
-      `Filled ${r.fill.qty.toFixed(4)} SOL at ${usd(allInPrice(r.fill))}.` +
-        (exits
-          ? ` The ${exits === 1 ? "exit" : `${exits} exits`} did NOT arm — there is no trigger engine yet, so nothing is watching the price. You are unhedged.`
-          : ""),
+      `Filled ${r.fill.qty.toFixed(4)} ${market} at ${usd(filledAt)}.` +
+        (exits.length ? " " + armedLine(exits.length, filledAt) : ""),
+    );
+  }
+
+  /** One sentence saying what is now watching, and the honest limit on it. */
+  function armedLine(count: number, entryPrice: number): string {
+    return (
+      `${count === 1 ? "One exit is" : `${count} exits are`} armed against ` +
+      `${usd(entryPrice)} and watching the price. ` +
+      `They fire while this tab is open — see Alerts to cancel.`
     );
   }
 

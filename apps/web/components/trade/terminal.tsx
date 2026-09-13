@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Candle, Interval } from "@/lib/market";
 import { SYMBOL, intervalSeconds, subscribeCandles, marketOf } from "@/lib/market";
 import { usd, pct } from "@/lib/format";
 import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/account/store";
+import { TriggerProvider } from "@/lib/triggers/store";
 import { equity } from "@/lib/account/paper";
 import { PriceChart } from "./price-chart";
 import { SidePanel } from "./side-panel";
@@ -189,6 +190,22 @@ function TerminalBody({
 
   const last = live ?? candles[candles.length - 1]?.close;
 
+  /*
+   * Prices for every market, for rules on markets nobody is looking at.
+   *
+   * The websocket only carries the open market. A stop armed on BTC while the
+   * user watches SOL would otherwise never be checked — so the poll that fills
+   * the left panel doubles as the feed for everything else. Coarser, and
+   * honest about it; the server worker is what makes it uniform.
+   *
+   * Memoised because it is a dependency of the engine's tick, and a fresh
+   * object every render would re-run the tick on every render.
+   */
+  const prices = useMemo(
+    () => Object.fromEntries(majors.map((m) => [m.id, m.priceUsd])),
+    [majors],
+  );
+
   /* Cap for the open market, from the same supply table the list uses — so
      the header and the row a click arrived from cannot disagree. */
   const marketCap = last ? last * market.supply : null;
@@ -224,13 +241,22 @@ function TerminalBody({
 
   return (
     /*
+     * The engine sits inside the account and outside the UI.
+     *
+     * Inside, because a fired rule has to move the same balance the ticket
+     * moves. Outside the layout, because the alerts panel, the ticket and
+     * Sana all read armed rules, and a provider below any of them would mean
+     * lifting state back up the first time a second one needed it.
+     */
+    <TriggerProvider live={live ?? null} market={symbol} prices={prices}>
+    {/*
      * EXACTLY THREE SCROLLBARS, one per column, and none at the browser edge.
      *
      * The shell is the viewport again. A document that grows past the screen
      * gets a fourth bar at the browser's own edge, which is the one thing this
      * layout must not have — the header and the ticker are meant to be fixed
      * points, and the three columns are meant to move independently.
-     */
+     */}
     <div className="relative flex h-dvh flex-col gap-2 overflow-hidden bg-ink p-2">
       {/* ---------------- header ---------------- */}
       {/*
@@ -465,6 +491,7 @@ function TerminalBody({
             <Sana
               price={last}
               market={market.base}
+              symbol={symbol}
               depthUsd={depth}
               onCollapse={() => setSanaFolded(true)}
             />
@@ -529,6 +556,7 @@ function TerminalBody({
           market is doing. */}
       <StatusBar majors={majors} onSelect={setSymbol} />
     </div>
+    </TriggerProvider>
   );
 }
 

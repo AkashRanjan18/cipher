@@ -100,3 +100,56 @@ test("ids are unique so a ladder can be addressed", () => {
   const s = parseWithGrammar("sell a third at 2x, sell a third at 5x")!;
   assert.notEqual(s.exits[0].id, s.exits[1].id);
 });
+
+/* ───────────── the user's own sentences, which did not parse ──────────── */
+
+test("a trailing stop is ONE exit, not a trailing stop plus a drawdown", () => {
+  const spec = parseWithGrammar("have a trailing stop loss at 10%");
+  assert.ok(spec);
+  /*
+   * "trailing stop at 10%" contains the literal string "stop at 10%", so the
+   * stop pattern matched inside the trailing one and the sentence armed two
+   * rules for the whole position. The user would have been sold twice — once
+   * at -10% from entry, and again by a stop they never asked for.
+   */
+  assert.equal(spec.exits.length, 1);
+  assert.deepEqual(spec.exits[0].trigger, { kind: "trailingStop", percent: 10 });
+});
+
+test("plain 'trailing stop at 10%' is still one exit", () => {
+  const spec = parseWithGrammar("trailing stop at 10%");
+  assert.ok(spec);
+  assert.equal(spec.exits.length, 1);
+  assert.deepEqual(spec.exits[0].trigger, { kind: "trailingStop", percent: 10 });
+});
+
+test("a stop can name the market in the middle of the sentence", () => {
+  for (const sentence of [
+    "stop SOL at -50%",
+    "stop loss on solana at 50%",
+    "put a stop loss on solana at 50% of the buying price",
+  ]) {
+    const spec = parseWithGrammar(sentence);
+    assert.ok(spec, sentence);
+    assert.deepEqual(
+      spec.exits.map((e) => e.trigger),
+      [{ kind: "drawdownFromEntry", percent: 50 }],
+      sentence,
+    );
+  }
+});
+
+test("naming the market does not eat the trigger", () => {
+  // "at" is two letters, so a token pattern that does not exclude it swallows
+  // the word the percentage hangs off and the sentence stops parsing.
+  const spec = parseWithGrammar("stop at 25%");
+  assert.ok(spec);
+  assert.deepEqual(spec.exits[0].trigger, { kind: "drawdownFromEntry", percent: 25 });
+  assert.deepEqual(spec.exits[0].amount, { kind: "percentOfPosition", value: 100 });
+});
+
+test("a ladder and a stop in one sentence still produce exactly two exits", () => {
+  const spec = parseWithGrammar("sell a third at 2x, stop the rest at -50%");
+  assert.ok(spec);
+  assert.equal(spec.exits.length, 2);
+});

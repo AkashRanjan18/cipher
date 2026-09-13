@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import { openAccount, execute, type Account, type Fill } from "./paper";
+import { fireRule, type Outcome } from "../triggers/execute";
+import type { Rule } from "@cipher/shared";
 
 /**
  * The paper account, held in React and persisted to the browser.
@@ -54,6 +56,19 @@ interface Ctx {
     depthUsd?: number | null;
     slippageBps?: number;
   }): { fill: Fill } | { refusal: string };
+  /**
+   * Execute a rule the trigger engine says is due.
+   *
+   * Here rather than in the trigger store, because the account has to stay the
+   * only thing that writes the account. A runner holding its own copy and
+   * handing back a new one would race with the ticket the moment a stop fires
+   * while someone is mid-order — two writers, last one wins, and the loser is
+   * a trade that silently never happened.
+   *
+   * It returns the seam's three-way Outcome untouched. Deciding what `moot`
+   * means is the runner's job; this only moves money.
+   */
+  fire(rule: Rule, ctx: { mark: number; depthUsd?: number | null; slippageBps?: number }): Outcome;
   reset(): void;
 }
 
@@ -129,11 +144,24 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
     return out;
   }, []);
 
+  const fire = useCallback<Ctx["fire"]>((rule, ctx) => {
+    // Same shape as trade(): the updater cannot return the outcome, so it is
+    // captured out and read after. React runs it synchronously here, and a
+    // non-fill returns the identical account object, so nothing re-renders.
+    let out: Outcome = { kind: "failed", reason: "nothing happened" };
+    setAccount((prev) => {
+      const r = fireRule(prev, rule, { ...ctx, ts: Math.floor(Date.now() / 1000) });
+      out = r;
+      return r.kind === "filled" ? r.account : prev;
+    });
+    return out;
+  }, []);
+
   const reset = useCallback(() => setAccount(openAccount(OPENING_DEPOSIT)), []);
 
   const value = useMemo(
-    () => ({ account, hydrated, trade, reset }),
-    [account, hydrated, trade, reset],
+    () => ({ account, hydrated, trade, fire, reset }),
+    [account, hydrated, trade, fire, reset],
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
