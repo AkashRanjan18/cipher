@@ -106,11 +106,37 @@ export function readback(spec: OrderSpec): ReadbackLine[] {
   if (spec.entry) {
     const { side, amount: amt, slippageBps, privateSubmission } = spec.entry;
 
+    /*
+     * "1 SOL of SOL" — the token was being named twice.
+     *
+     * A token-denominated amount already carries the ticker, so appending
+     * "of SOL" repeats it. A dollar or percentage amount does not, and needs
+     * it. Reads as "$500 of SOL" and "1 SOL".
+     */
     lines.push({
       label: side === "buy" ? "BUY" : "SELL",
-      value: `${amount(amt, token)} of ${token?.toUpperCase()}`,
+      value:
+        amt.kind === "tokens"
+          ? amount(amt, token)
+          : `${amount(amt, token)} of ${token?.toUpperCase()}`,
       note: spec.entry.mint ? undefined : "token not confirmed yet",
     });
+
+    /*
+     * A resting entry says so on its own line, above everything else.
+     *
+     * Without it the receipt for a limit order is indistinguishable from the
+     * receipt for a market order — the same BUY line, the same amount — and
+     * the only thing saying "this has not traded" is a sentence above the
+     * card. The line the eye lands on has to carry it.
+     */
+    if (spec.entry.trigger) {
+      lines.push({
+        label: "WHEN",
+        value: trigger(spec.entry.trigger).value.replace(/^at /, "it reaches "),
+        note: "rests until then — nothing trades now",
+      });
+    }
 
     /*
      * Slippage and routing only appear when the user actually said something.
