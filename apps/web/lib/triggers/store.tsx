@@ -25,8 +25,10 @@ import {
   type Rule,
   type Transition,
 } from "@cipher/shared";
+import { usePrivy } from "@privy-io/react-auth";
 import { usePaperAccount } from "../account/store";
 import { allInPrice } from "../account/paper";
+import { armRemote, cancelRemote, fetchSnapshot } from "../db/remote";
 import { fireRule } from "./execute";
 
 /**
@@ -37,11 +39,24 @@ import { fireRule } from "./execute";
  * done here: hold the state, tick it, persist it, and hand each fired rule to
  * the execution seam.
  *
- * cipher: THIS RUNS IN THE BROWSER, and that is the honest limit of the paper
- * version. Close the tab and nothing is watching. The fix is not a better
- * version of this file — it is this file's logic inside a worker with a shared
- * price feed and a heartbeat, and the engine and the seam move there untouched.
- * Until then the UI must say so rather than imply a promise nobody is keeping.
+ * TWO MODES, and which one is running is decided here and nowhere else.
+ *
+ *   SERVER   signed in, with a database configured. Rules live in Postgres and
+ *            are fired by /api/tick on a schedule. This file stops ticking the
+ *            engine entirely and becomes a view: it arms, it cancels, it polls.
+ *            Closing the tab changes nothing, which is the whole point.
+ *
+ *   LOCAL    signed out, or no database. Rules live in this browser and are
+ *            watched by this tab, exactly as before. /trade is public and the
+ *            paper account works without an account, so this is a real mode
+ *            rather than a degraded one — but a rule armed here dies with the
+ *            tab, and the UI says so.
+ *
+ * THE BROWSER MUST NOT TICK IN SERVER MODE. Two engines against one ledger is
+ * two writers: the worker fires a stop, the tab fires the same stop against a
+ * balance it has not refetched, and one of them wins by arriving second. The
+ * database's conditional UPDATE makes the SERVER side exactly-once; the only
+ * way to extend that guarantee to the tab is for the tab not to trade.
  */
 
 /*
@@ -72,6 +87,17 @@ interface Stored {
 }
 
 interface Ctx {
+  /** True when the server owns the rules and fires them without this tab. */
+  server: boolean;
+  /**
+   * False when the worker's heartbeat has gone stale.
+   *
+   * A deadman's switch, not a promise. Every armed rule implies "this is being
+   * watched", and when that stops being true it stops silently — which is the
+   * one thing a user cannot act on. Meaningless in local mode, where the tab
+   * itself is the watcher.
+   */
+  watching: boolean;
   /** Rules currently watching. */
   armed: Rule[];
   /**
@@ -162,11 +188,76 @@ export function TriggerProvider({
   prices?: Record<string, number>;
 }) {
   const { account, fire } = usePaperAccount();
+  const { authenticated, getAccessToken } = usePrivy();
   const [state, setState] = useState<Stored>(() => ({
     engine: emptyEngine(),
     transitions: [],
   }));
   const [hydrated, setHydrated] = useState(false);
+  const [server, setServer] = useState(false);
+  const [watching, setWatching] = useState(false);
+
+  /*
+   * The access token, held rather than fetched per call.
+   *
+   * getAccessToken() refreshes the token when it is close to expiring, so it
+   * is the right thing to call — but calling it inside a poll that runs every
+   * few seconds turns a cheap loop into a chatty one.
+   */
+  const token = useRef<string | null>(null);
+  useEffect(() => {
+    if (!authenticated) {
+      token.current = null;
+      setServer(false);
+      return;
+    }
+    let alive = true;
+    void getAccessToken().then((t) => {
+      if (alive) token.current = t;
+    });
+    return () => {
+      alive = false;
+    };
+  }, [authenticated, getAccessToken]);
+
+  /*
+   * Ask the server what it knows, and keep asking.
+   *
+   * The poll is how a fill that happened while the tab was closed — or on
+   * another device, or ten seconds ago in the worker — reaches this screen.
+   * Five seconds: fast enough that a rule firing feels immediate, slow enough
+   * that an idle tab is not a load generator.
+   *
+   * A failure means local mode, not an error. No database configured and no
+   * session are the same answer from here: the server is not the owner.
+   */
+  const pull = useCallback(async () => {
+    const snap = await fetchSnapshot(token.current);
+    if (!snap) {
+      setServer(false);
+      return;
+    }
+    setServer(true);
+    setWatching(snap.watching);
+    const engine = emptyEngine();
+    for (const r of snap.rules) engine.rules[r.id] = r;
+    setState({ engine, transitions: snap.transitions });
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    let alive = true;
+    const run = () => {
+      if (alive) void pull();
+    };
+    const first = window.setTimeout(run, 300);
+    const id = window.setInterval(run, 5_000);
+    return () => {
+      alive = false;
+      window.clearTimeout(first);
+      window.clearInterval(id);
+    };
+  }, [authenticated, pull]);
 
   useEffect(() => {
     setState(load() ?? { engine: emptyEngine(), transitions: [] });
@@ -174,13 +265,15 @@ export function TriggerProvider({
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    /* In server mode the rows ARE the state; writing a copy to localStorage
+       would leave a stale shadow to be read back on the next cold start. */
+    if (server || !hydrated) return;
     try {
       window.localStorage.setItem(KEY, JSON.stringify(state));
     } catch {
       /* Private windows, blocked site data, a full quota. The session works. */
     }
-  }, [state, hydrated]);
+  }, [state, hydrated, server]);
 
   /*
    * The account, read through a ref.
@@ -264,7 +357,14 @@ export function TriggerProvider({
    * resolution. Both are honest; neither is a server.
    */
   useEffect(() => {
-    if (!hydrated || live === null) return;
+    /*
+     * `server &&` is the guard that keeps one ledger.
+     *
+     * In server mode the worker fires everything; a tab that also fired would
+     * be a second writer racing the first, and the loser's trade silently
+     * disappears. See the note at the top of this file.
+     */
+    if (server || !hydrated || live === null) return;
     const step = onPrice(state.engine, market, live, Date.now());
     if (step.fire.length === 0 && step.transitions.length === 0) return;
     applyStep(step.state, step.fire, step.transitions, live);
@@ -272,10 +372,10 @@ export function TriggerProvider({
     // object in place and applyStep writes it back, so depending on it here
     // would re-run this effect for its own result.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, market, hydrated, applyStep]);
+  }, [server, live, market, hydrated, applyStep]);
 
   useEffect(() => {
-    if (!hydrated || !prices) return;
+    if (server || !hydrated || !prices) return;
     for (const [symbol, price] of Object.entries(prices)) {
       if (symbol === market) continue; // the socket already covers this one
       const step = onPrice(state.engine, symbol, price, Date.now());
@@ -283,7 +383,7 @@ export function TriggerProvider({
       applyStep(step.state, step.fire, step.transitions, price);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prices, market, hydrated, applyStep]);
+  }, [server, prices, market, hydrated, applyStep]);
 
   /*
    * The clock.
@@ -294,7 +394,7 @@ export function TriggerProvider({
    * print. One second is finer than any deadline a user can express.
    */
   useEffect(() => {
-    if (!hydrated) return;
+    if (server || !hydrated) return;
     const id = window.setInterval(() => {
       const step = onClock(state.engine, Date.now());
       if (step.fire.length === 0 && step.transitions.length === 0) return;
@@ -312,9 +412,40 @@ export function TriggerProvider({
     }, 1_000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, live, market, prices, applyStep]);
+  }, [server, hydrated, live, market, prices, applyStep]);
 
   const armExits = useCallback<Ctx["armExits"]>(({ rules, market: m, entryPrice, parentId }) => {
+    /*
+     * SERVER MODE ARMS THROUGH THE API and does not touch local state.
+     *
+     * The poll brings the rule back a moment later, which is slightly slower
+     * than writing it locally and then reconciling — and much harder to get
+     * wrong. A local copy that the server rejects, or renames, or expires
+     * differently is a rule the user can see and the worker cannot fire.
+     */
+    if (server) {
+      const now = Date.now();
+      const built: Rule[] = rules.map((r) => ({
+        version: 1,
+        id: r.id,
+        market: m,
+        side: "sell",
+        parentId: parentId ?? null,
+        trigger: r.trigger,
+        amount: r.amount,
+        state: entryPrice === undefined ? "unbound" : "armed",
+        armedAt: now,
+        expiresAt: now, // the server overwrites this — it owns the blast radius
+        entryPrice: entryPrice ?? null,
+        highWater: r.trigger.kind === "trailingStop" ? (entryPrice ?? null) : null,
+        attempts: 0,
+      }));
+      void armRemote(token.current, built).then((ok) => {
+        if (ok) void pull();
+      });
+      return;
+    }
+
     setState((prev) => {
       const engine = prev.engine;
       const log: Transition[] = [];
@@ -330,6 +461,30 @@ export function TriggerProvider({
   }, []);
 
   const armEntry = useCallback<Ctx["armEntry"]>(({ rule, market: m, referencePrice, side }) => {
+    if (server) {
+      const now = Date.now();
+      void armRemote(token.current, [
+        {
+          version: 1,
+          id: rule.id,
+          market: m,
+          side,
+          parentId: null,
+          trigger: rule.trigger,
+          amount: rule.amount,
+          state: "armed",
+          armedAt: now,
+          expiresAt: now,
+          entryPrice: referencePrice,
+          highWater: null,
+          attempts: 0,
+        },
+      ]).then((ok) => {
+        if (ok) void pull();
+      });
+      return;
+    }
+
     setState((prev) => {
       const engine = prev.engine;
       const step = arm(engine, {
@@ -344,7 +499,7 @@ export function TriggerProvider({
         transitions: [...prev.transitions, ...step.transitions].slice(-MAX_TRANSITIONS),
       };
     });
-  }, []);
+  }, [server, pull]);
 
   const bindEntry = useCallback<Ctx["bindEntry"]>((m, entryPrice) => {
     setState((prev) => {
@@ -363,6 +518,13 @@ export function TriggerProvider({
   }, []);
 
   const cancelRule = useCallback<Ctx["cancelRule"]>((id) => {
+    if (server) {
+      void cancelRemote(token.current, id).then((ok) => {
+        if (ok) void pull();
+      });
+      return;
+    }
+
     setState((prev) => {
       const engine = prev.engine;
       const step = cancel(engine, id, Date.now());
@@ -380,6 +542,8 @@ export function TriggerProvider({
 
   const value = useMemo<Ctx>(
     () => ({
+      server,
+      watching,
       armed: armedRules(state.engine),
       rulesById: state.engine.rules,
       transitions: state.transitions,
@@ -391,7 +555,7 @@ export function TriggerProvider({
       thresholdOf: threshold,
       clearAll,
     }),
-    [state, hydrated, armExits, armEntry, bindEntry, cancelRule, clearAll],
+    [state, hydrated, server, watching, armExits, armEntry, bindEntry, cancelRule, clearAll],
   );
 
   return <TriggerContext.Provider value={value}>{children}</TriggerContext.Provider>;

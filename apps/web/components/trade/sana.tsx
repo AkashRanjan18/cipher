@@ -435,8 +435,16 @@ export function Sana({
     }
 
     const warnings = problems.map((p) => p.message);
-    const outcome = run(spec);
-    push({ mine: false, text: outcome, lines: readback(spec), warnings });
+    /*
+     * The order goes out, and the receipt follows it.
+     *
+     * run() is async now that the ledger can be a network away. Nothing is
+     * pushed until it resolves: a receipt rendered before the fill lands would
+     * be describing a trade that might still be refused.
+     */
+    void run(spec).then((outcome) => {
+      push({ mine: false, text: outcome, lines: readback(spec), warnings });
+    });
   }
 
   /**
@@ -449,7 +457,7 @@ export function Sana({
    *   an entry now      fills, then binds its exits to what it actually paid.
    *   exits only        binds to the position already held.
    */
-  function run(spec: OrderSpec): string {
+  async function run(spec: OrderSpec): Promise<string> {
     const entry = spec.entry;
 
     /* ── exits against a position already held ── */
@@ -503,7 +511,7 @@ export function Sana({
      * threw it away — the one differentiator the product is built on,
      * understood correctly and then discarded on the way to the fill.
      */
-    const r = trade({
+    const r = await trade({
       side: entry.side,
       qty,
       mark: price,

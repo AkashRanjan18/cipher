@@ -49,7 +49,8 @@ function triggerLabel(rule: Rule): string {
 }
 
 export function AlertsList() {
-  const { armed, rulesById, transitions, hydrated, cancelRule, thresholdOf } = useTriggers();
+  const { armed, rulesById, transitions, hydrated, server, watching, cancelRule, thresholdOf } =
+    useTriggers();
 
   if (!hydrated) {
     return <div className="p-4 font-sans text-[11.5px] text-mute">Reading your rules…</div>;
@@ -72,6 +73,25 @@ export function AlertsList() {
 
   return (
     <div className="flex flex-col">
+      {/*
+        * THE DEADMAN'S SWITCH.
+        *
+        * Uptime cannot be promised, so it is reported. The worker writes a
+        * heartbeat every run; when it goes stale this says so, in the one
+        * place a user looks to see whether their stops are live. Silence is
+        * the only thing they cannot act on — a banner they can.
+        */}
+      {server && !watching && armed.length > 0 && (
+        <div className="border-b border-down/30 bg-down/10 px-2.5 py-2">
+          <div className="font-sans text-[11px] font-bold text-down">
+            Rules are not being watched right now.
+          </div>
+          <div className="mt-0.5 font-sans text-[10px] leading-tight text-ash">
+            The service that fires them has not checked in. Nothing will trigger until it does.
+          </div>
+        </div>
+      )}
+
       {armed.length > 0 && (
         <>
           <Heading>Watching</Heading>
@@ -103,15 +123,17 @@ export function AlertsList() {
                   </button>
                 </div>
                 {/*
-                  * The honest disclaimer, and it stays until a server watches.
+                  * What is actually true about this rule, per rule.
                   *
                   * Everything about an armed rule implies a promise that it
-                  * will fire. In this version it fires only while the page is
-                  * open, and a user who closes the tab expecting a stop to
-                  * hold is exactly the person this product must not create.
+                  * will fire, and the promise is different in the two modes.
+                  * Signed in with a worker behind it, a stop holds with the
+                  * laptop shut. Signed out, it holds while this tab is open —
+                  * and a user who closes the tab expecting otherwise is
+                  * exactly the person this product must not create.
                   */}
                 <div className="mt-1 font-sans text-[9.5px] leading-tight text-mute">
-                  Watched while this tab is open.
+                  {server ? "Watched on the server, tab open or not." : "Watched while this tab is open."}
                 </div>
               </div>
             );

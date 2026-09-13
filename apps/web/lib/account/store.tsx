@@ -6,11 +6,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { usePrivy } from "@privy-io/react-auth";
 import { openAccount, execute, type Account, type Fill } from "./paper";
 import { fireRule, type Outcome } from "../triggers/execute";
+import { fetchSnapshot, resetRemote, tradeRemote } from "../db/remote";
 import type { Rule } from "@cipher/shared";
 
 /**
@@ -38,6 +41,13 @@ const KEY = "cipher.paper.v1";
 interface Ctx {
   account: Account;
   /**
+   * True when the account lives in Postgres rather than in this browser.
+   *
+   * It matters to the UI: in server mode a balance can change while nobody is
+   * looking, because a rule fired. In local mode it cannot.
+   */
+  server: boolean;
+  /**
    * False until localStorage has been read. The UI must show "—" rather than
    * the opening balance while this is false: the server renders $10,000, and
    * flashing that before correcting to the real number is, for one frame, a
@@ -55,7 +65,7 @@ interface Ctx {
        ticket's gear and a sentence's "max 3% slippage" arrive the same way. */
     depthUsd?: number | null;
     slippageBps?: number;
-  }): { fill: Fill } | { refusal: string };
+  }): Promise<{ fill: Fill } | { refusal: string }>;
   /**
    * Execute a rule the trigger engine says is due.
    *
@@ -104,27 +114,97 @@ function load(): Account | null {
 }
 
 export function PaperAccountProvider({ children }: { children: ReactNode }) {
+  const { authenticated, getAccessToken } = usePrivy();
   const [account, setAccount] = useState<Account>(() => openAccount(OPENING_DEPOSIT));
   const [hydrated, setHydrated] = useState(false);
+  const [server, setServer] = useState(false);
+  const token = useRef<string | null>(null);
+
+  /*
+   * SERVER MODE, decided by whether the server answers.
+   *
+   * Not by a feature flag and not by whether the user is signed in: signed in
+   * with no DATABASE_URL is a perfectly ordinary state, and the right answer
+   * there is the local account rather than an error. Asking once and believing
+   * the reply keeps the two possibilities from needing two code paths at every
+   * call site.
+   */
+  useEffect(() => {
+    if (!authenticated) {
+      token.current = null;
+      setServer(false);
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      const t = await getAccessToken();
+      if (!alive) return;
+      token.current = t;
+      const snap = await fetchSnapshot(t);
+      if (!alive || !snap?.account) return;
+      setServer(true);
+      setAccount(snap.account);
+      setHydrated(true);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [authenticated, getAccessToken]);
+
+  /*
+   * Re-read after a rule may have fired.
+   *
+   * A stop firing in the worker changes the balance with nobody looking, and
+   * the header would otherwise keep showing the number from before it. Same
+   * five seconds as the rules poll, and cheap: one row.
+   */
+  useEffect(() => {
+    if (!server) return;
+    const id = window.setInterval(() => {
+      void fetchSnapshot(token.current).then((snap) => {
+        if (snap?.account) setAccount(snap.account);
+      });
+    }, 5_000);
+    return () => window.clearInterval(id);
+  }, [server]);
 
   // Read stored state after mount. Reading it during render breaks SSR.
   useEffect(() => {
+    if (server) return;
     setAccount(load() ?? openAccount(OPENING_DEPOSIT));
     setHydrated(true);
-  }, []);
+  }, [server]);
 
   // Write on every change, but never before the read — that would persist the
   // opening balance over a real one on the first frame after mount.
   useEffect(() => {
-    if (!hydrated) return;
+    /* The rows are the account in server mode; a localStorage copy would be a
+       stale shadow read back on the next cold start. */
+    if (server || !hydrated) return;
     try {
       window.localStorage.setItem(KEY, JSON.stringify(account));
     } catch {
       /* Private windows and blocked site data. The session still works. */
     }
-  }, [account, hydrated]);
+  }, [account, hydrated, server]);
 
-  const trade = useCallback<Ctx["trade"]>((input) => {
+  const trade = useCallback<Ctx["trade"]>(async (input) => {
+    /*
+     * ASYNC, because over a network it is.
+     *
+     * This used to return synchronously, which was honest while the ledger was
+     * a local object and became a lie the moment it moved to Postgres. Every
+     * caller is already in an event handler, so awaiting costs nothing but the
+     * signature had to tell the truth.
+     */
+    if (server) {
+      const r = await tradeRemote(token.current, input);
+      if (!r) return { refusal: "Couldn't reach the server. Nothing happened." };
+      if ("refusal" in r) return r;
+      setAccount(r.account);
+      return { fill: r.fill };
+    }
+
     /*
      * The refusal has to escape this callback, and setState's updater cannot
      * return one. So the result is captured out of the updater and read after
@@ -157,11 +237,19 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
     return out;
   }, []);
 
-  const reset = useCallback(() => setAccount(openAccount(OPENING_DEPOSIT)), []);
+  const reset = useCallback(() => {
+    if (server) {
+      void resetRemote(token.current).then((a) => {
+        if (a) setAccount(a);
+      });
+      return;
+    }
+    setAccount(openAccount(OPENING_DEPOSIT));
+  }, [server]);
 
   const value = useMemo(
-    () => ({ account, hydrated, trade, fire, reset }),
-    [account, hydrated, trade, fire, reset],
+    () => ({ account, hydrated, server, trade, fire, reset }),
+    [account, hydrated, server, trade, fire, reset],
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;

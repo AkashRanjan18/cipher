@@ -211,7 +211,7 @@ export function Ticket({
     }
   }
 
-  function submit() {
+  async function submit() {
     if (!price) return;
 
     /*
@@ -245,7 +245,7 @@ export function Ticket({
 
     const before = account.usdc;
     const cash = q?.cashUsd ?? 0;
-    const r = trade({ side, qty, mark: price, source: "ticket" });
+    const r = await trade({ side, qty, mark: price, source: "ticket" });
     if ("refusal" in r) {
       setReceipt({ ok: false, text: r.refusal });
       return;
@@ -514,7 +514,7 @@ export function Ticket({
         disabled={
           !tradable || !price || !!blocked || value <= 0 || (limiting && limitPrice <= 0)
         }
-        onClick={submit}
+        onClick={() => void submit()}
         className={`rounded-xl py-3 font-display text-[15px] font-bold transition-transform active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-40 ${
           !tradable
             ? "cursor-not-allowed bg-raised text-mute"
