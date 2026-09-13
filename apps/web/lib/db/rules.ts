@@ -95,10 +95,26 @@ export async function rulesFor(userId: string): Promise<Rule[]> {
 }
 
 export async function transitionsFor(userId: string, limit = 100): Promise<Transition[]> {
+  /*
+   * ORDERED BY id AS WELL AS BY at, because `at` is not unique.
+   *
+   * Every transition a single tick emits shares one timestamp — firing and
+   * filled are written milliseconds apart but stamped with the same `now`, on
+   * purpose, so the trail says when the tick happened rather than when each
+   * row was inserted. With only `at` in the sort, Postgres is free to return
+   * them in any order, and it does: the audit trail showed a rule reaching
+   * `filled` BEFORE it reached `firing`, and a stop reporting "price crossed"
+   * after the cancellation that explained it.
+   *
+   * That is not a cosmetic ordering problem. This table is the evidence for
+   * "why did you sell my SOL", and evidence that reorders itself is worth
+   * nothing. `id` is a bigserial, so it is insertion order, which is the true
+   * order — the tiebreak costs nothing and makes the sort total.
+   */
   const rows = (await db()`
     select * from rule_transitions
     where user_id = ${userId}
-    order by at desc
+    order by at desc, id desc
     limit ${limit}
   `) as Row[];
   return rows.reverse().map((r) => ({

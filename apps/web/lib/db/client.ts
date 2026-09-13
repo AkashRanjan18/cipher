@@ -14,9 +14,35 @@ import { neon } from "@neondatabase/serverless";
  * route instead.
  */
 
-let sql: ReturnType<typeof neon> | null = null;
+/**
+ * Anything that runs a query as a tagged template and hands back rows.
+ *
+ * Neon's `sql` already has this shape. Naming it is what lets a test put a
+ * different Postgres behind the whole data layer — see `useDriver`.
+ */
+export type Driver = (
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+) => Promise<Record<string, unknown>[]>;
 
-export function db() {
+let sql: Driver | null = null;
+
+/**
+ * Point every query in this folder at another Postgres. TESTS ONLY.
+ *
+ * NOT a convenience. Until this existed, `schema.sql` and the forty-odd
+ * queries around it had never executed — the only way to run them was to own a
+ * Neon account, so the most dangerous code in cipher was also the only code
+ * with no tests. A driver seam costs four lines and lets the suite run the
+ * real SQL against a real Postgres (PGlite, in-process) on every commit.
+ *
+ * Production never calls this: `db()` falls through to Neon when it is unset.
+ */
+export function useDriver(driver: Driver | null): void {
+  sql = driver;
+}
+
+export function db(): Driver {
   if (sql) return sql;
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -24,7 +50,7 @@ export function db() {
       "DATABASE_URL is not set. Rules cannot outlive the browser without it — see lib/db/schema.sql.",
     );
   }
-  sql = neon(url);
+  sql = neon(url) as unknown as Driver;
   return sql;
 }
 
