@@ -115,6 +115,7 @@ export function parseWithGrammar(input: string): OrderSpec | null {
       amount,
       slippageBps: DEFAULTS.slippageBps,
       privateSubmission: DEFAULTS.privateSubmission,
+      trigger: null,
     };
   }
 
@@ -147,8 +148,32 @@ export function parseWithGrammar(input: string): OrderSpec | null {
           amount: { kind: "tokens", value },
           slippageBps: DEFAULTS.slippageBps,
           privateSubmission: DEFAULTS.privateSubmission,
+      trigger: null,
         };
       }
+    }
+  }
+
+  /*
+   * A RESTING ENTRY — "buy $500 of SOL at $95", "sell 2 SOL @ 120"
+   *
+   * The difference between this and a market order is one word, and the
+   * difference in what happens is total: a limit order does not exist until
+   * the price arrives. On an AMM there is no book to rest it in, so the
+   * trigger engine holds it and fires a market swap on the crossing — and what
+   * makes it a real limit rather than a delayed market order is that the
+   * swap's minimumOutAmount comes from THIS price.
+   *
+   * The lookahead is doing real work. "at 2x" is a multiple and "at 50%" is a
+   * drawdown; both are exits and both would otherwise be read here as a price
+   * of two dollars and fifty dollars. A price is a bare number or a dollar
+   * amount, and nothing else.
+   */
+  if (entry) {
+    const limit = text.match(/\b(?:at|@)\s*\$?\s*([\d.,]+)\b(?!\s*[x%])/);
+    if (limit) {
+      const at = Number(limit[1].replace(/,/g, ""));
+      if (at > 0) entry.trigger = { kind: "priceAbsolute", value: at };
     }
   }
 

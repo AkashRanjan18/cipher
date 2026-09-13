@@ -31,6 +31,7 @@ function buy(over: Partial<NonNullable<OrderSpec["entry"]>> = {}) {
     amount: { kind: "usd" as const, value: 500 },
     slippageBps: 300,
     privateSubmission: true,
+    trigger: null,
     ...over,
   };
 }

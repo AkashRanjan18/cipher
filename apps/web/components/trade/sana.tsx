@@ -111,7 +111,7 @@ export function Sana({
   onCollapse?: () => void;
 }) {
   const { account, trade } = usePaperAccount();
-  const { armExits, armed, cancelRule } = useTriggers();
+  const { armExits, armEntry, armed, cancelRule } = useTriggers();
   /* The prop is named `price`; aliased so the answer helpers read plainly. */
   const livePrice = price;
   /* The in-flight model request, so a new sentence can abandon the old one. */
@@ -391,13 +391,23 @@ export function Sana({
     }
 
     /*
-     * VALIDATE BEFORE THE READBACK, never after.
+     * VALIDATE, THEN DO IT. No approval step.
      *
-     * The readback is the trust surface: the user approves what it renders.
-     * Rendering a confident card for an order that cannot execute — or worse,
-     * one that executes and does the opposite of what it says, like a
-     * take-profit set below the entry — is the single worst failure this
-     * product has.
+     * User's call, 13 Sep 2026, twice and explicitly: a clear instruction
+     * executes. Type it and it happens. This overrides the "no rule arms
+     * without an approved readback" non-negotiable, and the override is
+     * recorded in CLAUDE.md rather than left as something only this file knows.
+     *
+     * What replaces the approval is a sharper boundary:
+     *
+     *   an ERROR   means the instruction is wrong. Refuse, say why, do nothing.
+     *   a WARNING  means it is unusual, not wrong. Do it, and say so afterwards.
+     *   AMBIGUITY  never reaches here — clarify caught it upstream.
+     *
+     * So the readback is not gone; it stopped being a question and became a
+     * receipt. The user still sees exactly what happened in their own terms,
+     * which is what the readback was always for — the click was only ever the
+     * cheapest way to be sure they had seen it.
      */
     const problems = validateOrder(spec, {
       cashUsd: account.usdc,
@@ -416,15 +426,97 @@ export function Sana({
       return;
     }
 
-    push({
-      mine: false,
-      text: "I read that as an order. Check it before it goes anywhere.",
-      lines: readback(spec),
-      /* Warnings ride along on the card rather than blocking it — they are
-         things worth seeing before approving, not reasons to refuse. */
-      warnings: problems.map((p) => p.message),
-      spec,
+    const warnings = problems.map((p) => p.message);
+    const outcome = run(spec);
+    push({ mine: false, text: outcome, lines: readback(spec), warnings });
+  }
+
+  /**
+   * Carry out an order that has already been validated.
+   *
+   * Returns the sentence that goes above the receipt. Three shapes, and they
+   * are genuinely different operations rather than one with flags:
+   *
+   *   a resting entry   nothing trades. The engine watches for the price.
+   *   an entry now      fills, then binds its exits to what it actually paid.
+   *   exits only        binds to the position already held.
+   */
+  function run(spec: OrderSpec): string {
+    const entry = spec.entry;
+
+    /* ── exits against a position already held ── */
+    if (!entry) {
+      if (spec.exits.length === 0) return "Nothing to do.";
+      if (account.sol <= 0) return `You have no ${market} to set an exit on.`;
+      armExits({ rules: spec.exits, market: symbol, entryPrice: account.costBasis });
+      return armedLine(spec.exits.length, account.costBasis);
+    }
+
+    /* ── a resting limit order ── */
+    if (entry.trigger) {
+      if (!price) return "No live price, so I can't tell which way that limit is from here.";
+      /*
+       * The ENTRY becomes the rule, and its exits wait for it.
+       *
+       * The exits are armed unbound in the same breath: "buy at $95, sell half
+       * at 2x" means 2x of ninety-five, and that is not knowable until the buy
+       * fills. The runner binds them the moment it does.
+       */
+      armEntry({
+        rule: { id: `e${Date.now()}`, trigger: entry.trigger, amount: entry.amount },
+        market: symbol,
+        referencePrice: price,
+      });
+      if (spec.exits.length > 0) armExits({ rules: spec.exits, market: symbol });
+      const at = usd((entry.trigger as { value: number }).value);
+      return (
+        `Resting. I'll ${entry.side} when ${market} reaches ${at}` +
+        (spec.exits.length ? `, then arm the ${spec.exits.length === 1 ? "exit" : "exits"}.` : ".") +
+        " Nothing has traded yet."
+      );
+    }
+
+    /* ── fill now ── */
+    if (!price) return "No live price to fill against. Nothing happened.";
+
+    const qty = resolveQty(entry.amount, entry.side, account, price);
+    if (qty === null) {
+      return `I can't turn "${entry.amount.kind}" into a ${entry.side} size. Nothing happened.`;
+    }
+
+    /*
+     * The sentence's OWN slippage, not a default. grammar.ts has always parsed
+     * "max 3% slippage" into the spec, and an earlier version of this call
+     * threw it away — the one differentiator the product is built on,
+     * understood correctly and then discarded on the way to the fill.
+     */
+    const r = trade({
+      side: entry.side,
+      qty,
+      mark: price,
+      source: "sana",
+      depthUsd,
+      slippageBps: entry.slippageBps,
     });
+    if ("refusal" in r) return r.refusal;
+
+    /*
+     * Bound to the ALL-IN price, not the mark.
+     *
+     * allInPrice folds the spread and the commission into a single per-unit
+     * number, which is what the user actually paid. Binding to the mark would
+     * put every stop slightly too high and every take-profit slightly too low
+     * — small, systematic, and in the direction that costs them money.
+     */
+    const filledAt = allInPrice(r.fill);
+    if (spec.exits.length > 0) {
+      armExits({ rules: spec.exits, market: symbol, entryPrice: filledAt });
+    }
+
+    return (
+      `${entry.side === "buy" ? "Bought" : "Sold"} ${r.fill.qty.toFixed(4)} ${market} at ${usd(filledAt)}.` +
+      (spec.exits.length ? " " + armedLine(spec.exits.length, filledAt) : "")
+    );
   }
 
   /*
@@ -439,21 +531,19 @@ export function Sana({
     const onDown = (e: MouseEvent) => {
       if (shellRef.current?.contains(e.target as Node)) return;
       /*
-       * EXCEPT when the LAST thing said is a card waiting to be approved.
+       * EXCEPT when the LAST thing said is an unanswered question.
        *
-       * An unanswered order is a live decision, and hiding it on a stray click
-       * is ambiguous in the worst way: the user cannot tell whether it was
-       * cancelled or is still sitting there about to be approved by their next
-       * keystroke.
+       * Orders no longer wait for anything — they execute — so the only live
+       * decision left is a clarify. Hiding one on a stray click is ambiguous
+       * in the worst way: the user cannot tell whether it was cancelled or is
+       * still sitting there.
        *
        * The LAST one, not any one. Checking the whole history meant a single
-       * card left unanswered ten messages ago blocked collapsing for the rest
-       * of the session — and cards accumulate, so in practice it stopped
-       * collapsing at all. A buried card is not a live decision; the user
-       * moved on.
+       * unanswered question ten messages ago blocked collapsing for the rest
+       * of the session.
        */
       const last = turns[turns.length - 1];
-      if (last?.spec && !last.resolved) return;
+      if (last?.choices && !last.resolved) return;
       setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
@@ -614,97 +704,12 @@ export function Sana({
     );
   }
 
-  /*
-   * Approving a card executes its entry and ARMS ITS EXITS.
-   *
-   * This function used to fill the entry and then tell the user, in as many
-   * words, that their stop had not been set — because nothing watched the
-   * price. That sentence is gone: the engine is real, and an approved card now
-   * does the whole of what it says.
-   *
-   * The order is deliberate. The entry fills FIRST, and the exits bind to the
-   * price it filled at — "stop at -50%" means half of what they actually paid,
-   * fee and spread included, which is not knowable until the fill exists.
-   */
-  function approve(t: Turn) {
-    const entry = t.spec?.entry;
-
-    /*
-     * EXITS WITHOUT AN ENTRY, against a position already held.
-     *
-     * "Put a stop on my SOL at -20%" has no buy in it. The reference price is
-     * the weighted average cost of what is held — the number the user would
-     * call "my entry" — which the ledger already tracks, fees included.
-     */
-    if (!entry && t.spec && t.spec.exits.length > 0) {
-      if (account.sol <= 0) {
-        resolve(t.id, `You have no ${market} to set an exit on. Buy some first.`);
-        return;
-      }
-      armExits({ rules: t.spec.exits, market: symbol, entryPrice: account.costBasis });
-      resolve(t.id, armedLine(t.spec.exits.length, account.costBasis));
-      return;
-    }
-
-    if (!entry || !price) {
-      resolve(t.id, "No live price to fill against. Nothing happened.");
-      return;
-    }
-
-    const qty = resolveQty(entry.amount, entry.side, account, price);
-    if (qty === null) {
-      resolve(t.id, `I can't turn "${entry.amount.kind}" into a ${entry.side} size. Nothing happened.`);
-      return;
-    }
-
-    /*
-     * The sentence's OWN slippage, not a default.
-     *
-     * grammar.ts has always parsed "max 3% slippage" into the spec, and this
-     * call threw it away — the one differentiator the product is built on,
-     * understood correctly and then discarded on the way to the fill.
-     */
-    const r = trade({
-      side: entry.side,
-      qty,
-      mark: price,
-      source: "sana",
-      depthUsd,
-      slippageBps: entry.slippageBps,
-    });
-    if ("refusal" in r) {
-      resolve(t.id, r.refusal);
-      return;
-    }
-
-    const filledAt = allInPrice(r.fill);
-    const exits = t.spec!.exits;
-
-    /*
-     * Bound to the ALL-IN price, not the mark.
-     *
-     * allInPrice folds the spread and the commission into a single per-unit
-     * number, which is what the user actually paid. Binding to the mark would
-     * put every stop slightly too high and every take-profit slightly too low
-     * — small, systematic, and in the direction that costs them money.
-     */
-    if (exits.length > 0) {
-      armExits({ rules: exits, market: symbol, entryPrice: filledAt });
-    }
-
-    resolve(
-      t.id,
-      `Filled ${r.fill.qty.toFixed(4)} ${market} at ${usd(filledAt)}.` +
-        (exits.length ? " " + armedLine(exits.length, filledAt) : ""),
-    );
-  }
-
   /** One sentence saying what is now watching, and the honest limit on it. */
   function armedLine(count: number, entryPrice: number): string {
     return (
       `${count === 1 ? "One exit is" : `${count} exits are`} armed against ` +
-      `${usd(entryPrice)} and watching the price. ` +
-      `They fire while this tab is open — see Alerts to cancel.`
+      `${usd(entryPrice)} and watching. They fire while this tab is open — ` +
+      `say "cancel my stops" to take them back.`
     );
   }
 
@@ -828,25 +833,14 @@ export function Sana({
                         </ul>
                       )}
 
-                      {t.resolved ? (
+                      {/*
+                        * No buttons. The card is a receipt, not a request —
+                        * by the time it renders, the order has happened.
+                        */}
+                      {t.resolved && (
                         <p className="mt-2.5 font-sans text-[11.5px] text-champagne">
                           {t.resolved}
                         </p>
-                      ) : (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <button
-                            onClick={() => approve(t)}
-                            className="rounded-lg bg-accent px-3.5 py-2 font-sans text-[12.5px] font-bold text-ink hover:brightness-110"
-                          >
-                            Yep, do it
-                          </button>
-                          <button
-                            onClick={() => resolve(t.id, "Dropped it. Nothing happened.")}
-                            className="rounded-lg border border-line px-3.5 py-2 font-sans text-[12.5px] font-bold text-ash hover:border-ash hover:text-champagne"
-                          >
-                            Never mind
-                          </button>
-                        </div>
                       )}
                     </div>
                   )}

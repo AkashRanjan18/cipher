@@ -583,7 +583,7 @@ function TerminalBody({
           */}
         {/* No scroller of its own any more — it moves with the region. */}
         <aside className="flex flex-col [&>*]:shrink-0">
-          <Ticket price={last} solPrice={solPrice} market={market.base} depthUsd={depth} />
+          <Ticket price={last} solPrice={solPrice} symbol={symbol} market={market.base} depthUsd={depth} />
           <Flow candles={candles} last={last} />
         </aside>
           </div>

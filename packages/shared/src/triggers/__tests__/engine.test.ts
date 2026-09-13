@@ -381,3 +381,71 @@ test("ten thousand rules on one market, and only the crossed ones come back", ()
   assert.deepEqual(step.fire.map((r) => r.id).sort(), ["r0", "r1", "r2", "r3", "r4"]);
   assert.equal(armed(s).length, 9_995);
 });
+
+/* ─────────────────────────── resting buys ──────────────────────────────── */
+
+test("a resting buy below the market waits for the price to come down", () => {
+  const s = emptyEngine();
+  arm(s, {
+    rule: exit("b1", { kind: "priceAbsolute", value: 95 }),
+    market: MKT,
+    at: T0,
+    side: "buy",
+    entryPrice: 101, // the market when the order was placed
+  });
+
+  assert.equal(s.rules.b1.side, "buy");
+  assert.equal(onPrice(s, MKT, 96, T0 + 1).fire.length, 0);
+  assert.equal(onPrice(s, MKT, 95, T0 + 2).fire.length, 1);
+});
+
+test("a resting buy ABOVE the market waits for a breakout", () => {
+  const s = emptyEngine();
+  arm(s, {
+    rule: exit("b1", { kind: "priceAbsolute", value: 120 }),
+    market: MKT,
+    at: T0,
+    side: "buy",
+    entryPrice: 101,
+  });
+
+  // Direction is derived from the reference, so the same trigger kind serves
+  // "buy the dip" and "buy the breakout" without a second field to get wrong.
+  assert.equal(onPrice(s, MKT, 119, T0 + 1).fire.length, 0);
+  assert.equal(onPrice(s, MKT, 121, T0 + 2).fire.length, 1);
+});
+
+test("rules default to selling, so every existing caller still means an exit", () => {
+  const s = emptyEngine();
+  arm(s, {
+    rule: exit("r1", { kind: "priceMultiple", value: 2 }),
+    market: MKT,
+    at: T0,
+    entryPrice: 100,
+  });
+  assert.equal(s.rules.r1.side, "sell");
+});
+
+test("a resting buy is not cancelled when the position goes flat", () => {
+  const s = emptyEngine();
+  arm(s, {
+    rule: exit("b1", { kind: "priceAbsolute", value: 95 }),
+    market: MKT,
+    at: T0,
+    side: "buy",
+    entryPrice: 101,
+  });
+  arm(s, {
+    rule: exit("t1", { kind: "trailingStop", percent: 20 }),
+    market: MKT,
+    at: T0,
+    entryPrice: 101,
+  });
+
+  // Going flat clears trailing stops — they measure from a high that no longer
+  // means anything. A resting BUY is the opposite: being flat is the state it
+  // exists to end.
+  onFlat(s, MKT, T0 + 1);
+  assert.equal(s.rules.t1.state, "cancelled");
+  assert.equal(s.rules.b1.state, "armed");
+});

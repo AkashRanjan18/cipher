@@ -177,7 +177,22 @@ export function arm(
     rule: ExitRule;
     market: string;
     at: number;
-    /** Known already for exits armed against a position the user already holds. */
+    /**
+     * What it does when it fires. Defaults to a sell, because exits are the
+     * common case and every existing caller means one.
+     *
+     * A BUY here is a resting limit order — "buy $500 of SOL at $95" — and it
+     * is the same machine watching the same price. The only difference is what
+     * the seam does at the bottom.
+     */
+    side?: "buy" | "sell";
+    /**
+     * The price the trigger is measured against.
+     *
+     * For an exit it is the ENTRY FILL. For a resting buy there is no entry
+     * yet, so it is the market price at arm time — which is all "at $95" needs:
+     * a reference to decide whether $95 is reached by falling or by rising.
+     */
     entryPrice?: number;
     expiresAt?: number;
   },
@@ -186,6 +201,7 @@ export function arm(
     version: RULE_VERSION,
     id: input.rule.id,
     market: input.market,
+    side: input.side ?? "sell",
     trigger: input.rule.trigger,
     amount: input.rule.amount,
     state: "unbound",

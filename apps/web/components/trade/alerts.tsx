@@ -36,7 +36,7 @@ function triggerLabel(rule: Rule): string {
     case "priceMultiple":
       return `at ${rule.trigger.value}x`;
     case "priceAbsolute":
-      return `at ${usd(rule.trigger.value)}`;
+      return `when ${marketOf(rule.market).base} reaches ${usd(rule.trigger.value)}`;
     case "drawdownFromEntry":
       return `if it falls ${rule.trigger.percent}% from entry`;
     case "trailingStop":
@@ -86,7 +86,7 @@ export function AlertsList() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate font-sans text-[12px] font-bold text-champagne">
-                      Sell {amountLabel(rule.amount, base)}
+                      {rule.side === "buy" ? "Buy" : "Sell"} {amountLabel(rule.amount, base)}
                     </div>
                     <div className="font-sans text-[10.5px] leading-tight text-ash">
                       {triggerLabel(rule)}
@@ -144,7 +144,15 @@ export function AlertsList() {
                     }`}
                   >
                     {rule && base
-                      ? `${t.to === "filled" ? "Sold" : t.to === "expired" ? "Expired" : "Failed"} ${amountLabel(rule.amount, base)}`
+                      ? `${
+                          t.to === "filled"
+                            ? rule.side === "buy"
+                              ? "Bought"
+                              : "Sold"
+                            : t.to === "expired"
+                              ? "Expired"
+                              : "Failed"
+                        } ${amountLabel(rule.amount, base)}`
                       : t.reason}
                   </span>
                   <span className="shrink-0 font-mono text-[9.5px] text-mute">

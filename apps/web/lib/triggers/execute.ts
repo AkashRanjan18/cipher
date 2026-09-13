@@ -67,15 +67,13 @@ export function fireRule(
   },
 ): Outcome {
   /*
-   * EXITS ARE SELLS.
+   * THE RULE SAYS WHICH WAY.
    *
-   * cipher is spot-long-only: every rule in the system today is an exit from a
-   * position the user holds. Shorting arrives with perps, on a venue that
-   * holds its own trigger orders and does not come through here at all — so
-   * deriving the side rather than storing it costs nothing now and cannot be
-   * silently wrong later.
+   * This was hardcoded to "sell" on the reasoning that every rule is an exit.
+   * A resting limit BUY — "buy $500 of SOL at $95" — is the same machine
+   * watching the same price, and a hardcoded side would have sold into it.
    */
-  const side = "sell" as const;
+  const side = rule.side;
 
   /*
    * SIZE IS RESOLVED NOW, NOT AT ARM TIME.
@@ -94,19 +92,22 @@ export function fireRule(
     return { kind: "failed", reason: "could not resolve the size" };
   }
 
-  if (account.sol <= 0) {
+  if (side === "sell" && account.sol <= 0) {
     return { kind: "moot", reason: "the position is already closed" };
   }
 
   /*
-   * Clamp rather than refuse.
+   * Clamp rather than refuse — on a SELL only.
    *
    * A ladder is a set of percentages of a position that is shrinking as the
    * ladder fills, and rounding across three rungs can ask for a fraction more
    * than is held. Refusing the last rung over a rounding error would leave a
    * user holding dust and an alert saying their take-profit failed.
+   *
+   * A buy is not clamped to the position — it is bounded by cash, which the
+   * ledger checks itself and reports as a refusal worth retrying.
    */
-  const size = Math.min(qty, account.sol);
+  const size = side === "sell" ? Math.min(qty, account.sol) : qty;
 
   if (size * ctx.mark < DUST_USD) {
     return { kind: "moot", reason: "what is left is smaller than the fee to sell it" };
@@ -148,7 +149,7 @@ function squawkFor(rule: Rule): string {
     case "priceMultiple":
       return `take profit at ${rule.trigger.value}x`;
     case "priceAbsolute":
-      return `limit at $${rule.trigger.value}`;
+      return `${rule.side === "buy" ? "limit buy" : "limit sell"} at $${rule.trigger.value}`;
     case "drawdownFromEntry":
       return `stop at -${rule.trigger.percent}%`;
     case "trailingStop":

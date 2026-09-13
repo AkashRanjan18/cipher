@@ -55,6 +55,22 @@ export interface ExitRule {
 
 export interface Entry {
   side: "buy" | "sell";
+  /**
+   * A resting entry. Null means fill now.
+   *
+   * "Buy $500 of SOL at $95" is not a market order with a note attached — it
+   * is an order that does not exist until the price arrives. On an AMM there
+   * is no book to rest it in, so "limit" means the trigger engine watches and
+   * fires a market swap when it crosses; what makes it a real limit order
+   * rather than a delayed market order is the swap's minimumOutAmount, set
+   * FROM THIS PRICE rather than from a slippage percentage. It fills at-or-
+   * better or it reverts, and the only failure mode left is "no fill" — which
+   * is exactly what a CEX limit does when price never reaches you.
+   *
+   * Only price triggers make sense here. A time-triggered entry is a scheduled
+   * buy, which is a different product decision and is not one cipher has made.
+   */
+  trigger: Trigger | null;
   /** Whatever the user said — "bonk". Resolved to a mint before arming. */
   token: string;
   /** Set once the token is resolved; null means unresolved. */

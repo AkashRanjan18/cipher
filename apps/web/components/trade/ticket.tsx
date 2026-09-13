@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePaperAccount } from "@/lib/account/store";
+import { useTriggers } from "@/lib/triggers/store";
 import {
   quote,
   fillPrice,
@@ -71,6 +72,7 @@ const SLIPPAGE_PRESETS = [50, 100, 300, 1000];
 export function Ticket({
   price,
   solPrice,
+  symbol,
   market = "SOL",
   depthUsd = null,
 }: {
@@ -84,12 +86,15 @@ export function Ticket({
    * account panel reading +75,295%.
    */
   solPrice?: number;
+  /** The market's id, e.g. "SOLUSDT" — what a resting order watches. */
+  symbol: string;
   /** The market the chart is showing. See tradable below. */
   market?: string;
   /** Resting book depth, for pricing this order's impact. Null when unknown. */
   depthUsd?: number | null;
 }) {
   const { account, hydrated, trade } = usePaperAccount();
+  const { armEntry } = useTriggers();
   const [side, setSide] = useState<Side>("buy");
   const [orderType, setOrderType] = useState<OrderType>("market");
   /* Defaults come from packages/shared, not from a literal here, so the ticket
@@ -157,12 +162,16 @@ export function Ticket({
   /* Only block on a refusal once the real balance is known. Before hydration
      the account is the opening default, and refusing against it would be a
      refusal about the wrong account. */
-  const restingRefusal =
-    limiting && limitPrice > 0 && !marketable
-      ? `That would rest ${Math.abs(limitGapPct ?? 0).toFixed(2)}% ${buying ? "below" : "above"} the market, and nothing is watching the price yet. Move it through the market to fill now, or use Market.`
-      : null;
+  /*
+   * A resting limit used to be a refusal. Now it is the point.
+   *
+   * The message said "nothing is watching the price yet", which was true and
+   * is not any more — the engine holds it and fires on the crossing. The
+   * refusal is gone and the button changes what it does instead.
+   */
+  const resting = limiting && limitPrice > 0 && !marketable;
 
-  const blocked = hydrated ? (restingRefusal ?? q?.refusal ?? null) : null;
+  const blocked = hydrated ? (resting ? null : (q?.refusal ?? null)) : null;
 
   /** What you can spend on a buy, what the position is worth on a sell. */
   const available =
@@ -204,6 +213,35 @@ export function Ticket({
 
   function submit() {
     if (!price) return;
+
+    /*
+     * A limit on the wrong side of the market does not trade — it waits.
+     *
+     * Same machine the prompt bar arms, same state, same alerts row. A ticket
+     * and a sentence must never be two different order systems that happen to
+     * agree; they are one system with two front doors.
+     */
+    if (resting) {
+      armEntry({
+        rule: {
+          id: `t${Date.now()}`,
+          trigger: { kind: "priceAbsolute", value: limitPrice },
+          amount: buying
+            ? { kind: "usd", value }
+            : { kind: "tokens", value: qty },
+        },
+        market: symbol,
+        referencePrice: price,
+      });
+      setSellAll(false);
+      setAmount("");
+      setReceipt({
+        ok: true,
+        text: `Resting. I'll ${side} when ${market} reaches ${usd(limitPrice)}.`,
+      });
+      return;
+    }
+
     const before = account.usdc;
     const cash = q?.cashUsd ?? 0;
     const r = trade({ side, qty, mark: price, source: "ticket" });
@@ -486,7 +524,9 @@ export function Ticket({
       >
         {!tradable
           ? `${market} is chart-only`
-          : `${buying ? "Buy" : "Sell"} SOL${limiting && marketable && limitPrice > 0 ? " at limit" : ""}`}
+          : resting
+            ? `Rest ${buying ? "buy" : "sell"} at ${usd(limitPrice)}`
+            : `${buying ? "Buy" : "Sell"} SOL${limiting && marketable && limitPrice > 0 ? " at limit" : ""}`}
       </button>
 
       {/* The refusal shows even while the button is disabled — a dead button

@@ -117,7 +117,7 @@ test("each trigger kind reads back as the instruction the user gave", () => {
   assert.equal(squawk({ kind: "priceMultiple", value: 3 }), "take profit at 3x");
   assert.equal(squawk({ kind: "drawdownFromEntry", percent: 50 }), "stop at -50%");
   assert.equal(squawk({ kind: "trailingStop", percent: 20 }), "trailing stop, 20% off the high");
-  assert.equal(squawk({ kind: "priceAbsolute", value: 250 }), "limit at $250");
+  assert.equal(squawk({ kind: "priceAbsolute", value: 250 }), "limit sell at $250");
   assert.equal(squawk({ kind: "duration", seconds: 60 }), "timed exit");
 });
 

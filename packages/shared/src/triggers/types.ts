@@ -57,6 +57,15 @@ export interface Rule {
   id: string;
   /** Which market's price this watches, e.g. "SOLUSDT". */
   market: string;
+  /**
+   * What it does when it fires.
+   *
+   * Was derived rather than stored, on the reasoning that every rule is an
+   * exit. That stopped being true the moment "buy SOL at $95" had to work — a
+   * resting BUY is the same machine watching the same price, and deriving the
+   * side from "rules are exits" would have made a limit buy sell instead.
+   */
+  side: "buy" | "sell";
   trigger: Trigger;
   amount: Amount;
   state: RuleState;

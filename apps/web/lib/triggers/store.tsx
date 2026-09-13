@@ -26,6 +26,7 @@ import {
   type Transition,
 } from "@cipher/shared";
 import { usePaperAccount } from "../account/store";
+import { allInPrice } from "../account/paper";
 import { fireRule } from "./execute";
 
 /**
@@ -83,6 +84,16 @@ interface Ctx {
    * with the fill price.
    */
   armExits(input: { rules: ExitRule[]; market: string; entryPrice?: number }): void;
+  /**
+   * Start watching for a price to BUY at. A resting limit order.
+   *
+   * Separate from armExits because the reference price means something
+   * different: an exit measures from what you paid, and there is nothing paid
+   * yet here, so a resting buy measures from the market price at arm time —
+   * which is all "at $95" needs, a reference to know whether $95 arrives by
+   * falling or by rising.
+   */
+  armEntry(input: { rule: ExitRule; market: string; referencePrice: number }): void;
   /** An entry filled: bind every unbound rule on that market to its fill price. */
   bindEntry(market: string, entryPrice: number): void;
   cancelRule(id: string): void;
@@ -170,6 +181,20 @@ export function TriggerProvider({
 
         if (outcome.kind === "filled") {
           log.push(...onResult(next, rule.id, { ok: true }, at).transitions);
+          /*
+           * A resting BUY that just filled is an entry, and exits armed
+           * alongside it have been sitting unbound waiting for exactly this
+           * price. "Buy at $95, sell half at 2x" means 2x of what the buy
+           * actually cost — not of $95, and not of whatever the market was
+           * when the sentence was typed.
+           */
+          if (rule.side === "buy") {
+            const paid = allInPrice(outcome.fill);
+            for (const r of Object.values(next.rules)) {
+              if (r.market !== rule.market || r.state !== "unbound") continue;
+              log.push(...bind(next, r.id, paid, at).transitions);
+            }
+          }
         } else if (outcome.kind === "moot") {
           /*
            * NOT A FAILURE. The position is gone, or what is left is dust. A
@@ -267,6 +292,23 @@ export function TriggerProvider({
     });
   }, []);
 
+  const armEntry = useCallback<Ctx["armEntry"]>(({ rule, market: m, referencePrice }) => {
+    setState((prev) => {
+      const engine = prev.engine;
+      const step = arm(engine, {
+        rule,
+        market: m,
+        at: Date.now(),
+        side: "buy",
+        entryPrice: referencePrice,
+      });
+      return {
+        engine: { ...engine },
+        transitions: [...prev.transitions, ...step.transitions].slice(-MAX_TRANSITIONS),
+      };
+    });
+  }, []);
+
   const bindEntry = useCallback<Ctx["bindEntry"]>((m, entryPrice) => {
     setState((prev) => {
       const engine = prev.engine;
@@ -306,12 +348,13 @@ export function TriggerProvider({
       transitions: state.transitions,
       hydrated,
       armExits,
+      armEntry,
       bindEntry,
       cancelRule,
       thresholdOf: threshold,
       clearAll,
     }),
-    [state, hydrated, armExits, bindEntry, cancelRule, clearAll],
+    [state, hydrated, armExits, armEntry, bindEntry, cancelRule, clearAll],
   );
 
   return <TriggerContext.Provider value={value}>{children}</TriggerContext.Provider>;
