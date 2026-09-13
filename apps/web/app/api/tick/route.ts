@@ -17,7 +17,8 @@ import {
   setState,
   watchedMarkets,
 } from "@/lib/db/rules";
-import { fetchMajors } from "@/lib/market/markets";
+import { fetchPrices, isStale, newestBlock } from "@/lib/chain/prices";
+import { recordPrices } from "@/lib/db/prices";
 import type { Rule, Transition } from "@cipher/shared";
 
 /**
@@ -86,18 +87,62 @@ async function run(request: Request) {
     const markets = await watchedMarkets();
 
     /*
-     * One price fetch for everyone.
+     * PRICES COME FROM SOLANA, not from an exchange.
      *
-     * Not one per user and not one per rule. Ten thousand armed rules on SOL
-     * are one request; the whole reason the index is keyed on market is that
-     * price is a property of the market, not of the person watching it.
+     * This read Binance until now, which meant a rule fired on the price of
+     * SOL/USDT in a centralised order book and would have executed against a
+     * Raydium pool — two different markets, with a basis between them that is
+     * invisible to the user and unbounded during a move. For any memecoin
+     * there is no Binance price at all.
+     *
+     * A trigger must watch the venue it trades on. Jupiter derives these from
+     * the same routes a swap would take, so the number compared against a
+     * threshold is the number the trade would get.
+     *
+     * One fetch for everyone. Ten thousand armed rules across eleven markets
+     * are eleven prices — price is a property of the market, not of the person
+     * watching it, which is the whole reason the index is keyed on market.
      */
-    const majors = markets.length > 0 ? await fetchMajors() : [];
-    const priceOf = new Map(majors.map((m) => [m.id, m.priceUsd]));
+    const priced = markets.length > 0 ? await fetchPrices(markets) : new Map();
+    const priceOf = new Map([...priced].map(([mint, p]) => [mint, p.usd]));
+    const head = newestBlock(priced);
+
+    /* Best-effort: a price that cannot be written is still a price to act on,
+       and a dead database must not stop a stop from firing. */
+    if (priced.size > 0) {
+      void recordPrices([...priced.values()]).catch((e) =>
+        console.error("[cipher] price snapshot failed:", e),
+      );
+    }
+
+    const skipped: string[] = [];
 
     for (const market of markets) {
       const price = priceOf.get(market);
-      if (price === undefined) continue;
+      if (price === undefined) {
+        /*
+         * No price means DO NOTHING, loudly.
+         *
+         * A market with armed rules and no price is a market nobody is
+         * watching, and the silent version of that is the worst failure this
+         * file can have — a stop that never fires because its price was never
+         * fetched reports nothing at all.
+         */
+        skipped.push(market);
+        continue;
+      }
+
+      /*
+       * A STALE FEED IS NOT A FLAT MARKET, and acting on one is acting blind.
+       * The block id is what separates them: the chain advanced, this price
+       * did not. Refusing to fire on it is the conservative direction — a
+       * missed fire is recoverable, a fire on a phantom price is not.
+       */
+      const p = priced.get(market);
+      if (p && isStale(p, head)) {
+        skipped.push(market);
+        continue;
+      }
 
       /*
        * Highs before crossings, as in the in-memory engine.
@@ -127,7 +172,7 @@ async function run(request: Request) {
     for (const { rule, userId } of await due(now)) {
       if (fired.length >= MAX_FIRES) break;
       const price = priceOf.get(rule.market) ?? (await priceFor(rule.market));
-      if (price === null) continue;
+      if (price === null || price === undefined) continue;
       const done = await fire(rule, userId, price, now);
       if (done) fired.push(rule.id);
     }
@@ -154,8 +199,23 @@ async function run(request: Request) {
       expired.push(rule.id);
     }
 
-    await beat(`${markets.length} markets, ${fired.length} fired`);
-    return NextResponse.json({ ok: true, markets: markets.length, fired, expired, errors });
+    /*
+     * The heartbeat carries what was SKIPPED, because that is the number that
+     * explains a rule which should have fired and did not.
+     */
+    await beat(
+      `${markets.length} markets, ${fired.length} fired` +
+        (skipped.length ? `, ${skipped.length} skipped (no price or stale)` : ""),
+    );
+    return NextResponse.json({
+      ok: true,
+      markets: markets.length,
+      blockId: head,
+      fired,
+      expired,
+      skipped,
+      errors,
+    });
   } catch (e) {
     console.error("[cipher] tick failed:", e);
     return NextResponse.json({ error: "tick failed" }, { status: 500 });
@@ -163,8 +223,8 @@ async function run(request: Request) {
 }
 
 async function priceFor(market: string): Promise<number | null> {
-  const majors = await fetchMajors();
-  return majors.find((m) => m.id === market)?.priceUsd ?? null;
+  const one = await fetchPrices([market]);
+  return one.get(market)?.usd ?? null;
 }
 
 /**

@@ -121,3 +121,52 @@ create table if not exists heartbeat (
   check (id = 1)
 );
 insert into heartbeat (id, beat_at) values (1, now()) on conflict (id) do nothing;
+
+-- ── Markets and prices ──────────────────────────────────────────────────────
+--
+-- The mint is the identity, not the symbol. Anyone can mint a token called BONK
+-- with the same logo for a couple of dollars; only the mint address is unique,
+-- and it is what the engine keys a rule on.
+
+create table if not exists markets (
+  mint      text primary key,
+  symbol    text not null,
+  name      text not null,
+  decimals  int  not null,
+  verified  boolean not null default false,
+  added_at  timestamptz not null default now()
+);
+
+-- The latest price per market. One row each, upserted.
+--
+-- block_id is the Solana slot the price was derived at, and it is not
+-- decoration: a price that is merely FLAT looks exactly like a feed that has
+-- died, and the slot is what separates them. It also orders concurrent writes —
+-- two workers can write the same mint in the same second with prices from
+-- different slots, and the older one must not win.
+create table if not exists market_prices (
+  mint          text primary key,
+  usd           numeric(30, 12) not null,
+  block_id      bigint not null,
+  liquidity_usd numeric(20, 2),
+  change_24h    numeric(12, 4),
+  at            bigint not null
+);
+
+-- Append-only price history, sampled into ten-second buckets.
+--
+-- Two jobs. It is the audit trail for the FEED — a fire at $71 is defensible
+-- if the feed was moving and indefensible if it had been stuck for ten minutes,
+-- and only this can tell them apart. And it is the raw material for candles on
+-- tokens no data vendor covers, which is every interesting one. The bucket is
+-- part of the key so repeated writes inside one bucket collapse to a single
+-- row rather than a row per user per second for a number identical across all
+-- of them.
+create table if not exists price_ticks (
+  mint     text not null,
+  bucket   bigint not null,
+  usd      numeric(30, 12) not null,
+  block_id bigint not null,
+  primary key (mint, bucket)
+);
+create index if not exists ticks_by_mint on price_ticks (mint, bucket desc);
