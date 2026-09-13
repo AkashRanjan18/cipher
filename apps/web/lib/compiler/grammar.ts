@@ -5,6 +5,7 @@ import {
   type ExitRule,
   type OrderSpec,
   type Trigger,
+  newId,
 } from "@cipher/shared";
 
 /**
@@ -23,8 +24,13 @@ import {
  * readback would look plausible.
  */
 
-let seq = 0;
-const nextId = () => `r${Date.now().toString(36)}${(seq++).toString(36)}`;
+/*
+ * A timestamp plus a per-page counter was not unique across USERS. Two people
+ * arming a rule in the same millisecond, both with the counter at zero after a
+ * page load, produced the same id — and in Postgres that id is a primary key
+ * across everybody, with `on conflict do nothing` behind it.
+ */
+const nextId = () => newId("r");
 
 /** "500", "1,500", "1.5k", "2m" → number */
 function parseNumber(raw: string): number | null {

@@ -12,7 +12,9 @@ import {
   allInPrice,
 } from "@/lib/account/paper";
 import { usd, pct } from "@/lib/format";
-import { DEFAULTS } from "@cipher/shared";
+import { DEFAULTS,
+  newId,
+} from "@cipher/shared";
 
 /**
  * The trade ticket. Buy, sell, position. Nothing else.
@@ -224,7 +226,7 @@ export function Ticket({
     if (resting) {
       armEntry({
         rule: {
-          id: `t${Date.now()}`,
+          id: newId("t"),
           trigger: { kind: "priceAbsolute", value: limitPrice },
           amount: buying
             ? { kind: "usd", value }

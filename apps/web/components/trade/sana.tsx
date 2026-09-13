@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { newId } from "@cipher/shared";
 import type { Compiled, CompileContext, Intent, Interval, OrderSpec } from "@cipher/shared";
 import { compile } from "@/lib/compiler/compile";
 import { compileWithModel } from "@/lib/compiler/model";
@@ -478,7 +479,7 @@ export function Sana({
        * at 2x" means 2x of ninety-five, and that is not knowable until the buy
        * fills. The runner binds them the moment it does.
        */
-      const entryId = `e${Date.now()}`;
+      const entryId = newId("e");
       armEntry({
         rule: { id: entryId, trigger: entry.trigger, amount: entry.amount },
         market: symbol,

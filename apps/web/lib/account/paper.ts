@@ -1,3 +1,4 @@
+import { newId } from "@cipher/shared";
 import type { Amount } from "@cipher/shared";
 
 /**
@@ -348,7 +349,14 @@ export function execute(
   }
 
   const fill: Fill = {
-    id: `f${input.ts.toString(36)}${a.fills.length.toString(36)}`,
+    /*
+     * NOT DERIVED FROM fills.length. The worker loads an account WITHOUT its
+     * fills to save a query, so that length is always 0 there — and two rungs
+     * of a ladder firing in the same second produced the same id twice. The
+     * database then dropped the second row while the balance had already
+     * moved: money gone with no record of why.
+     */
+    id: newId("f"),
     ts: input.ts,
     side: q.side,
     qty: q.qty,
