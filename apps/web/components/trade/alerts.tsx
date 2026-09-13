@@ -21,11 +21,13 @@ import type { Amount, Rule } from "@cipher/shared";
 function amountLabel(amount: Amount, base: string): string {
   switch (amount.kind) {
     case "usd":
-      return usd(amount.value);
+      return `${usd(amount.value)} of ${base}`;
     case "tokens":
       return `${amount.value} ${base}`;
     case "percentOfPosition":
-      return amount.value === 100 ? "all of it" : `${amount.value}% of the position`;
+      // "all of your SOL" / "50% of your SOL" — the label is completed by the
+      // caller with the market, so it must not name a position of its own.
+      return amount.value === 100 ? `all of your ${base}` : `${amount.value}% of your ${base}`;
   }
 }
 
@@ -47,7 +49,7 @@ function triggerLabel(rule: Rule): string {
 }
 
 export function AlertsList() {
-  const { armed, transitions, hydrated, cancelRule, thresholdOf } = useTriggers();
+  const { armed, rulesById, transitions, hydrated, cancelRule, thresholdOf } = useTriggers();
 
   if (!hydrated) {
     return <div className="p-4 font-sans text-[11.5px] text-mute">Reading your rules…</div>;
@@ -84,7 +86,7 @@ export function AlertsList() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate font-sans text-[12px] font-bold text-champagne">
-                      Sell {amountLabel(rule.amount, base)} of {base}
+                      Sell {amountLabel(rule.amount, base)}
                     </div>
                     <div className="font-sans text-[10.5px] leading-tight text-ash">
                       {triggerLabel(rule)}
@@ -120,23 +122,44 @@ export function AlertsList() {
       {history.length > 0 && (
         <>
           <Heading>History</Heading>
-          {history.map((t, i) => (
-            <div
-              key={`${t.ruleId}-${t.at}-${i}`}
-              className="flex items-baseline justify-between gap-2 border-b border-hairline px-2.5 py-1.5 last:border-0"
-            >
-              <span
-                className={`font-sans text-[11px] ${
-                  t.to === "filled" ? "text-up" : t.to === "failed" ? "text-down" : "text-ash"
-                }`}
+          {history.map((t, i) => {
+            /*
+             * The rule, not just the transition.
+             *
+             * A transition on its own reads "executed", which is true and
+             * useless. The line has to name the instruction the user gave, or
+             * this panel cannot answer the only question it exists for.
+             */
+            const rule = rulesById[t.ruleId];
+            const base = rule ? marketOf(rule.market).base : null;
+            return (
+              <div
+                key={`${t.ruleId}-${t.at}-${i}`}
+                className="border-b border-hairline px-2.5 py-1.5 last:border-0"
               >
-                {t.reason}
-              </span>
-              <span className="shrink-0 font-mono text-[9.5px] text-mute">
-                {new Date(t.at).toLocaleTimeString()}
-              </span>
-            </div>
-          ))}
+                <div className="flex items-baseline justify-between gap-2">
+                  <span
+                    className={`min-w-0 truncate font-sans text-[11.5px] ${
+                      t.to === "filled" ? "text-up" : t.to === "failed" ? "text-down" : "text-ash"
+                    }`}
+                  >
+                    {rule && base
+                      ? `${t.to === "filled" ? "Sold" : t.to === "expired" ? "Expired" : "Failed"} ${amountLabel(rule.amount, base)}`
+                      : t.reason}
+                  </span>
+                  <span className="shrink-0 font-mono text-[9.5px] text-mute">
+                    {new Date(t.at).toLocaleTimeString()}
+                  </span>
+                </div>
+                {rule && (
+                  <div className="font-sans text-[10px] leading-tight text-mute">
+                    {triggerLabel(rule)}
+                    {t.price !== undefined && ` · filled at ${usd(t.price)}`}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </>
       )}
     </div>

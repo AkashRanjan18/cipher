@@ -64,6 +64,14 @@ interface Stored {
 interface Ctx {
   /** Rules currently watching. */
   armed: Rule[];
+  /**
+   * Every rule the engine has ever held, by id — including the finished ones.
+   *
+   * The history list needs them. A transition says "filled"; only the rule it
+   * belongs to can say WHAT filled, and "why did you sell my SOL" is the
+   * question this panel exists to answer.
+   */
+  rulesById: Record<string, Rule>;
   /** Every state change, newest last. The audit trail. */
   transitions: Transition[];
   hydrated: boolean;
@@ -294,6 +302,7 @@ export function TriggerProvider({
   const value = useMemo<Ctx>(
     () => ({
       armed: armedRules(state.engine),
+      rulesById: state.engine.rules,
       transitions: state.transitions,
       hydrated,
       armExits,
