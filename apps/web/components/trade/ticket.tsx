@@ -70,10 +70,20 @@ const SLIPPAGE_PRESETS = [50, 100, 300, 1000];
 
 export function Ticket({
   price,
+  solPrice,
   market = "SOL",
   depthUsd = null,
 }: {
   price: number | undefined;
+  /**
+   * SOL's own price, whatever market is open.
+   *
+   * `price` is the CHART's price and is what an order is filled at; this is
+   * what the POSITION is worth. They are the same number only while SOL is
+   * open, and using one for the other valued four SOL at BTC's price — an
+   * account panel reading +75,295%.
+   */
+  solPrice?: number;
   /** The market the chart is showing. See tradable below. */
   market?: string;
   /** Resting book depth, for pricing this order's impact. Null when unknown. */
@@ -497,7 +507,7 @@ export function Ticket({
         </p>
       )}
 
-      <Position price={price} />
+      <Position price={solPrice ?? price} />
     </div>
   );
 }
@@ -510,6 +520,8 @@ export function Ticket({
  * that matters and is not quite the price on the chart when you bought.
  */
 function Position({ price }: { price: number | undefined }) {
+  /* `price` here is SOL's price, not the chart's — see the Ticket prop. The
+     position is SOL whatever market is open. */
   const { account, hydrated } = usePaperAccount();
   const { sol, costBasis, usdc, realisedUsd } = account;
 

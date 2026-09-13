@@ -208,6 +208,25 @@ function TerminalBody({
     [majors],
   );
 
+  /*
+   * THE POSITION IS SOL, WHATEVER MARKET IS OPEN.
+   *
+   * The account panel and the header bag were marked at `last` — the price of
+   * whatever chart you happen to be looking at. Open BTC while holding SOL and
+   * the same four SOL were valued at $77,000 each: the bag read $312,708 and
+   * open P&L read +75,295%. Nothing was wrong with the ledger; the number
+   * shown against it was simply another market's price.
+   *
+   * A screen that tells someone they are up seventy-five thousand percent is
+   * the worst kind of false — it is specific, confident, and in the direction
+   * people want to believe. Marking uses SOL's own price, from the poll,
+   * falling back to the live tick only when SOL is the open market.
+   *
+   * cipher: the paper ledger holds one asset. When it holds many, this becomes
+   * a price-by-mint lookup and the fallback disappears.
+   */
+  const solPrice = prices["SOLUSDT"] ?? (symbol === "SOLUSDT" ? last : undefined);
+
   /* Cap for the open market, from the same supply table the list uses — so
      the header and the row a click arrived from cannot disagree. */
   const marketCap = last ? last * market.supply : null;
@@ -287,7 +306,7 @@ function TerminalBody({
           Paper money
         </span>
 
-        <Bag price={last} />
+        <Bag price={solPrice} />
 
         {/* Was a hardcoded "AR" — a placeholder indistinguishable from a
             working account menu, which is the worst kind. */}
@@ -564,7 +583,7 @@ function TerminalBody({
           */}
         {/* No scroller of its own any more — it moves with the region. */}
         <aside className="flex flex-col [&>*]:shrink-0">
-          <Ticket price={last} market={market.base} depthUsd={depth} />
+          <Ticket price={last} solPrice={solPrice} market={market.base} depthUsd={depth} />
           <Flow candles={candles} last={last} />
         </aside>
           </div>
