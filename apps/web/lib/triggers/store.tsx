@@ -108,7 +108,21 @@ interface Ctx {
    * which is all "at $95" needs, a reference to know whether $95 arrives by
    * falling or by rising.
    */
-  armEntry(input: { rule: ExitRule; market: string; referencePrice: number }): void;
+  armEntry(input: {
+    rule: ExitRule;
+    market: string;
+    referencePrice: number;
+    /**
+     * Which way it trades when it fires. NO DEFAULT, on purpose.
+     *
+     * This was hardcoded to "buy", so "sell 2 SOL at $120" armed a BUY at $120
+     * and the ticket's Limit tab did the same with Sell selected. A resting
+     * order that trades the opposite direction from the one asked for is the
+     * worst bug this file could carry, and a default is exactly how it got
+     * there — the caller always knows the side, so it has to say it.
+     */
+    side: "buy" | "sell";
+  }): void;
   /** An entry filled: bind every unbound rule on that market to its fill price. */
   bindEntry(market: string, entryPrice: number): void;
   cancelRule(id: string): void;
@@ -315,14 +329,14 @@ export function TriggerProvider({
     });
   }, []);
 
-  const armEntry = useCallback<Ctx["armEntry"]>(({ rule, market: m, referencePrice }) => {
+  const armEntry = useCallback<Ctx["armEntry"]>(({ rule, market: m, referencePrice, side }) => {
     setState((prev) => {
       const engine = prev.engine;
       const step = arm(engine, {
         rule,
         market: m,
         at: Date.now(),
-        side: "buy",
+        side,
         entryPrice: referencePrice,
       });
       return {

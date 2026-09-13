@@ -232,6 +232,7 @@ export function Ticket({
         },
         market: symbol,
         referencePrice: price,
+        side,
       });
       setSellAll(false);
       setAmount("");

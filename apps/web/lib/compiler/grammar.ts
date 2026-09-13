@@ -205,6 +205,29 @@ export function parseWithGrammar(input: string): OrderSpec | null {
   }
 
   /*
+   * TAKE PROFIT AT A PRICE — "sell half at $200", "take profit at $250"
+   *
+   * The multiple form above only matches "at 2x". A trader who knows the
+   * number they want is more likely to say it than to do the division, and
+   * the Trigger union has had priceAbsolute in it the whole time — the
+   * grammar simply had no way to produce one for an exit.
+   *
+   * A DOLLAR SIGN IS REQUIRED. "sell half at 200" with no marker is the same
+   * ambiguity as "buy 500 solana": two hundred dollars or two hundred percent
+   * or a multiple. Requiring the marker means this only fires when the user
+   * was explicit, and the bare form falls through to the router's clarify.
+   */
+  for (const m of text.matchAll(
+    /\b(?:sell|take profit(?:\s+on)?)\s+(?:(a third|a half|half|third|quarter|a quarter|all|everything|the rest|rest|[\d.]+\s*%)\s+)?(?:at|@)\s*\$\s*([\d.,]+)\b/g,
+  )) {
+    const at = Number(m[2].replace(/,/g, ""));
+    if (!(at > 0)) continue;
+    const amount = m[1] ? parseAmount(m[1]) : { kind: "percentOfPosition" as const, value: 100 };
+    if (!amount) continue;
+    exits.push({ id: nextId(), trigger: { kind: "priceAbsolute", value: at }, amount });
+  }
+
+  /*
    * STOP — "stop the rest at -50%", "stop at -50%", "stop loss on SOL at 10%"
    * The sign is ignored: "stop at 50%" and "stop at -50%" mean the same thing,
    * and nobody has ever meant a stop 50% above their entry.

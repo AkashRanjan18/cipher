@@ -153,3 +153,53 @@ test("a ladder and a stop in one sentence still produce exactly two exits", () =
   assert.ok(spec);
   assert.equal(spec.exits.length, 2);
 });
+
+/* ───────────────────── limit orders, both directions ──────────────────── */
+
+test("a price on an entry makes it rest instead of filling", () => {
+  const spec = parseWithGrammar("buy $500 of solana at $95");
+  assert.ok(spec);
+  assert.deepEqual(spec.entry?.trigger, { kind: "priceAbsolute", value: 95 });
+});
+
+test("a limit SELL stays a sell", () => {
+  const spec = parseWithGrammar("sell 2 sol at $120");
+  assert.ok(spec);
+  // armEntry hardcoded side: "buy", so this armed a BUY at $120 — you ask to
+  // sell and it buys. The worst shape a resting order can have.
+  assert.equal(spec.entry?.side, "sell");
+  assert.deepEqual(spec.entry?.trigger, { kind: "priceAbsolute", value: 120 });
+});
+
+test("a plain market order still has no trigger", () => {
+  assert.equal(parseWithGrammar("buy $500 of solana")?.entry?.trigger, null);
+});
+
+test("'at 2x' and 'at 50%' are never read as prices", () => {
+  // Both would otherwise land here as $2 and $50.
+  assert.equal(parseWithGrammar("buy $500 of sol, sell half at 2x")?.entry?.trigger, null);
+  assert.equal(parseWithGrammar("buy $500 of sol, stop at -50%")?.entry?.trigger, null);
+});
+
+test("an exit can name a price, not just a multiple", () => {
+  const spec = parseWithGrammar("sell half at $200");
+  assert.ok(spec);
+  assert.deepEqual(spec.exits[0].trigger, { kind: "priceAbsolute", value: 200 });
+  assert.deepEqual(spec.exits[0].amount, { kind: "percentOfPosition", value: 50 });
+});
+
+test("a resting entry and a priced exit in one sentence stay separate", () => {
+  const spec = parseWithGrammar("buy $500 of sol at $95, sell half at $200");
+  assert.ok(spec);
+  // The FIRST price belongs to the entry, the second to the exit. Reading
+  // them the other way round buys at $200 and sells at $95.
+  assert.deepEqual(spec.entry?.trigger, { kind: "priceAbsolute", value: 95 });
+  assert.deepEqual(spec.exits[0].trigger, { kind: "priceAbsolute", value: 200 });
+});
+
+test("a bare number after 'at' on an exit is not guessed at", () => {
+  // "sell half at 200" — dollars, percent, or a multiple? The dollar sign is
+  // required, and the bare form falls through to the router's clarify.
+  const spec = parseWithGrammar("sell half at 200");
+  assert.equal(spec?.exits.length ?? 0, 0);
+});

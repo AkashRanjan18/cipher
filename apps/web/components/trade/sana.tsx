@@ -475,6 +475,7 @@ export function Sana({
         rule: { id: entryId, trigger: entry.trigger, amount: entry.amount },
         market: symbol,
         referencePrice: price,
+        side: entry.side,
       });
       /* parentId, so THIS entry's fill binds these exits and no other's. */
       if (spec.exits.length > 0) {
