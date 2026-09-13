@@ -77,6 +77,8 @@ function TerminalBody({
   const dragging = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  /* Bumped to reframe the chart from outside it — see PriceChart.resetSignal. */
+  const [chartReset, setChartReset] = useState(0);
   /*
    * Sana, folded.
    *
@@ -407,6 +409,7 @@ function TerminalBody({
             */}
           <div data-wheel-lock className="h-[55vh] min-h-[320px]">
             <PriceChart
+                resetSignal={chartReset}
               candles={candles}
               livePrice={live}
               barSeconds={intervalSeconds(interval)}
@@ -492,6 +495,23 @@ function TerminalBody({
               price={last}
               market={market.base}
               symbol={symbol}
+              interval={interval}
+              majors={majors}
+              /* The terminal owns the market, the interval and the layout, so
+                 Sana asks rather than sets — a component cannot change its
+                 parent's state, and "show me BTC on the daily" has to work. */
+              onNavigate={(to) => {
+                if (to.symbol) setSymbol(to.symbol);
+                if (to.interval) setInterval(to.interval);
+                if (to.panel) setPanelOpen(true);
+              }}
+              onUi={(action) => {
+                if (action === "collapsePanel") setPanelOpen(false);
+                else if (action === "expandPanel") setPanelOpen(true);
+                else if (action === "splitBottom") setSplit("bottom");
+                else if (action === "splitRight") setSplit("right");
+                else if (action === "resetChart") setChartReset((n) => n + 1);
+              }}
               depthUsd={depth}
               onCollapse={() => setSanaFolded(true)}
             />

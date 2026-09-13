@@ -106,6 +106,15 @@ export interface Major {
   priceUsd: number;
   change24h: number;
   marketCap: number | null;
+  /**
+   * 24h traded volume, in dollars.
+   *
+   * The ticker response carried this all along and the mapper dropped it —
+   * which is why "which token is most traded" had no answer to give. Quote
+   * volume, not base: the raw figure on a pair is in the base asset, and
+   * printing SOL counts with a dollar sign is how a market reads as 69 cents.
+   */
+  volume24hUsd: number;
 }
 
 /* Interval moved to packages/shared — the Intent union needs it, and shared

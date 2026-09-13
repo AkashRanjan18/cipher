@@ -126,6 +126,7 @@ export async function fetchMajors(): Promise<Major[]> {
         priceUsd,
         change24h: +t.priceChangePercent,
         marketCap: priceUsd * m.supply,
+        volume24hUsd: +t.quoteVolume,
       },
     ];
   });

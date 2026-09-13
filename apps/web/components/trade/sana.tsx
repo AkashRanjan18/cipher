@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { OrderSpec } from "@cipher/shared";
-import { parseWithGrammar } from "@/lib/compiler/grammar";
-import { resolveMarket } from "@/lib/market";
+import type { Intent, Interval, OrderSpec } from "@cipher/shared";
+import { compile } from "@/lib/compiler/compile";
+import { resolveMarket, marketOf, type Major } from "@/lib/market";
 import { validateOrder, blocks } from "@/lib/compiler/validate";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
 import { usePaperAccount } from "@/lib/account/store";
@@ -11,7 +11,8 @@ import { useTriggers } from "@/lib/triggers/store";
 import { useSpeech } from "@/lib/voice/use-speech";
 import { normaliseSpeech } from "@/lib/voice/normalise";
 import { resolveQty, allInPrice } from "@/lib/account/paper";
-import { usd } from "@/lib/format";
+import { usd, compactUsd, pct } from "@/lib/format";
+import { equity, unrealised } from "@/lib/account/paper";
 
 /**
  * Sana — the conversational bar along the bottom.
@@ -37,6 +38,13 @@ interface Turn {
   spec?: OrderSpec;
   /** Non-blocking notes from the validator. Shown on the card, never hidden. */
   warnings?: string[];
+  /**
+   * An ambiguity, with the sentence rewritten each way.
+   *
+   * Picking one re-runs the whole compiler on that sentence rather than
+   * patching a half-parsed spec — see ClarifyIntent for why that matters.
+   */
+  choices?: { label: string; sentence: string }[];
   /** Set once the user has answered the card, so it stops asking. */
   resolved?: string;
 }
@@ -56,7 +64,11 @@ export function Sana({
   price,
   market = "SOL",
   symbol,
+  interval,
+  majors,
   depthUsd = null,
+  onNavigate,
+  onUi,
   onCollapse,
 }: {
   price: number | undefined;
@@ -70,8 +82,22 @@ export function Sana({
    * the engine has never heard of.
    */
   symbol: string;
+  /** The interval on screen, so "zoom out" has a reference point. */
+  interval: Interval;
+  /** Every market's live numbers, so a screening question can be answered. */
+  majors: Major[];
   /** Book depth, so a sentence's fill is priced the same way the ticket's is. */
   depthUsd?: number | null;
+  /**
+   * Change what the terminal is looking at.
+   *
+   * Sana cannot do this itself — the market, the interval and the panel are
+   * the terminal's state, and a component cannot set its parent's. Passing
+   * the callbacks down is what makes "show me BTC on the daily" a sentence
+   * that works rather than a sentence that gets a polite refusal.
+   */
+  onNavigate?: (to: { symbol?: string; interval?: Interval; panel?: string }) => void;
+  onUi?: (action: string) => void;
   /**
    * Fold the bar away.
    *
@@ -82,7 +108,9 @@ export function Sana({
   onCollapse?: () => void;
 }) {
   const { account, trade } = usePaperAccount();
-  const { armExits } = useTriggers();
+  const { armExits, armed, cancelRule } = useTriggers();
+  /* The prop is named `price`; aliased so the answer helpers read plainly. */
+  const livePrice = price;
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
@@ -151,7 +179,7 @@ export function Sana({
      */
     setTurns((prev) =>
       prev.map((t) =>
-        t.spec && !t.resolved
+        (t.spec || t.choices) && !t.resolved
           ? { ...t, resolved: "Superseded — you asked for something else." }
           : t,
       ),
@@ -195,30 +223,81 @@ export function Sana({
     }
 
     /*
-     * Everything else goes to the grammar. It handles the sentences people
-     * actually type, in under 10ms with no network and no chance of a misread.
-     * When it returns null the model would take over — that route is not
-     * built yet, so Sana says so rather than pretending.
-     */
-    /*
-     * normaliseSpeech runs on TYPED input too, not just dictation.
+     * EVERYTHING ELSE GOES TO THE ROUTER, and the router always answers.
      *
-     * The grammar wants "$500" and "50%", and a person in a hurry types "500
-     * dollars" and "50 percent" — which failed before for no reason a user
-     * could see. The transform is form-only and provably lossless on text
-     * that is already written correctly, which lib/voice has a test for.
+     * Sana used to call the order grammar directly, which meant the prompt bar
+     * could do exactly one thing — place trades — and every other sentence a
+     * person might reasonably type came back as "I didn't understand". The
+     * router returns a closed Intent instead, so a question, a screen, a
+     * navigation and a refusal are all first-class here rather than failures
+     * of the order parser.
+     *
+     * The switch has no default branch on purpose. Adding a capability to the
+     * union stops this file compiling until it is handled, which is the point
+     * of the union existing at all.
      */
-    const spec = parseWithGrammar(normaliseSpeech(text.replace(/^\/(buy|sell)\s*/i, "$1 ")));
+    const compiled = compile(text.replace(/^\/(buy|sell)\s*/i, "$1 "), {
+      symbol,
+      interval,
+      hasPosition: account.sol > 0,
+    });
 
-    if (!spec) {
-      push({
-        mine: false,
-        text:
-          "I didn't fully understand that, so I'm not going to guess. Try naming the amount and the token — " +
-          "\"buy $250 of SOL\" — and add the exits after it if you want them.",
-      });
-      return;
+    const intent = compiled.intent;
+
+    switch (intent.kind) {
+      case "refusal":
+        push({ mine: false, text: intent.message });
+        return;
+
+      case "clarify":
+        push({ mine: false, text: intent.question, choices: intent.options });
+        return;
+
+      case "query":
+        push({ mine: false, text: answerQuery(intent.subject) });
+        return;
+
+      case "screen":
+        push({
+          mine: false,
+          text: answerScreen(intent.metric, intent.direction, intent.limit),
+          warnings: compiled.warnings.length ? compiled.warnings : undefined,
+        });
+        return;
+
+      case "rules":
+        push({ mine: false, text: answerRules(intent.action) });
+        return;
+
+      case "navigate": {
+        if (!onNavigate) {
+          push({ mine: false, text: "I can't move the terminal from here." });
+          return;
+        }
+        onNavigate({ symbol: intent.symbol, interval: intent.interval, panel: intent.panel });
+        const parts = [
+          intent.symbol ? marketOf(intent.symbol).base : null,
+          intent.interval ? `${intent.interval} candles` : null,
+          intent.panel ? `the ${intent.panel} panel` : null,
+        ].filter(Boolean);
+        push({ mine: false, text: `Showing ${parts.join(", ")}.` });
+        return;
+      }
+
+      case "ui":
+        if (!onUi) {
+          push({ mine: false, text: "I can't change the layout from here." });
+          return;
+        }
+        onUi(intent.action);
+        push({ mine: false, text: "Done." });
+        return;
+
+      case "order":
+        break; // handled below — it is the only one that can move money
     }
+
+    const spec = (intent as Extract<Intent, { kind: "order" }>).spec;
 
     /*
      * THE TOKEN IN THE SENTENCE MUST BE THE MARKET ON SCREEN.
@@ -334,6 +413,156 @@ export function Sana({
 
   function resolve(id: number, answer: string) {
     setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, resolved: answer } : t)));
+  }
+
+  /*
+   * ANSWERS, not lookups.
+   *
+   * Every one of these reads state the client ALREADY holds — the account, the
+   * poll that feeds the left panel, the engine's own rules. None of them may
+   * trigger a fetch, which is the rule that makes a question free: a user can
+   * ask a hundred and it costs nothing. If a question needs data cipher does
+   * not have, it is a refusal, not a query.
+   */
+  function answerQuery(subject: string): string {
+    const price = livePrice;
+    switch (subject) {
+      case "cash":
+        return `${usd(account.usdc)} in cash.`;
+      case "position":
+        if (account.sol <= 0) return `You're flat — no ${market}.`;
+        return (
+          `${account.sol.toFixed(4)} ${market}, average cost ${usd(account.costBasis)}` +
+          (price ? `, worth ${usd(account.sol * price)} now.` : ".")
+        );
+      case "equity":
+        return price
+          ? `${usd(equity(account, price))} all in — ${usd(account.usdc)} cash and ${usd(account.sol * price)} in ${market}.`
+          : `${usd(account.usdc)} in cash. No live price to mark the position at.`;
+      case "pnl": {
+        const open = price ? unrealised(account, price) : null;
+        const booked = account.realisedUsd;
+        const parts = [
+          `Booked ${booked >= 0 ? "+" : ""}${usd(booked)}`,
+          open === null ? null : `open ${open >= 0 ? "+" : ""}${usd(open)}`,
+        ].filter(Boolean);
+        return `${parts.join(", ")}. Fees paid: ${usd(account.feesUsd)}.`;
+      }
+      case "fills": {
+        if (account.fills.length === 0) return "No trades yet.";
+        const recent = account.fills.slice(-3).reverse();
+        return (
+          `${account.fills.length} trade${account.fills.length === 1 ? "" : "s"}. Most recent: ` +
+          recent
+            .map((f) => `${f.side} ${f.qty.toFixed(4)} at ${usd(allInPrice(f))}`)
+            .join("; ") +
+          "."
+        );
+      }
+      case "fees":
+        return `${usd(account.feesUsd)} in fees so far, on ${account.fills.length} trade${account.fills.length === 1 ? "" : "s"}.`;
+      case "market": {
+        const m = majors.find((x) => x.id === symbol);
+        if (!m) return "I don't have this market's numbers yet.";
+        return (
+          `${market}: ${usd(m.priceUsd)}, ${pct(m.change24h)} over 24h` +
+          (m.marketCap === null ? "." : `, ${compactUsd(m.marketCap)} cap.`)
+        );
+      }
+      default:
+        return "I don't have that.";
+    }
+  }
+
+  /**
+   * Rank the market list.
+   *
+   * Reads the same poll that fills the left panel, so the answer and the rows
+   * can never disagree — which is the whole reason this is not a separate
+   * fetch with its own idea of the price.
+   */
+  function answerScreen(
+    metric: "return" | "volume" | "marketCap" | "price",
+    direction: "top" | "bottom",
+    limit: number,
+  ): string {
+    if (majors.length === 0) return "The market list hasn't loaded yet. Ask me again in a second.";
+
+    /*
+     * A missing market cap sorts last, never as zero.
+     *
+     * marketCap is nullable — the supply table does not cover every pair — and
+     * treating null as 0 would put an unknown cap at the BOTTOM of "biggest"
+     * and the TOP of "smallest", which is a confident wrong answer in one
+     * direction and a confident wrong answer in the other.
+     */
+    const value = (m: Major) =>
+      metric === "return" ? m.change24h
+      : metric === "volume" ? m.volume24hUsd
+      : metric === "marketCap" ? (m.marketCap ?? Number.NEGATIVE_INFINITY)
+      : m.priceUsd;
+
+    const sorted = [...majors].sort((a, b) =>
+      direction === "top" ? value(b) - value(a) : value(a) - value(b),
+    );
+
+    const label = (m: Major) => {
+      const base = marketOf(m.id).base;
+      switch (metric) {
+        case "return":
+          return `${base} ${pct(m.change24h)}`;
+        case "volume":
+          return `${base} ${compactUsd(m.volume24hUsd)}`;
+        case "marketCap":
+          return `${base} ${m.marketCap === null ? "cap unknown" : compactUsd(m.marketCap)}`;
+        case "price":
+          return `${base} ${usd(m.priceUsd)}`;
+      }
+    };
+
+    const head =
+      metric === "return"
+        ? direction === "top" ? "Up the most over 24h" : "Down the most over 24h"
+        : metric === "volume" ? "Most traded over 24h"
+        : metric === "marketCap" ? "Biggest by market cap"
+        : direction === "top" ? "Highest price" : "Lowest price";
+
+    return `${head}: ${sorted.slice(0, limit).map(label).join(", ")}.`;
+  }
+
+  /**
+   * What the engine is watching, and how to stop it.
+   *
+   * cancelAll is deliberately blunt and deliberately immediate. The person
+   * asking for it is not browsing — something is going wrong and they want out
+   * of every rule at once. A confirmation step here would be the wrong kind of
+   * caution: cancelling a rule can only ever prevent a trade, never cause one.
+   */
+  function answerRules(action: "list" | "cancelAll"): string {
+    if (action === "cancelAll") {
+      if (armed.length === 0) return "Nothing was armed.";
+      const n = armed.length;
+      for (const r of armed) cancelRule(r.id);
+      return `Cancelled ${n} rule${n === 1 ? "" : "s"}. Nothing is watching the price now.`;
+    }
+    if (armed.length === 0) return "Nothing armed. Nothing is watching the price.";
+    return (
+      `${armed.length} armed: ` +
+      armed
+        .map((r) => {
+          const base = marketOf(r.market).base;
+          const t = r.trigger;
+          const when =
+            t.kind === "priceMultiple" ? `at ${t.value}x`
+            : t.kind === "priceAbsolute" ? `at ${usd(t.value)}`
+            : t.kind === "drawdownFromEntry" ? `if ${base} falls ${t.percent}% from entry`
+            : t.kind === "trailingStop" ? `${t.percent}% below the high`
+            : "on a timer";
+          return `sell ${r.amount.kind === "percentOfPosition" ? `${r.amount.value}%` : r.amount.value} ${when}`;
+        })
+        .join("; ") +
+      ". They fire while this tab is open."
+    );
   }
 
   /*
@@ -490,6 +719,34 @@ export function Sana({
                   <p className="font-sans text-[12.5px] leading-relaxed text-ash">
                     {t.text}
                   </p>
+
+                  {/*
+                    * An ambiguity, offered as the two sentences it could be.
+                    *
+                    * Picking one RE-RUNS the compiler on that sentence rather
+                    * than patching a half-parsed spec, so the clarified order
+                    * goes through the same grammar, validator and readback as
+                    * anything typed by hand. It gets a readback card of its
+                    * own; nothing here approves a trade.
+                    */}
+                  {t.choices && !t.resolved && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {t.choices.map((c) => (
+                        <button
+                          key={c.sentence}
+                          onClick={() => {
+                            setTurns((prev) =>
+                              prev.map((x) => (x.id === t.id ? { ...x, resolved: c.label } : x)),
+                            );
+                            handle(c.sentence);
+                          }}
+                          className="rounded-lg border border-line bg-slate px-3 py-1.5 font-sans text-[12px] font-bold text-champagne transition-colors hover:border-accent hover:bg-raised"
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {t.lines && (
                     <div className="mt-2 rounded-xl border border-accent/40 bg-accent/10 p-3">

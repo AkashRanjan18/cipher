@@ -107,12 +107,19 @@ export function PriceChart({
   candles,
   livePrice,
   barSeconds,
+  resetSignal = 0,
 }: {
   candles: Candle[];
   /** Latest traded price, from the shared poll. Folds into the forming bar. */
   livePrice?: number;
   /** Seconds per bar, so "now" can be placed in the right bucket. */
   barSeconds: number;
+  /**
+   * Bump to reframe the chart. Alt+R does it from the keyboard; this is the
+   * same reset reachable from outside — "reset the chart" is a sentence
+   * people say, and the chart's own state was unreachable from the terminal.
+   */
+  resetSignal?: number;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -304,6 +311,17 @@ export function PriceChart({
     forming.current = candles[candles.length - 1] ?? null;
     setLegend(forming.current);
   }, [candles, generation, resetView]);
+
+  /* The same reset, asked for from outside. Skips the first run so mounting
+     does not count as a request. */
+  const firstReset = useRef(true);
+  useEffect(() => {
+    if (firstReset.current) {
+      firstReset.current = false;
+      return;
+    }
+    resetView();
+  }, [resetSignal, resetView]);
 
   /*
    * TICK. Folds the polled price into the forming bar — the same arithmetic
