@@ -66,6 +66,16 @@ export interface Rule {
    * side from "rules are exits" would have made a limit buy sell instead.
    */
   side: "buy" | "sell";
+  /**
+   * The resting entry this exit is waiting for. Null when there isn't one.
+   *
+   * WITHOUT THIS, THE FIRST ENTRY TO FILL CLAIMS EVERY WAITING EXIT. Two
+   * resting buys — one at $95 with a take-profit, one at $101.70 without —
+   * and the $101.70 fill bound the $95 order's exit to its own price. Seen in
+   * the alerts panel as a 2x target of $205.56 on an order that had not
+   * traded. Exits bind only to the entry that was armed with them.
+   */
+  parentId: string | null;
   trigger: Trigger;
   amount: Amount;
   state: RuleState;

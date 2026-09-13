@@ -449,3 +449,41 @@ test("a resting buy is not cancelled when the position goes flat", () => {
   assert.equal(s.rules.t1.state, "cancelled");
   assert.equal(s.rules.b1.state, "armed");
 });
+
+test("an exit binds only to the entry it was armed with", () => {
+  const s = emptyEngine();
+  /*
+   * Two resting buys on the same market, one with a take-profit. Before the
+   * parentId existed, the entry WITHOUT an exit filling first bound the other
+   * order's take-profit to its own price — a 2x target priced off a fill that
+   * had nothing to do with it, shown in the alerts panel as armed.
+   */
+  arm(s, {
+    rule: exit("cheap", { kind: "priceAbsolute", value: 95 }),
+    market: MKT,
+    at: T0,
+    side: "buy",
+    entryPrice: 101,
+  });
+  arm(s, {
+    rule: exit("tp", { kind: "priceMultiple", value: 2 }),
+    market: MKT,
+    at: T0,
+    parentId: "cheap",
+  });
+  arm(s, {
+    rule: exit("breakout", { kind: "priceAbsolute", value: 110 }),
+    market: MKT,
+    at: T0,
+    side: "buy",
+    entryPrice: 101,
+  });
+
+  assert.equal(s.rules.tp.parentId, "cheap");
+  assert.equal(s.rules.tp.state, "unbound");
+
+  // The breakout fills. Its id is not "cheap", so the take-profit must not move.
+  const step = onPrice(s, MKT, 110, T0 + 1);
+  assert.deepEqual(step.fire.map((r) => r.id), ["breakout"]);
+  assert.equal(s.rules.tp.state, "unbound");
+});

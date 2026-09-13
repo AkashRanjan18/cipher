@@ -83,7 +83,13 @@ interface Ctx {
    * has not filled — they arrive unbound and inert, and bindEntry() wakes them
    * with the fill price.
    */
-  armExits(input: { rules: ExitRule[]; market: string; entryPrice?: number }): void;
+  armExits(input: {
+    rules: ExitRule[];
+    market: string;
+    entryPrice?: number;
+    /** The resting entry these wait for. Omitted when the entry already filled. */
+    parentId?: string;
+  }): void;
   /**
    * Start watching for a price to BUY at. A resting limit order.
    *
@@ -191,7 +197,15 @@ export function TriggerProvider({
           if (rule.side === "buy") {
             const paid = allInPrice(outcome.fill);
             for (const r of Object.values(next.rules)) {
-              if (r.market !== rule.market || r.state !== "unbound") continue;
+              /*
+               * ONLY THIS ENTRY'S OWN EXITS.
+               *
+               * Matching on market alone let the first resting buy to fill
+               * bind every waiting exit on that market, including ones armed
+               * alongside a different order that had not traded. The alerts
+               * panel showed a 2x target priced off the wrong fill.
+               */
+              if (r.parentId !== rule.id || r.state !== "unbound") continue;
               log.push(...bind(next, r.id, paid, at).transitions);
             }
           }
@@ -277,12 +291,12 @@ export function TriggerProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, live, market, prices, applyStep]);
 
-  const armExits = useCallback<Ctx["armExits"]>(({ rules, market: m, entryPrice }) => {
+  const armExits = useCallback<Ctx["armExits"]>(({ rules, market: m, entryPrice, parentId }) => {
     setState((prev) => {
       const engine = prev.engine;
       const log: Transition[] = [];
       for (const rule of rules) {
-        const step = arm(engine, { rule, market: m, at: Date.now(), entryPrice });
+        const step = arm(engine, { rule, market: m, at: Date.now(), entryPrice, parentId });
         log.push(...step.transitions);
       }
       return {

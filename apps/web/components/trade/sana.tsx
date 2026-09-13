@@ -462,12 +462,16 @@ export function Sana({
        * at 2x" means 2x of ninety-five, and that is not knowable until the buy
        * fills. The runner binds them the moment it does.
        */
+      const entryId = `e${Date.now()}`;
       armEntry({
-        rule: { id: `e${Date.now()}`, trigger: entry.trigger, amount: entry.amount },
+        rule: { id: entryId, trigger: entry.trigger, amount: entry.amount },
         market: symbol,
         referencePrice: price,
       });
-      if (spec.exits.length > 0) armExits({ rules: spec.exits, market: symbol });
+      /* parentId, so THIS entry's fill binds these exits and no other's. */
+      if (spec.exits.length > 0) {
+        armExits({ rules: spec.exits, market: symbol, parentId: entryId });
+      }
       const at = usd((entry.trigger as { value: number }).value);
       return (
         `Resting. I'll ${entry.side} when ${market} reaches ${at}` +

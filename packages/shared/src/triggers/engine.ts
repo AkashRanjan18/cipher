@@ -186,6 +186,8 @@ export function arm(
      * the seam does at the bottom.
      */
     side?: "buy" | "sell";
+    /** The resting entry this exit belongs to, when it belongs to one. */
+    parentId?: string;
     /**
      * The price the trigger is measured against.
      *
@@ -202,6 +204,7 @@ export function arm(
     id: input.rule.id,
     market: input.market,
     side: input.side ?? "sell",
+    parentId: input.parentId ?? null,
     trigger: input.rule.trigger,
     amount: input.rule.amount,
     state: "unbound",
