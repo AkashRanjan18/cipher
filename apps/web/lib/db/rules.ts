@@ -233,6 +233,24 @@ export async function watchedMarkets(): Promise<string[]> {
   return rows.map((r) => String(r.market));
 }
 
+/**
+ * Every live SELL rule one user has on one market.
+ *
+ * Sell-side only: a resting BUY on the same market must survive the position
+ * emptying, because being flat is the state it exists to end.
+ */
+export async function exitsOn(market: string, userId: string): Promise<Owned[]> {
+  const rows = (await db()`
+    select * from rules
+    where user_id = ${userId}
+      and market = ${market}
+      and side = 'sell'
+      and state in ('unbound', 'armed')
+    limit 200
+  `) as Row[];
+  return rows.map(owned);
+}
+
 /** Exits waiting on a resting entry that has now filled. */
 export async function childrenOf(parentId: string): Promise<Owned[]> {
   const rows = (await db()`

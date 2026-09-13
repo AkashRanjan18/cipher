@@ -13,7 +13,7 @@ test("the canonical sentence renders only what matters", () => {
   assert.deepEqual(out.map((l) => l.label), ["BUY", "THEN", "STOP"]);
   assert.equal(out[0].value, "$500 of BONK");
   assert.equal(out[1].value, "sell a third at 2× your entry");
-  assert.equal(out[2].value, "sell everything if it falls 50% below your entry");
+  assert.equal(out[2].value, "sell whatever is left if it falls 50% below your entry");
 });
 
 test("word fractions come back as words", () => {

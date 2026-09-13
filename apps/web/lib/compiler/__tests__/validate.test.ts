@@ -209,3 +209,31 @@ test("every problem is reported, not just the first", () => {
   );
   assert.ok(p.length >= 3);
 });
+
+test("a percentage is not a buy size, and it is refused now not later", () => {
+  /*
+   * "Buy half at $95" parses cleanly — "half" is a valid amount, $95 a valid
+   * limit — and means nothing. Before this it rested, fired a minute later
+   * when the price arrived, failed to resolve a size, retried three times and
+   * died. The user found out from a history row long after the price moved.
+   */
+  const p = validateOrder(
+    spec({ entry: buy({ amount: { kind: "percentOfPosition", value: 50 } }) }),
+    flat,
+  );
+  assert.ok(blocks(p));
+  assert.match(p.find((x) => x.severity === "error")!.message, /isn't a buy size/);
+});
+
+test("a percentage IS a sell size, and stays legal", () => {
+  // "sell half" is half of what you hold — exactly what percentOfPosition
+  // means. The rule is about buys only.
+  const p = validateOrder(
+    spec({ entry: buy({ side: "sell", amount: { kind: "percentOfPosition", value: 50 } }) }),
+    { ...flat, position: 10 },
+  );
+  assert.equal(
+    p.some((x) => /isn't a buy size/.test(x.message)),
+    false,
+  );
+});

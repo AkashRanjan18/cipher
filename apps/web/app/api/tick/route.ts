@@ -7,6 +7,7 @@ import {
   beat,
   childrenOf,
   claim,
+  exitsOn,
   crossed,
   due,
   lapsed,
@@ -212,6 +213,29 @@ async function fire(
       reason: "executed",
       price: allInPrice(outcome.fill),
     });
+
+    /*
+     * A SELL THAT EMPTIED THE POSITION kills every other exit on it.
+     *
+     * They all measure from an entry that no longer exists, and the damage
+     * lands on the re-entry: a stop at $71 from a $102 entry, still armed,
+     * sells a position bought back at $60 on the next tick. The browser does
+     * the same thing when it owns the rules; this is the half that runs while
+     * nobody is looking.
+     */
+    if (rule.side === "sell" && outcome.account.sol <= 0) {
+      for (const { rule: stale } of await exitsOn(rule.market, userId)) {
+        if (stale.id === rule.id) continue;
+        await setState(stale.id, "cancelled");
+        transitions.push({
+          ruleId: stale.id,
+          from: stale.state,
+          to: "cancelled",
+          at: now,
+          reason: "position closed",
+        });
+      }
+    }
 
     /*
      * A resting BUY that just filled is an entry, and the exits armed

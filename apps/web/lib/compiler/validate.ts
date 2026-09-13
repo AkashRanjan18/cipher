@@ -219,6 +219,30 @@ export function validateOrder(spec: OrderSpec, ctx: ValidationContext): Problem[
   if (entry) {
     out.push(...checkAmount(entry.amount, "entry"));
 
+    /*
+     * A PERCENTAGE OF A POSITION IS NOT A BUY SIZE.
+     *
+     * "Buy half at $95" parses — "half" is a valid amount and $95 is a valid
+     * limit — and then means nothing: half of a position you do not hold yet.
+     * Without this it rested, fired a minute later when the price arrived,
+     * failed to resolve a size, retried three times and died. The user found
+     * out long after the price had moved, from a history row reading "could
+     * not resolve the size".
+     *
+     * A SELL is the opposite and stays legal: "sell half" is half of what you
+     * hold, which is exactly what percentOfPosition means.
+     *
+     * An error, not a warning — no reading of the sentence works.
+     */
+    if (entry.side === "buy" && entry.amount.kind === "percentOfPosition") {
+      const said = entry.amount.value === 100 ? "everything" : `${entry.amount.value}%`;
+      out.push({
+        severity: "error",
+        at: "entry",
+        message: `"${said}" isn't a buy size — I don't know what it's a percentage of. Say a dollar amount or a number of tokens.`,
+      });
+    }
+
     /* Unresolved token. A warning while compiling and an ERROR at arm time —
        this function does not know which, so it reports and the caller decides.
        Arming against a null mint would buy nothing, or worse, something else. */

@@ -23,23 +23,52 @@ export interface Snapshot {
   watching: boolean;
 }
 
+/**
+ * Why a snapshot did not arrive.
+ *
+ * "No database on this deployment" and "the network blipped" are the same
+ * `null` to a caller that does not ask — and treating them the same means
+ * polling a 503 every five seconds, forever, on a deployment where the feature
+ * simply is not configured. That is 17,000 serverless invocations a day per
+ * open tab, for nothing.
+ */
+export type SnapshotResult =
+  | { kind: "ok"; snapshot: Snapshot }
+  /** Permanent for this deployment. Stop asking. */
+  | { kind: "unconfigured" }
+  /** Might work next time. Keep asking. */
+  | { kind: "unavailable" };
+
 export async function fetchSnapshot(token: string | null): Promise<Snapshot | null> {
-  if (!token) return null;
+  const r = await fetchSnapshotResult(token);
+  return r.kind === "ok" ? r.snapshot : null;
+}
+
+export async function fetchSnapshotResult(token: string | null): Promise<SnapshotResult> {
+  if (!token) return { kind: "unconfigured" };
   try {
     const res = await fetch("/api/rules", {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
-    if (!res.ok) return null;
+    /*
+     * 503 is "no DATABASE_URL" and 401 is "this token is not a session" —
+     * neither improves by asking again in five seconds.
+     */
+    if (res.status === 503 || res.status === 401) return { kind: "unconfigured" };
+    if (!res.ok) return { kind: "unavailable" };
     const body = (await res.json()) as Snapshot;
     return {
-      rules: body.rules ?? [],
-      transitions: body.transitions ?? [],
-      account: body.account ?? null,
-      watching: Boolean(body.watching),
+      kind: "ok",
+      snapshot: {
+        rules: body.rules ?? [],
+        transitions: body.transitions ?? [],
+        account: body.account ?? null,
+        watching: Boolean(body.watching),
+      },
     };
   } catch {
-    return null;
+    return { kind: "unavailable" };
   }
 }
 

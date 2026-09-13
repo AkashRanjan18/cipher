@@ -49,7 +49,7 @@ function triggerLabel(rule: Rule): string {
 }
 
 export function AlertsList() {
-  const { armed, rulesById, transitions, hydrated, server, watching, cancelRule, thresholdOf } =
+  const { armed, waiting, rulesById, transitions, hydrated, server, watching, cancelRule, thresholdOf } =
     useTriggers();
 
   if (!hydrated) {
@@ -61,7 +61,7 @@ export function AlertsList() {
     .reverse()
     .slice(0, 25);
 
-  if (armed.length === 0 && history.length === 0) {
+  if (armed.length === 0 && waiting.length === 0 && history.length === 0) {
     return (
       <p className="p-4 text-center font-sans text-[11.5px] leading-relaxed text-ash">
         Nothing armed. Tell Sana something like{" "}
@@ -134,6 +134,42 @@ export function AlertsList() {
                   */}
                 <div className="mt-1 font-sans text-[9.5px] leading-tight text-mute">
                   {server ? "Watched on the server, tab open or not." : "Watched while this tab is open."}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/*
+        * WAITING, not armed — and shown, because invisible is worse.
+        *
+        * These are exits attached to a resting order. They cannot fire until
+        * the entry does, so they have no threshold to display; leaving them
+        * out entirely made the user think the instruction had not registered.
+        */}
+      {waiting.length > 0 && (
+        <>
+          <Heading>Waiting on an order</Heading>
+          {waiting.map((rule) => {
+            const base = marketOf(rule.market).base;
+            return (
+              <div key={rule.id} className="border-b border-hairline px-2.5 py-2 last:border-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-sans text-[12px] font-bold text-ash">
+                      Sell {amountLabel(rule.amount, base)}
+                    </div>
+                    <div className="font-sans text-[10.5px] leading-tight text-mute">
+                      {triggerLabel(rule)} — arms when your {base} order fills
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => cancelRule(rule.id)}
+                    className="shrink-0 rounded-md px-1.5 py-0.5 font-sans text-[10px] font-bold text-mute transition-colors hover:bg-slate hover:text-down"
+                  >
+                    cancel
+                  </button>
                 </div>
               </div>
             );

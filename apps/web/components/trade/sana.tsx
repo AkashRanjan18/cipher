@@ -465,7 +465,20 @@ export function Sana({
     if (!entry) {
       if (spec.exits.length === 0) return "Nothing to do.";
       if (account.sol <= 0) return `You have no ${market} to set an exit on.`;
-      armExits({ rules: spec.exits, market: symbol, entryPrice: account.costBasis });
+      /*
+       * AWAITED, not fired and forgotten.
+       *
+       * This used to announce "2 exits are armed" the instant the request left
+       * the browser. True while the engine was in this tab; a guess once it
+       * moved to a server. Telling someone their stop is set when the write
+       * failed is the worst sentence this product can say.
+       */
+      const ok = await armExits({
+        rules: spec.exits,
+        market: symbol,
+        entryPrice: account.costBasis,
+      });
+      if (!ok) return "I couldn't save that exit. Nothing is watching — try again.";
       return armedLine(spec.exits.length, account.costBasis);
     }
 
@@ -480,15 +493,16 @@ export function Sana({
        * fills. The runner binds them the moment it does.
        */
       const entryId = newId("e");
-      armEntry({
+      const armed = await armEntry({
         rule: { id: entryId, trigger: entry.trigger, amount: entry.amount },
         market: symbol,
         referencePrice: price,
         side: entry.side,
       });
+      if (!armed) return "I couldn't save that order. Nothing is resting — try again.";
       /* parentId, so THIS entry's fill binds these exits and no other's. */
       if (spec.exits.length > 0) {
-        armExits({ rules: spec.exits, market: symbol, parentId: entryId });
+        await armExits({ rules: spec.exits, market: symbol, parentId: entryId });
       }
       const at = usd((entry.trigger as { value: number }).value);
       return (
@@ -531,14 +545,21 @@ export function Sana({
      * — small, systematic, and in the direction that costs them money.
      */
     const filledAt = allInPrice(r.fill);
-    if (spec.exits.length > 0) {
-      armExits({ rules: spec.exits, market: symbol, entryPrice: filledAt });
-    }
+    const filled = `${entry.side === "buy" ? "Bought" : "Sold"} ${r.fill.qty.toFixed(4)} ${market} at ${usd(filledAt)}.`;
 
-    return (
-      `${entry.side === "buy" ? "Bought" : "Sold"} ${r.fill.qty.toFixed(4)} ${market} at ${usd(filledAt)}.` +
-      (spec.exits.length ? " " + armedLine(spec.exits.length, filledAt) : "")
-    );
+    if (spec.exits.length === 0) return filled;
+
+    /*
+     * The FILL already happened, so it is reported either way.
+     *
+     * If arming then fails, the user is in a position with no protection, and
+     * that is precisely the moment to say so loudly rather than to report a
+     * clean success.
+     */
+    const armedOk = await armExits({ rules: spec.exits, market: symbol, entryPrice: filledAt });
+    return armedOk
+      ? `${filled} ${armedLine(spec.exits.length, filledAt)}`
+      : `${filled} But I could NOT arm the ${spec.exits.length === 1 ? "exit" : "exits"} — you are holding this unprotected. Try setting them again.`;
   }
 
   /*

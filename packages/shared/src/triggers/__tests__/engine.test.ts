@@ -203,7 +203,33 @@ test("going flat cancels trailing stops so a re-entry does not fire instantly", 
   assert.equal(onPrice(s, MKT, 100, T0 + 3).fire.length, 0);
 });
 
-test("going flat leaves other markets and other trigger kinds alone", () => {
+test("going flat cancels EVERY exit on that market, not just trailing ones", () => {
+  /*
+   * The narrow version cancelled trailing stops and left drawdowns and
+   * multiples armed — which are exactly as stale, because all three measure
+   * from an entry that no longer exists. The damage lands on the RE-ENTRY: a
+   * $71 stop from a $102 entry, still armed, sells a new position bought at
+   * $60 on the very next tick.
+   */
+  const s = emptyEngine();
+  for (const [id, trigger] of [
+    ["t", { kind: "trailingStop", percent: 40 }],
+    ["p", { kind: "priceMultiple", value: 2 }],
+    ["d", { kind: "drawdownFromEntry", percent: 30 }],
+  ] as const) {
+    arm(s, { rule: exit(id, trigger), market: MKT, at: T0, entryPrice: 100 });
+  }
+
+  onFlat(s, MKT, T0 + 1);
+  assert.equal(s.rules.t.state, "cancelled");
+  assert.equal(s.rules.p.state, "cancelled");
+  assert.equal(s.rules.d.state, "cancelled");
+
+  // Buying back in at any price must not fire a stop from the old entry.
+  assert.equal(onPrice(s, MKT, 60, T0 + 2).fire.length, 0);
+});
+
+test("going flat leaves other markets alone", () => {
   const s = emptyEngine();
   arm(s, {
     rule: exit("t", { kind: "trailingStop", percent: 40 }),
@@ -211,15 +237,32 @@ test("going flat leaves other markets and other trigger kinds alone", () => {
     at: T0,
     entryPrice: 100,
   });
-  arm(s, {
-    rule: exit("p", { kind: "priceMultiple", value: 2 }),
-    market: MKT,
-    at: T0,
-    entryPrice: 100,
-  });
   onFlat(s, MKT, T0 + 1);
   assert.equal(s.rules.t.state, "armed");
-  assert.equal(s.rules.p.state, "armed");
+});
+
+test("going flat never cancels a resting BUY", () => {
+  // Being flat is the state a limit buy exists to end. Cancelling it here
+  // would delete the order at the exact moment it becomes relevant.
+  const s = emptyEngine();
+  arm(s, {
+    rule: exit("b", { kind: "priceAbsolute", value: 95 }),
+    market: MKT,
+    at: T0,
+    side: "buy",
+    entryPrice: 101,
+  });
+  onFlat(s, MKT, T0 + 1);
+  assert.equal(s.rules.b.state, "armed");
+});
+
+test("going flat also clears exits still waiting on an entry", () => {
+  // An unbound exit belongs to an order on a position that is now gone.
+  const s = emptyEngine();
+  arm(s, { rule: exit("u", { kind: "priceMultiple", value: 2 }), market: MKT, at: T0 });
+  assert.equal(s.rules.u.state, "unbound");
+  onFlat(s, MKT, T0 + 1);
+  assert.equal(s.rules.u.state, "cancelled");
 });
 
 /* ──────────────────────────────── clock ────────────────────────────────── */

@@ -17,6 +17,7 @@ import {
   cancel,
   emptyEngine,
   onClock,
+  onFlat,
   onPrice,
   onResult,
   threshold,
@@ -28,7 +29,7 @@ import {
 import { usePrivy } from "@privy-io/react-auth";
 import { usePaperAccount } from "../account/store";
 import { allInPrice } from "../account/paper";
-import { armRemote, cancelRemote, fetchSnapshot } from "../db/remote";
+import { armRemote, cancelRemote, fetchSnapshotResult } from "../db/remote";
 import { fireRule } from "./execute";
 
 /**
@@ -101,6 +102,15 @@ interface Ctx {
   /** Rules currently watching. */
   armed: Rule[];
   /**
+   * Exits armed alongside a resting order that has not filled yet.
+   *
+   * They exist, they are inert, and the panel showed NOTHING for them — so
+   * "buy at $95, sell half at 2x" listed the buy and silently dropped the
+   * take-profit. The user retypes it, and now two take-profits bind when the
+   * entry fills and the whole position sells at 2x instead of half.
+   */
+  waiting: Rule[];
+  /**
    * Every rule the engine has ever held, by id — including the finished ones.
    *
    * The history list needs them. A transition says "filled"; only the rule it
@@ -118,13 +128,21 @@ interface Ctx {
    * has not filled — they arrive unbound and inert, and bindEntry() wakes them
    * with the fill price.
    */
+  /**
+   * Returns false when the server refused.
+   *
+   * It used to return void and fire-and-forget, so Sana announced "2 exits are
+   * armed" the instant the request left the browser — true in local mode, and
+   * a guess in server mode. Telling someone their stop is set when the write
+   * failed is the worst sentence this product can say.
+   */
   armExits(input: {
     rules: ExitRule[];
     market: string;
     entryPrice?: number;
     /** The resting entry these wait for. Omitted when the entry already filled. */
     parentId?: string;
-  }): void;
+  }): Promise<boolean>;
   /**
    * Start watching for a price to BUY at. A resting limit order.
    *
@@ -148,7 +166,7 @@ interface Ctx {
      * there — the caller always knows the side, so it has to say it.
      */
     side: "buy" | "sell";
-  }): void;
+  }): Promise<boolean>;
   /** An entry filled: bind every unbound rule on that market to its fill price. */
   bindEntry(market: string, entryPrice: number): void;
   cancelRule(id: string): void;
@@ -231,24 +249,37 @@ export function TriggerProvider({
    * A failure means local mode, not an error. No database configured and no
    * session are the same answer from here: the server is not the owner.
    */
+  /*
+   * Set once the server has said it has no database. Stops the poll.
+   *
+   * A ref rather than state: it must not cause a render, and the interval
+   * below reads it on every tick without needing to be rebuilt.
+   */
+  const unconfigured = useRef(false);
+
   const pull = useCallback(async () => {
-    const snap = await fetchSnapshot(token.current);
-    if (!snap) {
+    const r = await fetchSnapshotResult(token.current);
+    if (r.kind === "unconfigured") {
+      unconfigured.current = true;
       setServer(false);
       return;
     }
+    if (r.kind !== "ok") {
+      // Transient. Stay in whatever mode we were in and try again.
+      return;
+    }
     setServer(true);
-    setWatching(snap.watching);
+    setWatching(r.snapshot.watching);
     const engine = emptyEngine();
-    for (const r of snap.rules) engine.rules[r.id] = r;
-    setState({ engine, transitions: snap.transitions });
+    for (const rule of r.snapshot.rules) engine.rules[rule.id] = rule;
+    setState({ engine, transitions: r.snapshot.transitions });
   }, []);
 
   useEffect(() => {
     if (!authenticated) return;
     let alive = true;
     const run = () => {
-      if (alive) void pull();
+      if (alive && !unconfigured.current) void pull();
     };
     const first = window.setTimeout(run, 300);
     const id = window.setInterval(run, 5_000);
@@ -348,6 +379,38 @@ export function TriggerProvider({
   );
 
   /*
+   * THE POSITION EMPTIED, so every exit on it is now meaningless.
+   *
+   * onFlat has existed since the engine was written and NOTHING CALLED IT —
+   * found by audit, not by a test. The consequence is not cosmetic: sell out
+   * by hand at $105 with a stop armed at $71, buy back two weeks later at $60,
+   * and that stale stop sells the new position on the next tick because $60 is
+   * already below a threshold measured from an entry you left behind.
+   *
+   * Watching the balance rather than hooking every sell path: the ticket, the
+   * prompt bar and a fired rule can all take a position to zero, and three
+   * call sites is three chances to add a fourth and forget.
+   */
+  const wasHolding = useRef(false);
+  useEffect(() => {
+    if (server || !hydrated) return;
+    const holding = account.sol > 0;
+    const emptied = wasHolding.current && !holding;
+    wasHolding.current = holding;
+    if (!emptied) return;
+
+    setState((prev) => {
+      const engine = prev.engine;
+      const step = onFlat(engine, market, Date.now());
+      if (step.transitions.length === 0) return prev;
+      return {
+        engine: { ...engine },
+        transitions: [...prev.transitions, ...step.transitions].slice(-MAX_TRANSITIONS),
+      };
+    });
+  }, [account.sol, market, server, hydrated]);
+
+  /*
    * Price ticks.
    *
    * Two sources, and the difference is worth knowing. The open market arrives
@@ -414,7 +477,7 @@ export function TriggerProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [server, hydrated, live, market, prices, applyStep]);
 
-  const armExits = useCallback<Ctx["armExits"]>(({ rules, market: m, entryPrice, parentId }) => {
+  const armExits = useCallback<Ctx["armExits"]>(async ({ rules, market: m, entryPrice, parentId }) => {
     /*
      * SERVER MODE ARMS THROUGH THE API and does not touch local state.
      *
@@ -440,10 +503,9 @@ export function TriggerProvider({
         highWater: r.trigger.kind === "trailingStop" ? (entryPrice ?? null) : null,
         attempts: 0,
       }));
-      void armRemote(token.current, built).then((ok) => {
-        if (ok) void pull();
-      });
-      return;
+      const ok = await armRemote(token.current, built);
+      if (ok) void pull();
+      return ok;
     }
 
     setState((prev) => {
@@ -458,12 +520,14 @@ export function TriggerProvider({
         transitions: [...prev.transitions, ...log].slice(-MAX_TRANSITIONS),
       };
     });
-  }, []);
+    /* Local mode cannot fail — the engine is right here, not over a network. */
+    return true;
+  }, [server, pull]);
 
-  const armEntry = useCallback<Ctx["armEntry"]>(({ rule, market: m, referencePrice, side }) => {
+  const armEntry = useCallback<Ctx["armEntry"]>(async ({ rule, market: m, referencePrice, side }) => {
     if (server) {
       const now = Date.now();
-      void armRemote(token.current, [
+      const ok = await armRemote(token.current, [
         {
           version: 1,
           id: rule.id,
@@ -479,10 +543,9 @@ export function TriggerProvider({
           highWater: null,
           attempts: 0,
         },
-      ]).then((ok) => {
-        if (ok) void pull();
-      });
-      return;
+      ]);
+      if (ok) void pull();
+      return ok;
     }
 
     setState((prev) => {
@@ -499,6 +562,7 @@ export function TriggerProvider({
         transitions: [...prev.transitions, ...step.transitions].slice(-MAX_TRANSITIONS),
       };
     });
+    return true;
   }, [server, pull]);
 
   const bindEntry = useCallback<Ctx["bindEntry"]>((m, entryPrice) => {
@@ -545,6 +609,7 @@ export function TriggerProvider({
       server,
       watching,
       armed: armedRules(state.engine),
+      waiting: Object.values(state.engine.rules).filter((r) => r.state === "unbound"),
       rulesById: state.engine.rules,
       transitions: state.transitions,
       hydrated,

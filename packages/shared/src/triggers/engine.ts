@@ -385,19 +385,31 @@ export function onClock(state: EngineState, at: number): Step {
 /* ──────────────────────────── outside events ───────────────────────────── */
 
 /**
- * The position went flat.
+ * The position went flat. Every exit on it is now meaningless.
  *
- * RESETS EVERY TRAILING HIGH-WATER MARK on that market. Without this, selling
- * out of a token you rode to 5x and buying back in later fires the trailing
- * stop instantly, because the mark still remembers a price from a position
- * that no longer exists. This exact bug was found by a test in the scanner;
- * here it would cost real money.
+ * AN EXIT REFERENCES AN ENTRY, and once that entry is gone so is the meaning
+ * of "2x" or "-30% from entry" or "20% off the high". Leaving them armed is
+ * not merely untidy — it is dangerous, and the damage is on the RE-ENTRY:
+ *
+ *   buy at $102, stop armed at $71        sell it all by hand at $105
+ *   two weeks later, buy back in at $60   the $71 stop is still armed, still
+ *                                         measured against an entry you left
+ *                                         behind, and $60 is already below it
+ *
+ * The next tick sells the new position immediately. Same shape as the
+ * trailing-stop high-water bug, which this function originally only guarded
+ * against — the narrower version cancelled trailing stops and left drawdowns
+ * and multiples armed, which are exactly as stale.
+ *
+ * RESTING BUYS ARE UNTOUCHED. Being flat is the state a limit buy exists to
+ * end, so cancelling it here would delete the order at the moment it becomes
+ * relevant. The side is the whole test.
  */
 export function onFlat(state: EngineState, market: string, at: number): Step {
   const transitions: Transition[] = [];
   for (const rule of Object.values(state.rules)) {
-    if (rule.market !== market || rule.state !== "armed") continue;
-    if (rule.trigger.kind !== "trailingStop") continue;
+    if (rule.market !== market || rule.side !== "sell") continue;
+    if (rule.state !== "armed" && rule.state !== "unbound") continue;
     unplace(state, rule);
     transitions.push(move(rule, "cancelled", at, "position closed"));
   }
