@@ -44,8 +44,17 @@ import { fireRule } from "./execute";
  * Until then the UI must say so rather than imply a promise nobody is keeping.
  */
 
-/* Bump rather than migrate: rules read into a changed shape fire wrongly. */
-const KEY = "cipher.rules.v1";
+/*
+ * Bump rather than migrate: rules read into a changed shape fire wrongly.
+ *
+ * v2 because Rule gained `side` and `parentId`. A v1 rule read into this shape
+ * has an undefined side, and the seam would ask the ledger to execute neither
+ * a buy nor a sell — the kind of thing that throws in one place and silently
+ * does the wrong thing in another. Dropping them is safe: they are paper
+ * orders, and an order that quietly stops existing is better than one that
+ * fires in a direction nobody chose.
+ */
+const KEY = "cipher.rules.v2";
 
 /**
  * How much history to keep.

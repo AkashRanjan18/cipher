@@ -126,19 +126,27 @@ export function Sana({
   const [open, setOpen] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  /*
-   * Dictation lands in the box; it does NOT send on its own.
+  /**
+   * Dictation submits itself.
    *
-   * Hands-free execution is one recogniser error away from a valid, plausible
-   * order for the wrong amount — "five hundred" and "five thousand" are one
-   * syllable apart. The readback would still catch it, but a wrong number is
-   * far easier to fix while it is still editable text than after it has
-   * become a card asking to be approved. One keystroke is the right price for
-   * that, and the user can see exactly what was heard before committing.
+   * User's call, 13 Sep 2026: "they just speak the prompt, and the shit
+   * happens". It used to drop the transcript into the box and wait for Enter,
+   * which was the right shape when an approval card came next and is the wrong
+   * one now that a clear sentence executes.
+   *
+   * THE RISK IS REAL AND WORTH NAMING. Speech recognition does not fail by
+   * producing nonsense — it fails by producing a confident, well-formed
+   * sentence that says something else. "Buy five hundred" and "buy five
+   * thousand" are one vowel apart and both parse. What stands between that and
+   * a wrong trade is validate.ts and nothing else, so the transcript is shown
+   * as the user's own turn before the result, and the receipt names the size
+   * that actually traded.
    */
   const speech = useSpeech((heard) => {
-    setInput(heard);
-    inputRef.current?.focus();
+    const said = heard.trim();
+    if (!said) return;
+    setInput("");
+    handle(said);
   });
 
   // Newest turn should be visible without scrolling for it.
@@ -720,7 +728,23 @@ export function Sana({
   return (
     <div
       ref={shellRef}
-      onMouseDown={() => setOpen(true)}
+      onMouseDown={() => {
+        /*
+         * Open AND focus, on the same press.
+         *
+         * Opening the stream changes the bar's height, so the input moves out
+         * from under the pointer between mousedown and mouseup and the click
+         * never completes on it. The first click on a collapsed bar therefore
+         * expanded it and focused nothing, and whatever the user typed next
+         * went into the void — which, for a bar whose entire purpose is that
+         * you type into it, is the worst first impression available.
+         *
+         * Focusing explicitly makes the press mean what it looks like it
+         * means, regardless of what the layout does afterwards.
+         */
+        setOpen(true);
+        inputRef.current?.focus();
+      }}
       /*
        * Spans the chart column rather than a narrow strip inside it.
        *
