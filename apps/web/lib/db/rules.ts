@@ -275,14 +275,34 @@ export async function childrenOf(parentId: string): Promise<Owned[]> {
   return rows.map(owned);
 }
 
-export async function cancelRule(userId: string, ruleId: string): Promise<boolean> {
+/**
+ * Cancel a rule, and say WHAT IT WAS before it was cancelled.
+ *
+ * The state has to come back because the audit trail records the transition,
+ * and this returned a boolean — so the route wrote `from: "armed"` for every
+ * cancellation, including rules cancelled while still unbound. An append-only
+ * log that states the wrong prior state is worse than no log: it is a false
+ * record that nothing downstream can correct.
+ *
+ * The CTE is what makes the old value readable. `update ... returning` hands
+ * back the NEW row by definition, so the previous state has to be captured in
+ * a snapshot taken before the write.
+ */
+export async function cancelRule(
+  userId: string,
+  ruleId: string,
+): Promise<Rule["state"] | null> {
   const rows = (await db()`
+    with prev as (
+      select id, state from rules
+      where id = ${ruleId} and user_id = ${userId} and state in ('unbound', 'armed')
+    )
     update rules set state = 'cancelled'
-    where id = ${ruleId} and user_id = ${userId}
-      and state in ('unbound', 'armed')
-    returning id
+    from prev
+    where rules.id = prev.id
+    returning prev.state as was
   `) as Row[];
-  return rows.length > 0;
+  return rows[0] ? (rows[0].was as Rule["state"]) : null;
 }
 
 export async function beat(note: string): Promise<void> {

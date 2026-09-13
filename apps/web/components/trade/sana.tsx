@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { baseSymbol } from "@/lib/chain/markets";
 import { newId } from "@cipher/shared";
 import type { Compiled, CompileContext, Intent, Interval, OrderSpec } from "@cipher/shared";
 import { compile } from "@/lib/compiler/compile";
@@ -112,7 +113,7 @@ export function Sana({
   onCollapse?: () => void;
 }) {
   const { account, trade } = usePaperAccount();
-  const { armExits, armEntry, armed, cancelRule } = useTriggers();
+  const { armExits, armEntry, armed, cancelRule, server } = useTriggers();
   /* The prop is named `price`; aliased so the answer helpers read plainly. */
   const livePrice = price;
   /* The in-flight model request, so a new sentence can abandon the old one. */
@@ -732,7 +733,7 @@ export function Sana({
       `${armed.length} armed: ` +
       armed
         .map((r) => {
-          const base = marketOf(r.market).base;
+          const base = baseSymbol(r.market);
           const t = r.trigger;
           const when =
             t.kind === "priceMultiple" ? `at ${t.value}x`
@@ -743,16 +744,33 @@ export function Sana({
           return `sell ${r.amount.kind === "percentOfPosition" ? `${r.amount.value}%` : r.amount.value} ${when}`;
         })
         .join("; ") +
-      ". They fire while this tab is open."
+      `. ${watchedBy()}`
     );
+  }
+
+  /**
+   * WHO IS ACTUALLY WATCHING — and it is not always this tab.
+   *
+   * This said "they fire while this tab is open" unconditionally, which was
+   * true for as long as the rules lived in a React ref and stopped being true
+   * the moment the worker started firing them from Postgres. Signed in, a stop
+   * survives the laptop being shut; signed out, it does not. Both are honest,
+   * and saying the wrong one is worse than saying neither: a user who closes
+   * the tab believing the stop is dead behaves differently from one who knows
+   * it is live, and so does a user who believes the opposite.
+   */
+  function watchedBy(): string {
+    return server
+      ? "They fire on the server, whether or not this tab is open."
+      : "They fire while this tab is open — sign in to have the server watch them.";
   }
 
   /** One sentence saying what is now watching, and the honest limit on it. */
   function armedLine(count: number, entryPrice: number): string {
     return (
       `${count === 1 ? "One exit is" : `${count} exits are`} armed against ` +
-      `${usd(entryPrice)} and watching. They fire while this tab is open — ` +
-      `say "cancel my stops" to take them back.`
+      `${usd(entryPrice)} and watching. ${watchedBy()} ` +
+      `Say "cancel my stops" to take them back.`
     );
   }
 

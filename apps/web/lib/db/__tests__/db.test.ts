@@ -419,10 +419,20 @@ test("binding a child writes its threshold from the price actually paid", async 
 
 test("cancelling is scoped to the owner", async () => {
   await insertRule(USER, rule());
-  assert.equal(await cancelRule(OTHER, "r1"), false);
-  assert.equal(await cancelRule(USER, "r1"), true);
+  assert.equal(await cancelRule(OTHER, "r1"), null);
+  assert.equal(await cancelRule(USER, "r1"), "armed");
   // Terminal states never transition again.
-  assert.equal(await cancelRule(USER, "r1"), false);
+  assert.equal(await cancelRule(USER, "r1"), null);
+});
+
+test("cancelling reports the state the rule was actually in", async () => {
+  /*
+   * The caller writes this into an append-only log. A rule cancelled while
+   * still waiting on its entry never passed through `armed`, and recording
+   * that it did is a false entry in a record nothing rewrites.
+   */
+  await insertRule(USER, rule({ id: "waiting", state: "unbound", entryPrice: null }));
+  assert.equal(await cancelRule(USER, "waiting"), "unbound");
 });
 
 /* ────────────────────────────── audit trail ────────────────────────────── */

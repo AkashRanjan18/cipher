@@ -21,6 +21,8 @@
  * exists to prevent, and it would be absurd to make it here.
  */
 
+import { marketOf } from "../market/markets.ts";
+
 export interface SolanaMarket {
   mint: string;
   /** What the UI calls it. */
@@ -166,3 +168,41 @@ export function listedSymbol(symbol: string): SolanaMarket | null {
 }
 
 export const ALL_MINTS = SOLANA_MARKETS.map((m) => m.mint);
+
+const BY_PAIR = new Map(
+  SOLANA_MARKETS.filter((m) => m.chartPair).map((m) => [m.chartPair as string, m]),
+);
+
+/**
+ * THE MINT BEHIND A MARKET KEY, whatever shape the key arrives in.
+ *
+ * The engine keys a rule on `market`, and for a long time the browser filled
+ * that with a Binance pair — "SOLUSDT" — because that is what the chart and
+ * the navigator speak. The worker then asked Jupiter for the price of a token
+ * called SOLUSDT, got nothing, and skipped the market. Every rule armed in a
+ * browser was unfireable by the one thing built to fire it, and the only
+ * reason it was not silent is that the worker reports what it skipped.
+ *
+ * So the translation happens ONCE, at the edge where a market key enters the
+ * engine, and the mint is what gets written down. `MARKETS keys on a Binance
+ * pair today` is a trap already named in CLAUDE.md; this is where it stops.
+ *
+ * Returns null for a market cipher does not list on Solana — BTC, XRP and the
+ * rest of the Binance majors. Those are chart-only, and a null here is what
+ * keeps a rule from being armed against a price that has no venue behind it.
+ */
+export function mintFor(key: string): string | null {
+  const k = key.trim();
+  return (BY_MINT.get(k) ?? BY_PAIR.get(k) ?? BY_SYMBOL.get(k.toUpperCase()))?.mint ?? null;
+}
+
+/**
+ * What to call a market on screen, given whatever key a rule carries.
+ *
+ * Separate from `mintFor` because display must never fail: `marketOf` falls
+ * back to MARKETS[0] for anything it does not recognise, so a mint handed to
+ * it would quietly render as BTC — an alert claiming to watch the wrong coin.
+ */
+export function baseSymbol(key: string): string {
+  return marketByMint(key)?.symbol ?? BY_PAIR.get(key)?.symbol ?? marketOf(key).base;
+}

@@ -97,14 +97,23 @@ export async function POST(request: Request) {
     saved.push(rule);
   }
 
+  /*
+   * `from: "unbound"`, because that is where every rule comes from.
+   *
+   * This recorded `from: r.state, to: r.state` — an armed rule logged as
+   * having gone from armed to armed, which is not a transition and did not
+   * happen. Every rule starts unbound and either stays there (no entry price
+   * yet) or is bound in the same breath, and the in-memory engine records
+   * exactly that. The log is evidence; it should match.
+   */
   await record(
     session.userId,
     saved.map((r) => ({
       ruleId: r.id,
-      from: r.state,
+      from: "unbound" as const,
       to: r.state,
       at: now,
-      reason: "armed",
+      reason: r.state === "armed" ? `bound to entry at ${r.entryPrice}` : "armed",
     })),
   );
 
@@ -124,17 +133,20 @@ export async function DELETE(request: Request) {
    * after. A check-then-act on someone else's row is a race with a worker that
    * might be firing it.
    */
-  const cancelled = await cancelRule(session.userId, id);
-  if (cancelled) {
+  const was = await cancelRule(session.userId, id);
+  if (was) {
     await record(session.userId, [
       {
         ruleId: id,
-        from: "armed",
+        /* What it actually was. An unbound rule cancelled before its entry
+           ever filled did not pass through `armed`, and saying it did is a
+           false entry in a log that is never rewritten. */
+        from: was,
         to: "cancelled",
         at: Date.now(),
         reason: "cancelled by user",
       },
     ]);
   }
-  return NextResponse.json({ ok: cancelled });
+  return NextResponse.json({ ok: was !== null });
 }

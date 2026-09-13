@@ -121,6 +121,40 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
   const token = useRef<string | null>(null);
 
   /*
+   * THE ACCOUNT, READABLE SYNCHRONOUSLY.
+   *
+   * `trade` and `fire` have to return what happened, and a setState updater
+   * cannot hand a value back. The previous version captured the outcome out of
+   * the updater and read it afterwards, on the stated claim that React runs
+   * the updater synchronously. IT DOES NOT. React runs it eagerly only as a
+   * bail-out optimisation, and only while no other update is already queued —
+   * so the code worked in local mode and broke the moment the five-second
+   * snapshot poll started keeping one queued. Every order placed through Sana
+   * came back "Nothing happened." while the trade had never run.
+   *
+   * A ref is the honest version: read the current account, compute the next
+   * one, write both. It depends on nothing about React's internals.
+   */
+  const latest = useRef(account);
+
+  /*
+   * Server mode, mirrored into a ref.
+   *
+   * `trade` is handed to every consumer through context, so it has to stay
+   * referentially stable — which means an empty dependency list, which means
+   * it captured `server` from the first render, which is always false. It was
+   * therefore stuck in LOCAL mode forever: signed in, rows in Postgres, and a
+   * ledger being written to a browser nobody reads. State drives rendering;
+   * the ref is what a stable callback is allowed to read.
+   */
+  const serverRef = useRef(false);
+
+  const commit = useCallback((next: Account) => {
+    latest.current = next;
+    setAccount(next);
+  }, []);
+
+  /*
    * SERVER MODE, decided by whether the server answers.
    *
    * Not by a feature flag and not by whether the user is signed in: signed in
@@ -132,6 +166,7 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!authenticated) {
       token.current = null;
+      serverRef.current = false;
       setServer(false);
       return;
     }
@@ -142,8 +177,9 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
       token.current = t;
       const snap = await fetchSnapshot(t);
       if (!alive || !snap?.account) return;
+      serverRef.current = true;
       setServer(true);
-      setAccount(snap.account);
+      commit(snap.account);
       setHydrated(true);
     })();
     return () => {
@@ -162,7 +198,7 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
     if (!server) return;
     const id = window.setInterval(() => {
       void fetchSnapshot(token.current).then((snap) => {
-        if (snap?.account) setAccount(snap.account);
+        if (snap?.account) commit(snap.account);
       });
     }, 5_000);
     return () => window.clearInterval(id);
@@ -171,9 +207,9 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
   // Read stored state after mount. Reading it during render breaks SSR.
   useEffect(() => {
     if (server) return;
-    setAccount(load() ?? openAccount(OPENING_DEPOSIT));
+    commit(load() ?? openAccount(OPENING_DEPOSIT));
     setHydrated(true);
-  }, [server]);
+  }, [server, commit]);
 
   // Write on every change, but never before the read — that would persist the
   // opening balance over a real one on the first frame after mount.
@@ -197,55 +233,35 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
      * caller is already in an event handler, so awaiting costs nothing but the
      * signature had to tell the truth.
      */
-    if (server) {
+    if (serverRef.current) {
       const r = await tradeRemote(token.current, input);
       if (!r) return { refusal: "Couldn't reach the server. Nothing happened." };
       if ("refusal" in r) return r;
-      setAccount(r.account);
+      commit(r.account);
       return { fill: r.fill };
     }
 
-    /*
-     * The refusal has to escape this callback, and setState's updater cannot
-     * return one. So the result is captured out of the updater and read after
-     * — safe because React calls the updater synchronously here, and because
-     * a refusal returns the identical account object, so nothing re-renders.
-     */
-    let out: { fill: Fill } | { refusal: string } = { refusal: "Nothing happened." };
-    setAccount((prev) => {
-      const r = execute(prev, { ...input, ts: Math.floor(Date.now() / 1000) });
-      if ("refusal" in r) {
-        out = r;
-        return prev;
-      }
-      out = { fill: r.fill };
-      return r.account;
-    });
-    return out;
-  }, []);
+    const r = execute(latest.current, { ...input, ts: Math.floor(Date.now() / 1000) });
+    if ("refusal" in r) return r;
+    commit(r.account);
+    return { fill: r.fill };
+  }, [commit]);
 
   const fire = useCallback<Ctx["fire"]>((rule, ctx) => {
-    // Same shape as trade(): the updater cannot return the outcome, so it is
-    // captured out and read after. React runs it synchronously here, and a
-    // non-fill returns the identical account object, so nothing re-renders.
-    let out: Outcome = { kind: "failed", reason: "nothing happened" };
-    setAccount((prev) => {
-      const r = fireRule(prev, rule, { ...ctx, ts: Math.floor(Date.now() / 1000) });
-      out = r;
-      return r.kind === "filled" ? r.account : prev;
-    });
-    return out;
-  }, []);
+    const r = fireRule(latest.current, rule, { ...ctx, ts: Math.floor(Date.now() / 1000) });
+    if (r.kind === "filled") commit(r.account);
+    return r;
+  }, [commit]);
 
   const reset = useCallback(() => {
     if (server) {
       void resetRemote(token.current).then((a) => {
-        if (a) setAccount(a);
+        if (a) commit(a);
       });
       return;
     }
-    setAccount(openAccount(OPENING_DEPOSIT));
-  }, [server]);
+    commit(openAccount(OPENING_DEPOSIT));
+  }, [server, commit]);
 
   const value = useMemo(
     () => ({ account, hydrated, server, trade, fire, reset }),

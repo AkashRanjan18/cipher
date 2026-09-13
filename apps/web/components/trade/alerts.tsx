@@ -1,6 +1,7 @@
 "use client";
 
 import { marketOf } from "@/lib/market";
+import { baseSymbol } from "@/lib/chain/markets";
 import { usd } from "@/lib/format";
 import { useTriggers } from "@/lib/triggers/store";
 import type { Amount, Rule } from "@cipher/shared";
@@ -36,7 +37,7 @@ function triggerLabel(rule: Rule): string {
     case "priceMultiple":
       return `at ${rule.trigger.value}x`;
     case "priceAbsolute":
-      return `when ${marketOf(rule.market).base} reaches ${usd(rule.trigger.value)}`;
+      return `when ${baseSymbol(rule.market)} reaches ${usd(rule.trigger.value)}`;
     case "drawdownFromEntry":
       return `if it falls ${rule.trigger.percent}% from entry`;
     case "trailingStop":
@@ -96,7 +97,7 @@ export function AlertsList() {
         <>
           <Heading>Watching</Heading>
           {armed.map((rule) => {
-            const base = marketOf(rule.market).base;
+            const base = baseSymbol(rule.market);
             const at = thresholdOf(rule);
             return (
               <div
@@ -152,7 +153,7 @@ export function AlertsList() {
         <>
           <Heading>Waiting on an order</Heading>
           {waiting.map((rule) => {
-            const base = marketOf(rule.market).base;
+            const base = baseSymbol(rule.market);
             return (
               <div key={rule.id} className="border-b border-hairline px-2.5 py-2 last:border-0">
                 <div className="flex items-start justify-between gap-2">
@@ -189,7 +190,7 @@ export function AlertsList() {
              * this panel cannot answer the only question it exists for.
              */
             const rule = rulesById[t.ruleId];
-            const base = rule ? marketOf(rule.market).base : null;
+            const base = rule ? baseSymbol(rule.market) : null;
             return (
               <div
                 key={`${t.ruleId}-${t.at}-${i}`}

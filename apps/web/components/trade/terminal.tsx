@@ -6,6 +6,7 @@ import { SYMBOL, intervalSeconds, subscribeCandles, marketOf } from "@/lib/marke
 import { usd, pct } from "@/lib/format";
 import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/account/store";
 import { TriggerProvider, useTriggers } from "@/lib/triggers/store";
+import { mintFor } from "@/lib/chain/markets";
 import { equity } from "@/lib/account/paper";
 import { PriceChart } from "./price-chart";
 import { SidePanel } from "./side-panel";
@@ -225,6 +226,26 @@ function TerminalBody({
    * cipher: the paper ledger holds one asset. When it holds many, this becomes
    * a price-by-mint lookup and the fallback disappears.
    */
+  /*
+   * THE ENGINE KEYS ON MINTS, the chart keys on Binance pairs.
+   *
+   * Translated here, at the single point where a market key crosses into the
+   * trigger engine, rather than anywhere downstream — a rule written with
+   * "SOLUSDT" in its market column is a rule the worker asks Jupiter about by
+   * that name, gets no price for, and skips forever.
+   *
+   * A market with no Solana listing keeps its pair and stays chart-only. That
+   * is honest rather than lazy: the ledger holds one asset today, so BTC is
+   * something to look at and not something to hold, and a mint invented for it
+   * would be a promise nothing can keep.
+   */
+  const triggerMarket = useMemo(() => mintFor(symbol) ?? symbol, [symbol]);
+  const triggerPrices = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [pair, price] of Object.entries(prices)) out[mintFor(pair) ?? pair] = price;
+    return out;
+  }, [prices]);
+
   const solPrice = prices["SOLUSDT"] ?? (symbol === "SOLUSDT" ? last : undefined);
 
   /* Cap for the open market, from the same supply table the list uses — so
@@ -269,7 +290,7 @@ function TerminalBody({
      * Sana all read armed rules, and a provider below any of them would mean
      * lifting state back up the first time a second one needed it.
      */
-    <TriggerProvider live={live ?? null} market={symbol} prices={prices}>
+    <TriggerProvider live={live ?? null} market={triggerMarket} prices={triggerPrices}>
     {/*
      * EXACTLY THREE SCROLLBARS, one per column, and none at the browser edge.
      *

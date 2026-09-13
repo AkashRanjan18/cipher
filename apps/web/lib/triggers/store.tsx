@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { mintFor } from "../chain/markets";
 import {
   arm,
   armed as armedRules,
@@ -187,6 +188,30 @@ function load(): Stored | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * EVERY MARKET KEY ENTERING THE ENGINE BECOMES A MINT, here and nowhere else.
+ *
+ * The callers speak Binance pairs, because that is what the chart, the
+ * navigator and the ticket are built on. The worker speaks mints, because that
+ * is what Solana and Jupiter speak. For a while the two never met: a rule
+ * armed in the browser went into Postgres with `market = "SOLUSDT"`, the
+ * worker asked Jupiter the price of a token by that name, got nothing back and
+ * skipped the market — so every rule armed through the UI was unfireable by
+ * the one thing built to fire it. The only reason it was not silent is that
+ * the worker reports what it skipped.
+ *
+ * Translating at the provider boundary was not enough: Sana and the ticket
+ * pass their own symbol straight into these calls and never read the prop. The
+ * arming functions ARE the edge, so the conversion belongs in them.
+ *
+ * A market with no Solana listing keeps its key unchanged. That is deliberate
+ * — inventing a mint for BTC would be a promise nothing can keep — and such a
+ * rule is one the worker will skip and say so.
+ */
+function key(market: string): string {
+  return mintFor(market) ?? market;
 }
 
 export function TriggerProvider({
@@ -477,7 +502,8 @@ export function TriggerProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [server, hydrated, live, market, prices, applyStep]);
 
-  const armExits = useCallback<Ctx["armExits"]>(async ({ rules, market: m, entryPrice, parentId }) => {
+  const armExits = useCallback<Ctx["armExits"]>(async ({ rules, market: raw, entryPrice, parentId }) => {
+    const m = key(raw);
     /*
      * SERVER MODE ARMS THROUGH THE API and does not touch local state.
      *
@@ -524,7 +550,8 @@ export function TriggerProvider({
     return true;
   }, [server, pull]);
 
-  const armEntry = useCallback<Ctx["armEntry"]>(async ({ rule, market: m, referencePrice, side }) => {
+  const armEntry = useCallback<Ctx["armEntry"]>(async ({ rule, market: raw, referencePrice, side }) => {
+    const m = key(raw);
     if (server) {
       const now = Date.now();
       const ok = await armRemote(token.current, [
@@ -565,7 +592,8 @@ export function TriggerProvider({
     return true;
   }, [server, pull]);
 
-  const bindEntry = useCallback<Ctx["bindEntry"]>((m, entryPrice) => {
+  const bindEntry = useCallback<Ctx["bindEntry"]>((raw, entryPrice) => {
+    const m = key(raw);
     setState((prev) => {
       const engine = prev.engine;
       const log: Transition[] = [];
