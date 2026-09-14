@@ -278,6 +278,17 @@ export interface Quote {
   cashUsd: number;
   /** How far THIS order moves the price, in bps. 0 when depth is unknown. */
   impactBps: number;
+  /**
+   * Where the fill price came from.
+   *
+   * "quoted" means a real Jupiter route priced this exact size. "modelled"
+   * means the spread-and-impact approximation below, which is fine for SOL and
+   * badly wrong for a thin pool. Recorded rather than inferred, because a
+   * number a user is charged against should say how it was arrived at.
+   */
+  pricing: "quoted" | "modelled";
+  /** The pools the quote went through. Empty when modelled. */
+  route: string;
   /** Null when the order is executable; a sentence for the user when it is not. */
   refusal: string | null;
 }
@@ -302,11 +313,25 @@ export function quote(
    * because there was nothing else to say; telling someone they hold no SOL
    * when they are trying to sell BONK is worse than saying nothing.
    */
-  opts?: { depthUsd?: number | null; slippageBps?: number; symbol?: string },
+  opts?: {
+    depthUsd?: number | null;
+    slippageBps?: number;
+    symbol?: string;
+    /**
+     * A REAL price for this exact size, from a real route.
+     *
+     * When present it replaces the model entirely — no spread, no first-order
+     * impact guess — because Jupiter has already priced the whole thing
+     * including cipher's fee and the pools it would cross. The model stays for
+     * the local paper account, which has no network.
+     */
+    quoted?: { price: number; impactBps: number; route: string } | null;
+  },
 ): Quote {
   const gross = qty * mark;
-  const impact = impactBps(gross, opts?.depthUsd ?? null);
-  const price = fillPrice(mark, side, impact);
+  const q = opts?.quoted ?? null;
+  const impact = q ? q.impactBps : impactBps(gross, opts?.depthUsd ?? null);
+  const price = q ? q.price : fillPrice(mark, side, impact);
   const notionalUsd = qty * price;
   const feeUsd = feeFor(notionalUsd);
   const cashUsd = side === "buy" ? notionalUsd + feeUsd : notionalUsd - feeUsd;
@@ -343,7 +368,18 @@ export function quote(
     refusal = `The fee on that is $${feeUsd.toFixed(2)} and the sale is only $${notionalUsd.toFixed(2)}.`;
   }
 
-  return { side, qty, price, notionalUsd, feeUsd, cashUsd, impactBps: impact, refusal };
+  return {
+    side,
+    qty,
+    price,
+    notionalUsd,
+    feeUsd,
+    cashUsd,
+    impactBps: impact,
+    pricing: q ? "quoted" : "modelled",
+    route: q?.route ?? "",
+    refusal,
+  };
 }
 
 /**
@@ -373,12 +409,15 @@ export function execute(
        re-derived, so the price the user approved is the price they get. */
     depthUsd?: number | null;
     slippageBps?: number;
+    /** A real route's price for this size. See quote(). */
+    quoted?: { price: number; impactBps: number; route: string } | null;
   },
 ): { account: Account; fill: Fill } | { refusal: string } {
   const q = quote(a, input.mint, input.side, input.qty, input.mark, {
     depthUsd: input.depthUsd,
     slippageBps: input.slippageBps,
     symbol: input.symbol,
+    quoted: input.quoted,
   });
   if (q.refusal) return { refusal: q.refusal };
 

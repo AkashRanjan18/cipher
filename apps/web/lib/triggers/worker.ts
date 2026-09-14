@@ -1,5 +1,8 @@
 import { allInPrice, positionOf } from "../account/paper.ts";
-import { fireRule } from "./execute.ts";
+import { fireRule, plan } from "./execute.ts";
+import { quoteFill, type QuotedFill } from "../chain/fill.ts";
+import { QuoteError } from "../chain/jupiter.ts";
+import { DEFAULTS } from "@cipher/shared";
 import { loadAccount, saveFill } from "../db/accounts.ts";
 import {
   beat,
@@ -75,6 +78,9 @@ export async function tick(now: number = Date.now()): Promise<TickResult> {
    */
   const priced = markets.length > 0 ? await fetchPrices(markets, { revalidate: 0 }) : new Map();
   const priceOf = new Map([...priced].map(([mint, p]) => [mint, p.usd]));
+  /* Decimals come free with the price, and a quote cannot be built without
+     them — base units are the only thing the chain understands. */
+  const decimalsOf = new Map([...priced].map(([mint, p]) => [mint, p.decimals]));
   const head = newestBlock(priced);
 
   /* Best-effort: a price that cannot be written is still a price to act on,
@@ -125,7 +131,7 @@ export async function tick(now: number = Date.now()): Promise<TickResult> {
 
     for (const { rule, userId } of await crossed(market, price)) {
       if (fired.length >= MAX_FIRES) break;
-      if (await fire(rule, userId, price, now)) fired.push(rule.id);
+      if (await fire(rule, userId, price, now, decimalsOf.get(market))) fired.push(rule.id);
     }
   }
 
@@ -140,7 +146,7 @@ export async function tick(now: number = Date.now()): Promise<TickResult> {
     if (fired.length >= MAX_FIRES) break;
     const price = priceOf.get(rule.market) ?? (await priceFor(rule.market));
     if (price === null || price === undefined) continue;
-    if (await fire(rule, userId, price, now)) fired.push(rule.id);
+    if (await fire(rule, userId, price, now, decimalsOf.get(rule.market))) fired.push(rule.id);
   }
 
   /*
@@ -176,6 +182,34 @@ export async function tick(now: number = Date.now()): Promise<TickResult> {
   return { markets: markets.length, blockId: head, fired, expired, skipped };
 }
 
+/**
+ * Record a failure that is worth retrying, and give up loudly on the third.
+ *
+ * Lifted out because the quote path and the execution path fail the same way
+ * and must count against the same budget — a rule that cannot be priced three
+ * times is as dead as one that cannot be executed three times, and two
+ * separate counters would let it retry six.
+ */
+async function giveUp(
+  rule: Rule,
+  userId: string,
+  now: number,
+  transitions: Transition[],
+  reason: string,
+): Promise<void> {
+  const attempts = rule.attempts + 1;
+  const done = attempts >= MAX_ATTEMPTS;
+  await setState(rule.id, done ? "failed" : "armed", { attempts });
+  transitions.push({
+    ruleId: rule.id,
+    from: "firing",
+    to: done ? "failed" : "armed",
+    at: now,
+    reason: done ? `gave up after ${attempts}: ${reason}` : `retry ${attempts}: ${reason}`,
+  });
+  await record(userId, transitions);
+}
+
 async function priceFor(market: string): Promise<number | null> {
   const one = await fetchPrices([market]);
   return one.get(market)?.usd ?? null;
@@ -188,7 +222,13 @@ async function priceFor(market: string): Promise<number | null> {
  * worker and an open browser tab, can both see the same crossing in the same
  * second — and only the one whose UPDATE changed a row is allowed to trade.
  */
-async function fire(rule: Rule, userId: string, price: number, now: number): Promise<boolean> {
+async function fire(
+  rule: Rule,
+  userId: string,
+  price: number,
+  now: number,
+  decimals: number | undefined,
+): Promise<boolean> {
   if (!(await claim(rule.id))) return false;
 
   const transitions: Transition[] = [
@@ -209,7 +249,55 @@ async function fire(rule: Rule, userId: string, price: number, now: number): Pro
     return false;
   }
 
-  const outcome = fireRule(account, rule, { mark: price, ts: Math.floor(now / 1000) });
+  /*
+   * QUOTED AGAINST A REAL ROUTE, not modelled.
+   *
+   * The ledger's spread-and-impact model is a fair approximation for SOL and
+   * badly wrong for a thin pool — $500 into three thousand dollars of
+   * liquidity moves the price several percent and the model charges ten basis
+   * points. Since this function decides how much of someone's money moves
+   * while they are asleep, it asks Jupiter what the trade would actually fill
+   * at, through the same endpoint the real swap will use.
+   *
+   * `plan()` first, so the size being quoted is the size that will trade — and
+   * so a rule that is already moot costs nothing to discover.
+   */
+  let quoted: QuotedFill | null = null;
+  const intent = plan(account, rule, price);
+
+  if (intent.kind === "trade" && decimals !== undefined) {
+    try {
+      quoted = await quoteFill({
+        mint: rule.market,
+        decimals,
+        side: intent.side,
+        size: intent.side === "buy" ? intent.usd : intent.qty,
+        slippageBps: DEFAULTS.slippageBps,
+      });
+    } catch (e) {
+      /*
+       * A QUOTE THAT FAILS IS NOT A TRADE THAT SHOULD HAPPEN ANYWAY.
+       *
+       * Falling through to the model would price a trade against a number
+       * Jupiter just declined to stand behind — which is the one moment the
+       * model is guaranteed to be wrong, because "no route" means the
+       * liquidity the model assumes is not there.
+       *
+       * `failed` rather than `moot`, so it retries: a pool can come back, and
+       * three attempts is what the engine already gives every other transient
+       * failure before it gives up loudly.
+       */
+      const why = e instanceof QuoteError ? e.message : "could not price that trade";
+      await giveUp(rule, userId, now, transitions, why);
+      return false;
+    }
+  }
+
+  const outcome = fireRule(account, rule, {
+    mark: price,
+    ts: Math.floor(now / 1000),
+    quoted,
+  });
 
   if (outcome.kind === "filled") {
     await saveFill(userId, outcome.account, outcome.fill);
@@ -276,18 +364,8 @@ async function fire(rule: Rule, userId: string, price: number, now: number): Pro
       reason: outcome.reason,
     });
   } else {
-    const attempts = rule.attempts + 1;
-    const giveUp = attempts >= MAX_ATTEMPTS;
-    await setState(rule.id, giveUp ? "failed" : "armed", { attempts });
-    transitions.push({
-      ruleId: rule.id,
-      from: "firing",
-      to: giveUp ? "failed" : "armed",
-      at: now,
-      reason: giveUp
-        ? `gave up after ${attempts}: ${outcome.reason}`
-        : `retry ${attempts}: ${outcome.reason}`,
-    });
+    await giveUp(rule, userId, now, transitions, outcome.reason);
+    return false;
   }
 
   await record(userId, transitions);

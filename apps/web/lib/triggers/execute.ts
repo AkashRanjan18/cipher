@@ -75,10 +75,12 @@ const DUST_USD = 1;
  * which is precisely what a resting order on a real book does while the price
  * is on the wrong side: nothing, until it is not.
  */
-function worseThanLimit(rule: Rule, price: number): string | null {
+function worseThanLimit(rule: Rule, price: number, quoted = false): string | null {
   if (rule.trigger.kind !== "priceAbsolute") return null;
   const limit = rule.trigger.value;
-  const fill = fillPrice(price, rule.side);
+  /* A quoted price IS the fill — spread, impact and cipher's fee are already
+     inside it. Applying the model's spread on top would charge it twice. */
+  const fill = quoted ? price : fillPrice(price, rule.side);
   if (rule.side === "sell" && fill < limit) {
     return `would have filled at $${fill.toFixed(4)}, below your limit of $${limit}`;
   }
@@ -88,29 +90,32 @@ function worseThanLimit(rule: Rule, price: number): string | null {
   return null;
 }
 
-export function fireRule(
-  account: Account,
-  rule: Rule,
-  ctx: {
-    /** The price that caused the fire. Passed in; nothing here reads a clock or a feed. */
-    mark: number;
-    /** Unix SECONDS — paper.ts keeps fills in seconds, the engine works in ms. */
-    ts: number;
-    /** Book depth, for impact. Null when unknown, which is not the same as zero. */
-    depthUsd?: number | null;
-    /**
-     * Tolerance for this fill, in bps.
-     *
-     * cipher: on the paper ledger this refuses a fill whose impact exceeds the
-     * tolerance. On chain it becomes the swap's minimumOutAmount, set from the
-     * user's limit price rather than from a percentage — which is what turns a
-     * trigger into a genuine limit order: it fills at-or-better or it reverts.
-     * ExitRule carries no slippage of its own today, so exits take the default
-     * the compiler applies to entries.
-     */
-    slippageBps?: number;
-  },
-): Outcome {
+/**
+ * What this rule would trade right now, before anything is priced.
+ *
+ * EXTRACTED SO THE WORKER CAN QUOTE THE EXACT SIZE IT IS ABOUT TO TRADE. The
+ * alternative was for the worker to recompute "a third of the position"
+ * itself, which is two implementations of the one number that decides how much
+ * of someone's money moves — and the day they disagree, the quote prices one
+ * trade and the ledger books another.
+ *
+ * Returns the refusals too, because "the position is already closed" is a fact
+ * about the size, and finding it out before spending a network call on a quote
+ * is free.
+ */
+export type Plan =
+  | {
+      kind: "trade";
+      side: "buy" | "sell";
+      /** Token units. What the ledger will move. */
+      qty: number;
+      /** Dollars. What a buy would spend, and what a quote should price. */
+      usd: number;
+    }
+  | { kind: "moot"; reason: string }
+  | { kind: "failed"; reason: string };
+
+export function plan(account: Account, rule: Rule, mark: number): Plan {
   /*
    * THE RULE SAYS WHICH WAY.
    *
@@ -128,23 +133,15 @@ export function fireRule(
    * first time they topped up or sold by hand — and wrong in the direction of
    * selling more than they own.
    */
-  /*
-   * THE RULE'S MARKET IS THE MINT. The engine has keyed on it since the
-   * worker started firing rules, and now the ledger does too — so "sell a
-   * third" resolves against a third of THIS position rather than a third of
-   * whatever single asset the account used to hold.
-   */
-  const qty = resolveQty(rule.amount, side, account, rule.market, ctx.mark);
-
+  const qty = resolveQty(rule.amount, side, account, rule.market, mark);
   if (qty === null) {
     // resolveQty only returns null for a percentage of a position on the buy
-    // side, which the `side` constant above rules out. Unreachable today, kept
-    // because "unreachable" is a claim about code that changes.
+    // side. Unreachable today, kept because "unreachable" is a claim about
+    // code that changes.
     return { kind: "failed", reason: "could not resolve the size" };
   }
 
   const held = positionOf(account, rule.market).qty;
-
   if (side === "sell" && held <= 0) {
     return { kind: "moot", reason: "the position is already closed" };
   }
@@ -162,17 +159,81 @@ export function fireRule(
    */
   const size = side === "sell" ? Math.min(qty, held) : qty;
 
-  if (size * ctx.mark < DUST_USD) {
+  if (size * mark < DUST_USD) {
     return { kind: "moot", reason: "what is left is smaller than the fee to sell it" };
   }
 
-  const worse = worseThanLimit(rule, ctx.mark);
+  /*
+   * The dollar figure a BUY should be quoted with.
+   *
+   * `resolveQty` turns "$500" into tokens using the modelled price, so going
+   * back through `mark` recovers roughly the dollars the user named. Roughly,
+   * not exactly — and the quote fixes that: it spends the dollars and returns
+   * the tokens, which is what a real swap does and what the ledger then books.
+   */
+  return { kind: "trade", side, qty: size, usd: size * mark };
+}
+
+export function fireRule(
+  account: Account,
+  rule: Rule,
+  ctx: {
+    /** The price that caused the fire. Passed in; nothing here reads a clock or a feed. */
+    mark: number;
+    /** Unix SECONDS — paper.ts keeps fills in seconds, the engine works in ms. */
+    ts: number;
+    /** Book depth, for impact. Null when unknown, which is not the same as zero. */
+    depthUsd?: number | null;
+    /**
+     * Tolerance for this fill, in bps.
+     *
+     * On chain it becomes the swap's minimumOutAmount, set from the user's
+     * limit price rather than from a percentage — which is what turns a
+     * trigger into a genuine limit order: it fills at-or-better or it reverts.
+     */
+    slippageBps?: number;
+    /**
+     * A REAL price for this size, from a real Jupiter route.
+     *
+     * PASSED IN, NOT FETCHED HERE, and the reason is that this function has
+     * two callers of different shapes. The worker is async and quotes first;
+     * the browser's local paper account is synchronous and has no network at
+     * all. Fetching inside would force both to become async for something only
+     * one of them can use.
+     *
+     * Absent, the ledger falls back to its spread-and-impact model — honest
+     * for SOL, an approximation everywhere else, and clearly labelled as one.
+     */
+    quoted?: { price: number; qty: number; impactBps: number; route: string } | null;
+  },
+): Outcome {
+  const p = plan(account, rule, ctx.mark);
+  if (p.kind !== "trade") return p;
+
+  /*
+   * THE QUOTE'S OWN SIZE WINS ON A BUY.
+   *
+   * A dollar-denominated buy spends exactly the dollars and receives whatever
+   * the route returns. Booking the modelled token amount against the real
+   * price would record a trade that never happened.
+   */
+  const size = ctx.quoted && p.side === "buy" ? ctx.quoted.qty : p.qty;
+
+  /*
+   * THE LIMIT IS CHECKED AGAINST THE QUOTED PRICE when there is one.
+   *
+   * Checking the model instead checks the wrong number: a limit sell at
+   * $101.75 that the model prices at $101.70 and a real route prices at
+   * $99.80 must refuse, and only one of those is true.
+   */
+  const worse = worseThanLimit(rule, ctx.quoted?.price ?? ctx.mark, Boolean(ctx.quoted));
   if (worse) return { kind: "failed", reason: worse };
 
   const result = execute(account, {
     mint: rule.market,
-    side,
+    side: p.side,
     qty: size,
+    quoted: ctx.quoted ?? null,
     mark: ctx.mark,
     ts: ctx.ts,
     squawk: squawkFor(rule),

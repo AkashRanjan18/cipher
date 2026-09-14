@@ -30,10 +30,31 @@ const HEAD = 300_000_000;
 let h: Harness;
 const realFetch = globalThis.fetch;
 
+const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
 /** What the fake Jupiter serves this test, by mint. */
 let feed = new Map<string, { usd: number; blockId: number }>();
 
+/** Mints the fake Jupiter refuses to route, for the no-liquidity case. */
+let noRoute = new Set<string>();
+
+/**
+ * How much worse than the mark the route comes back, in bps.
+ *
+ * A real pool always returns less than the headline price — that is what
+ * price impact IS. Zero by default so most tests can say "a stop at 50 fires
+ * at 49" and mean exactly that; set it where the point of the test is that
+ * the fill is worse than the number on the card.
+ */
+let routeBps = 0;
+
+function adverse(bps: number): void {
+  routeBps = bps;
+}
+
 function serve(prices: Record<string, number | { usd: number; blockId: number }>): void {
+  noRoute = new Set();
+  routeBps = 0;
   feed = new Map(
     Object.entries(prices).map(([mint, v]) => [
       mint,
@@ -54,6 +75,50 @@ before(async () => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     assert.match(url.hostname, /jup\.ag$/, `worker reached an unexpected host: ${url.host}`);
+
+    /*
+     * THE QUOTE, priced off the same feed as everything else.
+     *
+     * The worker no longer fills against its own model — it asks Jupiter what
+     * the trade would actually get, through the endpoint the real swap uses.
+     * So the fake Jupiter has to answer that too, and it answers it
+     * CONSISTENTLY: the quoted price is the served price, which is what lets a
+     * test still say "a stop at 50 fires at 49" and mean it.
+     *
+     * No spread and no impact here on purpose. The model's approximations are
+     * what this change removes; baking them into the stub would test the thing
+     * that was deleted.
+     */
+    if (url.pathname.includes("/swap/v1/quote")) {
+      const inputMint = url.searchParams.get("inputMint") ?? "";
+      const outputMint = url.searchParams.get("outputMint") ?? "";
+      const amount = Number(url.searchParams.get("amount") ?? "0");
+      const buying = inputMint === USDC;
+      const token = buying ? outputMint : inputMint;
+      const p = feed.get(token);
+      if (!p || noRoute.has(token)) {
+        return new Response(JSON.stringify({ error: "no route" }), { status: 400 });
+      }
+      /* USDC is 6 decimals, every token in these tests is 9. */
+      /* Adverse in both directions: you always receive LESS than the
+         headline price implies, whichever way the swap goes. */
+      const ideal = buying ? (amount / 1e6 / p.usd) * 1e9 : (amount / 1e9) * p.usd * 1e6;
+      const outAmount = ideal * (1 - routeBps / 10_000);
+      return new Response(
+        JSON.stringify({
+          inputMint,
+          outputMint,
+          inAmount: String(Math.round(amount)),
+          outAmount: String(Math.round(outAmount)),
+          otherAmountThreshold: String(Math.round(outAmount * 0.97)),
+          priceImpactPct: "0",
+          slippageBps: 300,
+          routePlan: [{ swapInfo: { label: "Stub" }, percent: 100 }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
     const asked = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean);
     const body: Record<string, unknown> = {};
     for (const mint of asked) {
@@ -283,9 +348,13 @@ test("a limit buy does not fill above the price the user named", async () => {
       entryPrice: 100,
     }),
   );
-  /* Crossed, but only just — the spread puts the fill on the wrong side of
-     the limit, which is a no-fill and not a failure. */
+  /*
+   * Crossed, and the ROUTE is worse than the mark — which is what a real pool
+   * does and what the modelled spread was standing in for. A limit buy at $95
+   * must not fill at $95.95 just because the headline price touched 95.
+   */
   serve({ [SOL]: 95 });
+  adverse(100);
 
   const out = await tick(T0 + 1000);
   assert.deepEqual(out.fired, []);
@@ -374,8 +443,9 @@ test("a limit sell that keeps missing retries, then gives up", async () => {
     USER,
     rule({ trigger: { kind: "priceAbsolute", value: 150 }, amount: { kind: "percentOfPosition", value: 100 } }),
   );
-  /* Above the limit so it is crossed, but the spread lands the fill below it. */
+  /* Crossed, but the route lands the fill below the limit every time. */
   serve({ [SOL]: 150 });
+  adverse(100);
 
   await tick(T0 + 1000);
   assert.equal(await stateOf("r1"), "armed");
@@ -407,6 +477,82 @@ test("a new high moves the stop up instead of firing it", async () => {
 
   serve({ [SOL]: 239 });
   assert.deepEqual((await tick(T0 + 3000)).fired, ["r1"]);
+});
+
+/* ────────────────────────── priced by a real route ─────────────────────── */
+
+test("the fill is the QUOTED price, not the modelled one", async () => {
+  /*
+   * The point of the whole change. The ledger's model charges ten basis points
+   * of spread; a thin pool charges percent. Here the route comes back 5% worse
+   * than the mark, and the fill has to reflect that — a paper trade that fills
+   * better than the chain would is a paper trade that teaches the wrong thing.
+   */
+  await position(10, 1000);
+  await insertRule(USER, rule());
+  serve({ [SOL]: 49 });
+  adverse(500);
+
+  await tick(T0 + 1000);
+
+  const [fill] = (await loadAccount(USER))!.fills;
+  assert.ok(fill, "nothing filled");
+  /* 49 less 5% is 46.55. The modelled price would have been about 48.95. */
+  assert.ok(
+    fill.price < 47 && fill.price > 46,
+    `expected roughly 46.55 from the route, got ${fill.price}`,
+  );
+});
+
+test("a token nothing will route is not filled against the model", async () => {
+  /*
+   * The one moment the model is guaranteed to be wrong: "no route" means the
+   * liquidity it assumes is not there. Falling through would book a trade at a
+   * price nobody was willing to offer.
+   */
+  await position(10, 1000);
+  await insertRule(USER, rule());
+  serve({ [SOL]: 49 });
+  noRoute.add(SOL);
+
+  const out = await tick(T0 + 1000);
+
+  assert.deepEqual(out.fired, []);
+  assert.equal((await loadAccount(USER))!.fills.length, 0, "it filled anyway");
+  /* Retried, not abandoned — a pool can come back. */
+  assert.equal(await stateOf("r1"), "armed");
+  assert.match((await transitionsFor(USER)).at(-1)!.reason, /retry 1/);
+});
+
+test("a buy books the tokens the route returns, not the tokens the model predicted", async () => {
+  /*
+   * "Buy $500" spends five hundred dollars. How many tokens that is, is the
+   * route's answer — and with impact it is fewer than the headline price
+   * implies. Booking the modelled amount against the real price would record a
+   * trade that never happened.
+   */
+  await insertRule(
+    USER,
+    rule({
+      id: "entry",
+      side: "buy",
+      /* The limit is set ABOVE the impacted price on purpose. A limit of
+         exactly 100 would correctly refuse a fill at 104 — which is a
+         different test, and it is the one above. */
+      trigger: { kind: "priceAbsolute", value: 110 },
+      amount: { kind: "usd", value: 500 },
+      entryPrice: 120,
+    }),
+  );
+  serve({ [SOL]: 100 });
+  adverse(400);
+
+  await tick(T0 + 1000);
+
+  const [fill] = (await loadAccount(USER))!.fills;
+  assert.ok(fill, "nothing filled");
+  /* $500 at 100 is 5 tokens ideally; 4% of impact makes it about 4.8. */
+  assert.ok(fill.qty < 4.9 && fill.qty > 4.7, `expected about 4.8 tokens, got ${fill.qty}`);
 });
 
 /* ──────────────────────────────── isolation ────────────────────────────── */

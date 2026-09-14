@@ -51,12 +51,26 @@ export interface QuoteRequest {
 }
 
 export class QuoteError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
+  /*
+   * DECLARED AND ASSIGNED, not a constructor parameter property.
+   *
+   * `constructor(message: string, readonly status: number)` is valid
+   * TypeScript and is NOT valid stripped JavaScript — it is one of the few
+   * constructs that emits code rather than only erasing types. The suite runs
+   * on `node --experimental-strip-types`, so this file was unimportable by any
+   * test the moment anything under test reached it:
+   *
+   *   ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX: TypeScript parameter property is not
+   *   supported in strip-only mode
+   *
+   * It went unnoticed for as long as nothing tested imported Jupiter.
+   */
+  readonly status: number;
+
+  constructor(message: string, status: number) {
     super(message);
     this.name = "QuoteError";
+    this.status = status;
   }
 }
 
