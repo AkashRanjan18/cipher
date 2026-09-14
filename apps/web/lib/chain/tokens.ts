@@ -25,12 +25,39 @@
  * the filter — not a heuristic over the other numbers.
  */
 
+/**
+ * WHERE A TOKEN IS IN ITS LIFE, which on Solana is most of what it is.
+ *
+ *   bonding    still on a launchpad's curve. No AMM pool exists yet; the
+ *              "price" is a function of how much has been bought. Minutes old,
+ *              usually worthless, occasionally the whole trade.
+ *   graduated  it filled the curve and migrated to a real pool. This is the
+ *              moment that matters — liquidity becomes real and the token
+ *              stops being a closed system.
+ *   legacy     never had a launchpad. SOL, BONK, JUP, the LSTs, the stables.
+ *
+ * Derived rather than stored: Jupiter reports `launchpad` and `graduatedAt`,
+ * and the three states are exactly the combinations of those two. Inventing a
+ * fourth field to hold what two existing fields already say is how the two
+ * start disagreeing.
+ */
+export type Lifecycle = "bonding" | "graduated" | "legacy";
+
 export interface TokenAudit {
   mintAuthorityDisabled: boolean | null;
   freezeAuthorityDisabled: boolean | null;
   /** Share of supply held by the top holders, 0-100. */
   topHoldersPercentage: number | null;
   devBalancePercentage: number | null;
+  /**
+   * How many tokens this dev has ever minted. THE SINGLE BEST RUG SIGNAL HERE.
+   *
+   * A two-minute-old pump.fun token pulled from /tokens/v2/recent while
+   * writing this had a dev with 422 previous mints. Nobody launches 422 honest
+   * projects. Holder count and liquidity describe the token; this describes
+   * the person, and the person is what repeats.
+   */
+  devMints: number | null;
 }
 
 export interface TokenInfo {
@@ -45,7 +72,24 @@ export interface TokenInfo {
   liquidityUsd: number;
   priceUsd: number;
   mcap: number | null;
+  /** Fully diluted, which on a launchpad token is usually the honest number. */
+  fdv: number | null;
   audit: TokenAudit | null;
+
+  /* ── where it is in its life ─────────────────────────────────────────── */
+
+  lifecycle: Lifecycle;
+  /** "pump.fun", "letsbonk.fun", "met-dbc", … Null for legacy tokens. */
+  launchpad: string | null;
+  /** When it left the curve. Null while bonding, null for legacy. */
+  graduatedAt: string | null;
+  /** The dev's wallet. Pairs with audit.devMints to identify a serial launcher. */
+  dev: string | null;
+  /** When the token first existed. */
+  createdAt: string | null;
+  /** Traded volume and trader count over 24h, when Jupiter reports it. */
+  volume24hUsd: number | null;
+  traders24h: number | null;
 }
 
 export type Resolution =
@@ -199,6 +243,29 @@ export function risks(token: TokenInfo): string[] {
   return out;
 }
 
+/**
+ * The three states, from the two fields that actually describe them.
+ *
+ * ORDER MATTERS: graduation is checked before bonding, because a graduated
+ * token still carries the launchpad that made it. Reading `launchpad` alone
+ * would file every graduated token as still on its curve — which is the
+ * difference between a closed system and a real pool, and is exactly the
+ * distinction a user is asking about when they ask for "graduated".
+ */
+export function lifecycleOf(raw: Record<string, unknown>): Lifecycle {
+  if (!raw.launchpad) return "legacy";
+  return raw.graduatedAt ? "graduated" : "bonding";
+}
+
+/** Buy plus sell volume over a window. Jupiter reports the two sides apart. */
+function volume(stats: unknown): number | null {
+  const s = stats as Record<string, unknown> | undefined;
+  if (!s) return null;
+  const buy = typeof s.buyVolume === "number" ? s.buyVolume : 0;
+  const sell = typeof s.sellVolume === "number" ? s.sellVolume : 0;
+  return buy + sell;
+}
+
 /** Jupiter's search payload → our shape. Unknown fields are dropped, not trusted. */
 export function fromJupiter(raw: Record<string, unknown>): TokenInfo {
   const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -216,6 +283,17 @@ export function fromJupiter(raw: Record<string, unknown>): TokenInfo {
     liquidityUsd: n(raw.liquidity),
     priceUsd: n(raw.usdPrice),
     mcap: typeof raw.mcap === "number" ? raw.mcap : null,
+    fdv: typeof raw.fdv === "number" ? raw.fdv : null,
+    lifecycle: lifecycleOf(raw),
+    launchpad: raw.launchpad ? String(raw.launchpad) : null,
+    graduatedAt: raw.graduatedAt ? String(raw.graduatedAt) : null,
+    dev: raw.dev ? String(raw.dev) : null,
+    createdAt: raw.createdAt ? String(raw.createdAt) : null,
+    volume24hUsd: volume(raw.stats24h),
+    traders24h:
+      typeof (raw.stats24h as Record<string, unknown>)?.numTraders === "number"
+        ? ((raw.stats24h as Record<string, number>).numTraders)
+        : null,
     audit: audit
       ? {
           mintAuthorityDisabled:
@@ -226,6 +304,7 @@ export function fromJupiter(raw: Record<string, unknown>): TokenInfo {
             typeof audit.topHoldersPercentage === "number" ? audit.topHoldersPercentage : null,
           devBalancePercentage:
             typeof audit.devBalancePercentage === "number" ? audit.devBalancePercentage : null,
+          devMints: typeof audit.devMints === "number" ? audit.devMints : null,
         }
       : null,
   };
