@@ -29,6 +29,7 @@ import {
 } from "@cipher/shared";
 import { usePrivy } from "@privy-io/react-auth";
 import { usePaperAccount } from "../account/store";
+import { positionOf } from "../account/paper";
 import { allInPrice } from "../account/paper";
 import { armRemote, cancelRemote, fetchSnapshotResult } from "../db/remote";
 import { fireRule } from "./execute";
@@ -419,7 +420,9 @@ export function TriggerProvider({
   const wasHolding = useRef(false);
   useEffect(() => {
     if (server || !hydrated) return;
-    const holding = account.sol > 0;
+    /* THIS market's position, not the account's only one. Watching the whole
+       account would cancel BONK's exits because SOL went flat. */
+    const holding = positionOf(account, market).qty > 0;
     const emptied = wasHolding.current && !holding;
     wasHolding.current = holding;
     if (!emptied) return;
@@ -433,7 +436,7 @@ export function TriggerProvider({
         transitions: [...prev.transitions, ...step.transitions].slice(-MAX_TRANSITIONS),
       };
     });
-  }, [account.sol, market, server, hydrated]);
+  }, [account, market, server, hydrated]);
 
   /*
    * Price ticks.

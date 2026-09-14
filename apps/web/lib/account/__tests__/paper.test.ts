@@ -11,12 +11,47 @@ import {
   resolveQty,
   maxBuyUsd,
   allInPrice,
+  positionOf,
+  heldMints,
   type Account,
 } from "../paper.ts";
 
+/**
+ * These tests were written against a ledger that held one asset, and they are
+ * the reason the migration to many is trustworthy — every one of them is a
+ * statement about the money math that must survive the shape change.
+ *
+ * The helpers below keep them readable: MINT is the market under test, and
+ * `sol()`/`basis()` read the position the old `sol(account)` used to be.
+ */
+const MINT = "So11111111111111111111111111111111111111112";
+const OTHER = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+
+/** Units held in the market under test. */
+function sol(a: Account): number {
+  return positionOf(a, MINT).qty;
+}
+
+/** Average cost in the market under test. */
+function basis(a: Account): number {
+  return positionOf(a, MINT).costBasis;
+}
+
+/** One mark, for the market under test. */
+function at(mark: number): Record<string, number> {
+  return { [MINT]: mark };
+}
+
 /** Helper: execute and fail the test loudly if the order was refused. */
-function fill(a: Account, side: "buy" | "sell", qty: number, mark: number, ts = 1_700_000_000) {
-  const r = execute(a, { side, qty, mark, ts });
+function fill(
+  a: Account,
+  side: "buy" | "sell",
+  qty: number,
+  mark: number,
+  ts = 1_700_000_000,
+  mint = MINT,
+) {
+  const r = execute(a, { mint, side, qty, mark, ts });
   if ("refusal" in r) throw new Error(`refused: ${r.refusal}`);
   return r;
 }
@@ -24,9 +59,9 @@ function fill(a: Account, side: "buy" | "sell", qty: number, mark: number, ts = 
 test("the deposit is the whole account until something happens", () => {
   const a = openAccount(10_000);
   assert.equal(a.usdc, 10_000);
-  assert.equal(a.sol, 0);
-  assert.equal(equity(a, 103), 10_000);
-  assert.equal(unrealised(a, 103), 0);
+  assert.equal(sol(a), 0);
+  assert.equal(equity(a, at(103)), 10_000);
+  assert.equal(unrealised(a, MINT, 103), 0);
 });
 
 test("the commission floor bites below $200 and the rate takes over above it", () => {
@@ -51,8 +86,8 @@ test("a buy costs notional plus fee, and the fee lands in the cost basis", () =>
   const fee = notional * 0.005; // 5.005
 
   assert.equal(b.usdc, 10_000 - notional - fee);
-  assert.equal(b.sol, 10);
-  assert.equal(b.costBasis, (notional + fee) / 10);
+  assert.equal(sol(b), 10);
+  assert.equal(basis(b), (notional + fee) / 10);
   assert.equal(b.feesUsd, fee);
 
   /*
@@ -60,25 +95,25 @@ test("a buy costs notional plus fee, and the fee lands in the cost basis", () =>
    * is DOWN, not flat. A screen that showed $0.00 here would be claiming
    * break-even at a price where selling loses money.
    */
-  assert.ok(unrealised(b, 100) < 0);
+  assert.ok(unrealised(b, MINT, 100) < 0);
 });
 
 test("a partial sale books its share of the basis and leaves the rest priced the same", () => {
   const a = openAccount(10_000);
   const { account: b } = fill(a, "buy", 10, 100);
-  const basis = b.costBasis;
+  const perUnit = basis(b);
 
   const { account: c, fill: f } = fill(b, "sell", 4, 200);
 
-  assert.equal(c.sol, 6);
-  assert.equal(c.costBasis, basis, "the remaining position keeps its per-unit cost");
+  assert.equal(sol(c), 6);
+  assert.equal(basis(c), perUnit, "the remaining position keeps its per-unit cost");
   assert.ok(f.realisedUsd > 0);
   assert.equal(c.realisedUsd, f.realisedUsd);
 
   // Realised is proceeds after fee, minus what those 4 SOL cost to acquire.
   const px = fillPrice(200, "sell");
   const proceeds = 4 * px - feeFor(4 * px);
-  assert.equal(f.realisedUsd, proceeds - 4 * basis);
+  assert.equal(f.realisedUsd, proceeds - 4 * perUnit);
 });
 
 test("going flat resets the cost basis", () => {
@@ -92,11 +127,11 @@ test("going flat resets the cost basis", () => {
   const { account: b } = fill(a, "buy", 10, 100);
   const { account: c } = fill(b, "sell", 10, 200);
 
-  assert.equal(c.sol, 0);
-  assert.equal(c.costBasis, 0);
+  assert.equal(sol(c), 0);
+  assert.equal(basis(c), 0);
 
   const { account: d } = fill(c, "buy", 1, 200);
-  assert.ok(Math.abs(d.costBasis - 200) < 5, "reopened at 200, not anchored to 100");
+  assert.ok(Math.abs(basis(d) - 200) < 5, "reopened at 200, not anchored to 100");
 });
 
 test("a round trip nets out to realised P&L minus every fee charged", () => {
@@ -104,9 +139,9 @@ test("a round trip nets out to realised P&L minus every fee charged", () => {
   const { account: b } = fill(a, "buy", 10, 100);
   const { account: c } = fill(b, "sell", 10, 120);
 
-  assert.equal(c.sol, 0);
+  assert.equal(sol(c), 0);
   // Flat, so equity is pure cash and cash is the deposit plus what was made.
-  assert.ok(Math.abs(equity(c, 120) - (10_000 + c.realisedUsd)) < 1e-9);
+  assert.ok(Math.abs(equity(c, at(120)) - (10_000 + c.realisedUsd)) < 1e-9);
   // And the profit is smaller than the naive 20% by the spread and both fees.
   assert.ok(c.realisedUsd < 200);
   assert.ok(c.realisedUsd > 180);
@@ -114,7 +149,7 @@ test("a round trip nets out to realised P&L minus every fee charged", () => {
 
 test("it refuses rather than overdrawing", () => {
   const a = openAccount(100);
-  const r = execute(a, { side: "buy", qty: 10, mark: 100, ts: 1 });
+  const r = execute(a, { mint: MINT, side: "buy", qty: 10, mark: 100, ts: 1 });
   assert.ok("refusal" in r);
   assert.deepEqual(a, openAccount(100), "a refused order changes nothing");
 });
@@ -122,7 +157,7 @@ test("it refuses rather than overdrawing", () => {
 test("it refuses rather than short-selling", () => {
   const a = openAccount(10_000);
   const { account: b } = fill(a, "buy", 1, 100);
-  const r = execute(b, { side: "sell", qty: 5, mark: 100, ts: 1 });
+  const r = execute(b, { mint: MINT, side: "sell", qty: 5, mark: 100, ts: 1 });
   assert.ok("refusal" in r);
   assert.match((r as { refusal: string }).refusal, /you hold/i);
 });
@@ -130,7 +165,7 @@ test("it refuses rather than short-selling", () => {
 test("it refuses a sale worth less than its own fee", () => {
   const a = openAccount(10_000);
   const { account: b } = fill(a, "buy", 10, 100);
-  const r = execute(b, { side: "sell", qty: 0.001, mark: 100, ts: 1 });
+  const r = execute(b, { mint: MINT, side: "sell", qty: 0.001, mark: 100, ts: 1 });
   assert.ok("refusal" in r, "0.1 dollars of SOL costs $0.95 to sell");
 });
 
@@ -138,9 +173,9 @@ test("percentOfPosition only means something on a sell", () => {
   const a = openAccount(10_000);
   const { account: b } = fill(a, "buy", 10, 100);
 
-  assert.equal(resolveQty({ kind: "percentOfPosition", value: 33 }, "sell", b, 100), 3.3);
+  assert.equal(resolveQty({ kind: "percentOfPosition", value: 33 }, "sell", b, MINT, 100), 3.3);
   assert.equal(
-    resolveQty({ kind: "percentOfPosition", value: 33 }, "buy", b, 100),
+    resolveQty({ kind: "percentOfPosition", value: 33 }, "buy", b, MINT, 100),
     null,
     "buying a third of your position is a misparse, not an order",
   );
@@ -148,7 +183,7 @@ test("percentOfPosition only means something on a sell", () => {
 
 test("a usd amount resolves through the fill price, not the mark", () => {
   const a = openAccount(10_000);
-  const qty = resolveQty({ kind: "usd", value: 1_000 }, "buy", a, 100)!;
+  const qty = resolveQty({ kind: "usd", value: 1_000 }, "buy", a, MINT, 100)!;
   assert.equal(qty, 1_000 / fillPrice(100, "buy"));
   assert.ok(qty < 10, "you get less than the chart price implies, because you do");
 });
@@ -159,13 +194,13 @@ test("max buy is the largest order that is not refused", () => {
     const usd = maxBuyUsd(a);
     if (usd <= 0) continue;
     const qty = usd / fillPrice(100, "buy");
-    assert.equal(quote(a, "buy", qty, 100).refusal, null, `max buy refused at $${balance}`);
+    assert.equal(quote(a, MINT, "buy", qty, 100).refusal, null, `max buy refused at $${balance}`);
   }
 });
 
 test("the quote and the execution agree on the price and the fee", () => {
   const a = openAccount(10_000);
-  const q = quote(a, "buy", 10, 100);
+  const q = quote(a, MINT, "buy", 10, 100);
   const { fill: f } = fill(a, "buy", 10, 100);
   assert.equal(q.price, f.price);
   assert.equal(q.feeUsd, f.feeUsd);
@@ -186,8 +221,8 @@ test("a rounding crumb left by a sell counts as flat, and its cost is booked", (
   // Sell all but 2.2e-6 SOL — the size of remainder a cent-rounded Max leaves.
   const { account: c } = fill(b, "sell", 10 - 2.2e-6, 100);
 
-  assert.equal(c.sol, 0, "a crumb is not a position");
-  assert.equal(c.costBasis, 0, "and it must not anchor the next position");
+  assert.equal(sol(c), 0, "a crumb is not a position");
+  assert.equal(basis(c), 0, "and it must not anchor the next position");
 
   // The crumb was paid for and cannot be recovered, so it is a realised loss,
   // not a rounding error that quietly vanishes from the books.
@@ -200,16 +235,16 @@ test("a real small position is not swept", () => {
   const { account: c } = fill(b, "sell", 9.99, 100);
 
   // 0.01 SOL is a dollar at this price — far above a crumb, and still theirs.
-  assert.ok(c.sol > 0, "a dollar of SOL is a position");
-  assert.ok(c.costBasis > 0);
+  assert.ok(sol(c) > 0, "a dollar of SOL is a position");
+  assert.ok(basis(c) > 0);
 });
 
 test("selling the exact position leaves nothing behind", () => {
   const a = openAccount(10_000);
   const { account: b } = fill(a, "buy", 7.3, 141.77);
-  const { account: c } = fill(b, "sell", b.sol, 141.77);
-  assert.equal(c.sol, 0);
-  assert.equal(c.costBasis, 0);
+  const { account: c } = fill(b, "sell", sol(b), 141.77);
+  assert.equal(sol(c), 0);
+  assert.equal(basis(c), 0);
 });
 
 test("the all-in price accounts for every dollar that moved", () => {
@@ -221,12 +256,12 @@ test("the all-in price accounts for every dollar that moved", () => {
    */
   const a = openAccount(10_000);
 
-  const qb = quote(a, "buy", 10, 100);
+  const qb = quote(a, MINT, "buy", 10, 100);
   assert.ok(Math.abs(10 * allInPrice(qb) - qb.cashUsd) < 1e-9, "a buy reconciles");
   assert.ok(allInPrice(qb) > qb.price, "the buyer pays above the fill");
 
   const { account: b } = fill(a, "buy", 10, 100);
-  const qs = quote(b, "sell", 10, 100);
+  const qs = quote(b, MINT, "sell", 10, 100);
   assert.ok(Math.abs(10 * allInPrice(qs) - qs.cashUsd) < 1e-9, "a sell reconciles");
   assert.ok(allInPrice(qs) < qs.price, "the seller receives below the fill");
 
@@ -247,18 +282,18 @@ test("the all-in price accounts for every dollar that moved", () => {
 
 test("depth is optional, and without it nothing changes", () => {
   const a = openAccount(10_000);
-  assert.equal(quote(a, "buy", 10, 100).impactBps, 0);
-  assert.equal(quote(a, "buy", 10, 100).price, quote(a, "buy", 10, 100, {}).price);
+  assert.equal(quote(a, MINT, "buy", 10, 100).impactBps, 0);
+  assert.equal(quote(a, MINT, "buy", 10, 100).price, quote(a, MINT, "buy", 10, 100, {}).price);
 });
 
 test("impact scales with size against the book", () => {
   const a = openAccount(1_000_000);
   // $1,000 into a $1,000,000 book is a tenth of a percent.
-  const small = quote(a, "buy", 10, 100, { depthUsd: 1_000_000 });
+  const small = quote(a, MINT, "buy", 10, 100, { depthUsd: 1_000_000 });
   assert.ok(Math.abs(small.impactBps - 10) < 1e-9);
 
   // Ten times the size, ten times the impact.
-  const big = quote(a, "buy", 100, 100, { depthUsd: 1_000_000 });
+  const big = quote(a, MINT, "buy", 100, 100, { depthUsd: 1_000_000 });
   assert.ok(Math.abs(big.impactBps - 100) < 1e-9);
 
   assert.ok(big.price > small.price, "a bigger buy fills worse");
@@ -267,7 +302,7 @@ test("impact scales with size against the book", () => {
 test("a thin pool refuses an order that breaches tolerance", () => {
   const a = openAccount(100_000);
   // $5,000 into a $40,000 pool is 12.5%, well past a 3% tolerance.
-  const q = quote(a, "buy", 50, 100, { depthUsd: 40_000, slippageBps: 300 });
+  const q = quote(a, MINT, "buy", 50, 100, { depthUsd: 40_000, slippageBps: 300 });
   assert.ok(q.refusal);
   assert.match(q.refusal!, /12\.50%.*3\.00%/);
 });
@@ -280,13 +315,13 @@ test("a thin pool refuses an order that breaches tolerance", () => {
  */
 test("the tolerance refusal wins over the affordability refusal", () => {
   const a = openAccount(100);
-  const q = quote(a, "buy", 50, 100, { depthUsd: 40_000, slippageBps: 300 });
+  const q = quote(a, MINT, "buy", 50, 100, { depthUsd: 40_000, slippageBps: 300 });
   assert.match(q.refusal!, /moves the price/);
 });
 
 test("the same order passes when the tolerance allows it", () => {
   const a = openAccount(100_000);
-  const q = quote(a, "buy", 50, 100, { depthUsd: 40_000, slippageBps: 2_000 });
+  const q = quote(a, MINT, "buy", 50, 100, { depthUsd: 40_000, slippageBps: 2_000 });
   assert.equal(q.refusal, null);
 });
 
@@ -294,6 +329,6 @@ test("the same order passes when the tolerance allows it", () => {
    is capped rather than printing slippage of several hundred percent. */
 test("impact is capped at 50%", () => {
   const a = openAccount(10_000_000);
-  const q = quote(a, "buy", 10_000, 100, { depthUsd: 1_000 });
+  const q = quote(a, MINT, "buy", 10_000, 100, { depthUsd: 1_000 });
   assert.equal(q.impactBps, 5_000);
 });

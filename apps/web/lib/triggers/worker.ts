@@ -1,4 +1,4 @@
-import { allInPrice } from "../account/paper.ts";
+import { allInPrice, positionOf } from "../account/paper.ts";
 import { fireRule } from "./execute.ts";
 import { loadAccount, saveFill } from "../db/accounts.ts";
 import {
@@ -232,7 +232,7 @@ async function fire(rule: Rule, userId: string, price: number, now: number): Pro
      * the same thing when it owns the rules; this is the half that runs while
      * nobody is looking.
      */
-    if (rule.side === "sell" && outcome.account.sol <= 0) {
+    if (rule.side === "sell" && positionOf(outcome.account, rule.market).qty <= 0) {
       for (const { rule: stale } of await exitsOn(rule.market, userId)) {
         if (stale.id === rule.id) continue;
         await setState(stale.id, "cancelled");

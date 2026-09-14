@@ -1,4 +1,5 @@
 import { test, before, after, beforeEach } from "node:test";
+import { positionOf } from "../../account/paper.ts";
 import assert from "node:assert/strict";
 import type { Rule } from "@cipher/shared";
 import { database, type Harness } from "../../db/__tests__/harness.ts";
@@ -84,13 +85,13 @@ beforeEach(async () => {
   serve({ [SOL]: 100 });
 });
 
-/** Give the user something to sell. The ledger holds one asset today. */
-async function position(sol: number, costBasis: number): Promise<void> {
-  await h.pg.query("update accounts set sol = $1, cost_basis = $2 where user_id = $3", [
-    sol,
-    costBasis,
-    USER,
-  ]);
+/** Give a user something to sell, in one market. */
+async function position(qty: number, costBasis: number, user = USER, mint = SOL): Promise<void> {
+  await h.pg.query(
+    `insert into positions (user_id, mint, qty, cost_basis) values ($1, $2, $3, $4)
+     on conflict (user_id, mint) do update set qty = excluded.qty, cost_basis = excluded.cost_basis`,
+    [user, mint, qty, costBasis],
+  );
 }
 
 function rule(over: Partial<Rule> = {}): Rule {
@@ -130,7 +131,7 @@ test("a stop fires with nobody watching, and the money moves", async () => {
   assert.equal(await stateOf("r1"), "filled");
 
   const account = (await loadAccount(USER))!;
-  assert.equal(account.sol, 0, "the whole position should have been sold");
+  assert.equal(positionOf(account, SOL).qty, 0, "the whole position should have been sold");
   assert.ok(account.usdc > 10_000, "proceeds never reached the balance");
   assert.equal(account.fills.length, 1);
   assert.equal(account.fills[0].side, "sell");
@@ -321,7 +322,7 @@ test("a timed exit fires on the clock, with no crossing at all", async () => {
 
   assert.deepEqual((await tick(T0 + 3_599_000)).fired, []);
   assert.deepEqual((await tick(T0 + 3_600_000)).fired, ["r1"]);
-  assert.equal((await loadAccount(USER))!.sol, 0);
+  assert.equal(positionOf((await loadAccount(USER))!, SOL).qty, 0);
 });
 
 test("authority that has lapsed expires the rule and says so in the trail", async () => {
@@ -414,7 +415,7 @@ test("one tick serves every user, and charges each their own account", async () 
   const BOB = "did:privy:bob";
   await ensureUser(BOB);
   await position(10, 1000);
-  await h.pg.query("update accounts set sol = 4, cost_basis = 400 where user_id = $1", [BOB]);
+  await position(4, 400, BOB);
 
   await insertRule(USER, rule({ id: "alice" }));
   await insertRule(BOB, rule({ id: "bob" }));

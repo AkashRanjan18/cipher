@@ -9,7 +9,7 @@ import { TriggerProvider, useTriggers } from "@/lib/triggers/store";
 import { mintFor, marketByMint } from "@/lib/chain/markets";
 import { looksLikeMint } from "@/lib/chain/tokens";
 import { useTokenInfo } from "./use-token-info";
-import { equity } from "@/lib/account/paper";
+import { equity, heldMints } from "@/lib/account/paper";
 import { PriceChart } from "./price-chart";
 import { SidePanel } from "./side-panel";
 import { ChartHeader } from "./chart-header";
@@ -412,7 +412,7 @@ function TerminalBody({
           Paper money
         </span>
 
-        <Bag price={solPrice} />
+        <Bag marks={triggerPrices} />
 
         {/* Was a hardcoded "AR" — a placeholder indistinguishable from a
             working account menu, which is the worst kind. */}
@@ -723,7 +723,7 @@ function TerminalBody({
  * real figure is, for one frame, the screen telling someone they have money
  * they do not have.
  */
-function Bag({ price }: { price: number | undefined }) {
+function Bag({ marks }: { marks: Record<string, number> }) {
   const { account, hydrated, reset } = usePaperAccount();
   /*
    * Resetting the account must also disarm everything.
@@ -737,7 +737,20 @@ function Bag({ price }: { price: number | undefined }) {
   const { clearAll } = useTriggers();
   const [confirming, setConfirming] = useState(false);
 
-  const value = hydrated && price ? equity(account, price) : null;
+  /*
+   * MARKED PER MINT, not against whatever chart is open.
+   *
+   * This took a single `price` — the price of the market being looked at —
+   * and multiplied the whole position by it. With one asset that was merely
+   * fragile; with many it is nonsense. The previous version of this exact bug
+   * valued four SOL at BTC's price and printed a bag of $312,708 and +75,295%.
+   *
+   * Holdings with no mark are skipped rather than counted as zero, so a slow
+   * price request does not look like the money vanishing.
+   */
+  const held = heldMints(account);
+  const priced = held.some((m) => marks[m] !== undefined);
+  const value = hydrated && (held.length === 0 || priced) ? equity(account, marks) : null;
   const ret = value === null ? null : ((value - account.depositedUsd) / account.depositedUsd) * 100;
 
   return (
@@ -752,14 +765,18 @@ function Bag({ price }: { price: number | undefined }) {
       </div>
 
       {/* Holdings, so the money that left cash is visibly somewhere rather
-          than just gone. Hidden when flat — an empty row is noise. */}
-      {hydrated && account.sol > 0 && (
+          than just gone. Hidden when flat — an empty row is noise.
+
+          The VALUE of everything held rather than a quantity of one coin: a
+          quantity means nothing once there are several, and "4.9280" with no
+          unit beside it is worse than nothing. */}
+      {hydrated && held.length > 0 && (
         <div className="hidden text-right md:block">
           <div className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
-            SOL
+            {held.length === 1 ? "Holding" : `${held.length} coins`}
           </div>
           <div className="font-mono text-[13px] font-bold tabular-nums">
-            {account.sol.toFixed(4)}
+            {value === null ? "—" : usd(value - account.usdc)}
           </div>
         </div>
       )}

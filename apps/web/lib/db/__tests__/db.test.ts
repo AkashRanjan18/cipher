@@ -91,7 +91,7 @@ test("a new user opens with the paper deposit, and twice is still once", async (
   await ensureUser(USER);
   const a = await loadAccount(USER);
   assert.equal(a?.usdc, 10_000);
-  assert.equal(a?.sol, 0);
+  assert.deepEqual(a?.positions, {});
   assert.deepEqual(a?.fills, []);
 });
 
@@ -109,9 +109,14 @@ test("money survives the round trip to eight decimal places", async () => {
   const a = (await loadAccount(USER))!;
   await saveFill(
     USER,
-    { ...a, usdc: 9_876.12345678, sol: 12.00000001, costBasis: 123.45678901 },
+    {
+      ...a,
+      usdc: 9_876.12345678,
+      positions: { [SOL]: { qty: 12.00000001, costBasis: 123.45678901 } },
+    },
     {
       id: "f1",
+      mint: SOL,
       ts: 1_700_000_001,
       side: "buy",
       qty: 12.00000001,
@@ -125,8 +130,8 @@ test("money survives the round trip to eight decimal places", async () => {
 
   const back = (await loadAccount(USER))!;
   assert.equal(back.usdc, 9_876.12345678);
-  assert.equal(back.sol, 12.00000001);
-  assert.equal(back.costBasis, 123.45678901);
+  assert.equal(back.positions[SOL].qty, 12.00000001);
+  assert.equal(back.positions[SOL].costBasis, 123.45678901);
   assert.equal(back.fills.length, 1);
   assert.equal(back.fills[0].price, 142.33333333);
   assert.equal(back.fills[0].source, "sana");
@@ -136,6 +141,7 @@ test("the same fill id cannot be written twice", async () => {
   const a = (await loadAccount(USER))!;
   const fill = {
     id: "f1",
+    mint: SOL,
     ts: 1_700_000_001,
     side: "buy" as const,
     qty: 1,
@@ -155,6 +161,7 @@ test("fills come back oldest first however they were written", async () => {
   for (const ts of [300, 100, 200]) {
     await saveFill(USER, a, {
       id: `f${ts}`,
+      mint: SOL,
       ts,
       side: "buy",
       qty: 1,

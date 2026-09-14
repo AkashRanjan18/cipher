@@ -44,10 +44,19 @@ export interface Fill {
   id: string;
   /** Unix seconds. Passed in, never read from a clock in here. */
   ts: number;
+  /**
+   * WHICH COIN. The mint, never the symbol.
+   *
+   * A fill without this was only ever readable because the ledger held one
+   * asset. Anyone can mint a token called SOL for a couple of dollars, so the
+   * symbol is a display string and the mint is the identity — the same rule
+   * the trigger engine already keys on.
+   */
+  mint: string;
   side: "buy" | "sell";
-  /** SOL. */
+  /** Units of the token. */
   qty: number;
-  /** USD per SOL, after spread. */
+  /** USD per unit, after spread. */
   price: number;
   feeUsd: number;
   /** Realised P&L booked by this fill. Always 0 on a buy. */
@@ -56,15 +65,32 @@ export interface Fill {
   source: "ticket" | "sana";
 }
 
-export interface Account {
-  usdc: number;
-  sol: number;
+export interface Position {
+  /** Units held. */
+  qty: number;
   /**
-   * Weighted average cost of the SOL held, USD per SOL, INCLUDING the fee
-   * paid to acquire it. See execute() for why the fee belongs in here.
+   * Weighted average cost per unit, USD, INCLUDING the fee paid to acquire
+   * it. See execute() for why the fee belongs in here.
    */
   costBasis: number;
-  /** Booked P&L from closed size. Does not move with the market. */
+}
+
+export interface Account {
+  usdc: number;
+  /**
+   * WHAT IS HELD, KEYED BY MINT. Absent means flat; there is no zero row.
+   *
+   * This was `sol: number` and `costBasis: number` — one shelf — and it is
+   * the reason cipher could list every coin on Solana and trade exactly one
+   * of them. Every ticket outside SOL was disabled by a guard that existed
+   * only because a buy would otherwise have credited `sol` whatever the user
+   * clicked: pay for Bitcoin, receive Solana.
+   *
+   * A record rather than an array because every operation here is a lookup by
+   * mint, and an array would make each one a scan and each write a splice.
+   */
+  positions: Record<string, Position>;
+  /** Booked P&L from closed size, across every market. Does not move with the market. */
   realisedUsd: number;
   /** Everything cipher has charged. Kept separate so it is always visible. */
   feesUsd: number;
@@ -77,13 +103,31 @@ export interface Account {
 export function openAccount(depositUsd: number): Account {
   return {
     usdc: depositUsd,
-    sol: 0,
-    costBasis: 0,
+    positions: {},
     realisedUsd: 0,
     feesUsd: 0,
     fills: [],
     depositedUsd: depositUsd,
   };
+}
+
+const FLAT: Position = { qty: 0, costBasis: 0 };
+
+/**
+ * What is held in one market. Flat when nothing is.
+ *
+ * Every read goes through here rather than touching `positions` directly, so
+ * "no row" and "zero" are the same answer everywhere. The alternative is a
+ * dozen call sites each remembering `?? { qty: 0, costBasis: 0 }`, and the
+ * one that forgets throws on a market the user has never traded.
+ */
+export function positionOf(a: Account, mint: string): Position {
+  return a.positions[mint] ?? FLAT;
+}
+
+/** Every market with something in it. */
+export function heldMints(a: Account): string[] {
+  return Object.keys(a.positions);
 }
 
 /**
@@ -159,14 +203,40 @@ export function allInPrice(t: {
   return (t.side === "buy" ? notional + t.feeUsd : notional - t.feeUsd) / t.qty;
 }
 
-/** Total account value, marked at the live price. */
-export function equity(a: Account, mark: number): number {
-  return a.usdc + a.sol * mark;
+/**
+ * Total account value, marked at live prices.
+ *
+ * MARKS ARE PER MINT, and a missing one is skipped rather than treated as
+ * zero. A price feed that has not answered yet is not a position worth
+ * nothing; writing it down as zero would show someone their balance
+ * collapsing every time a request was slow, which is the single most alarming
+ * thing a trading screen can do.
+ */
+export function equity(a: Account, marks: Record<string, number>): number {
+  let total = a.usdc;
+  for (const [mint, p] of Object.entries(a.positions)) {
+    const mark = marks[mint];
+    if (mark === undefined || !Number.isFinite(mark)) continue;
+    total += p.qty * mark;
+  }
+  return total;
 }
 
-/** P&L on the open position. Moves every tick; nothing is booked until a sell. */
-export function unrealised(a: Account, mark: number): number {
-  return a.sol < DUST ? 0 : a.sol * (mark - a.costBasis);
+/** P&L on one open position. Moves every tick; nothing is booked until a sell. */
+export function unrealised(a: Account, mint: string, mark: number): number {
+  const p = positionOf(a, mint);
+  return p.qty < DUST ? 0 : p.qty * (mark - p.costBasis);
+}
+
+/** P&L across every open position, for the marks that are known. */
+export function unrealisedTotal(a: Account, marks: Record<string, number>): number {
+  let total = 0;
+  for (const [mint, p] of Object.entries(a.positions)) {
+    const mark = marks[mint];
+    if (mark === undefined || !Number.isFinite(mark) || p.qty < DUST) continue;
+    total += p.qty * (mark - p.costBasis);
+  }
+  return total;
 }
 
 /**
@@ -180,6 +250,7 @@ export function resolveQty(
   amount: Amount,
   side: "buy" | "sell",
   a: Account,
+  mint: string,
   mark: number,
 ): number | null {
   const px = fillPrice(mark, side);
@@ -189,7 +260,10 @@ export function resolveQty(
     case "tokens":
       return amount.value;
     case "percentOfPosition":
-      return side === "sell" ? (a.sol * amount.value) / 100 : null;
+      /* A percentage of THIS market's position. Reading the whole account
+         would sell a third of the wrong coin the moment a second one is
+         held. */
+      return side === "sell" ? (positionOf(a, mint).qty * amount.value) / 100 : null;
   }
 }
 
@@ -217,16 +291,18 @@ export interface Quote {
  */
 export function quote(
   a: Account,
+  mint: string,
   side: "buy" | "sell",
   qty: number,
   mark: number,
   /*
-   * Execution conditions. Optional and defaulted, so every existing caller and
-   * every existing test is unaffected — a signature change here would ripple
-   * through the ticket, Sana and thirty tests for a feature neither of them
-   * has to care about.
+   * Execution conditions, plus what to call the thing in a refusal.
+   *
+   * `symbol` exists only for the sentences. The refusals used to say "SOL"
+   * because there was nothing else to say; telling someone they hold no SOL
+   * when they are trying to sell BONK is worse than saying nothing.
    */
-  opts?: { depthUsd?: number | null; slippageBps?: number },
+  opts?: { depthUsd?: number | null; slippageBps?: number; symbol?: string },
 ): Quote {
   const gross = qty * mark;
   const impact = impactBps(gross, opts?.depthUsd ?? null);
@@ -254,11 +330,13 @@ export function quote(
     refusal = "That is not an amount.";
   } else if (side === "buy" && cashUsd > a.usdc) {
     refusal = `That needs $${cashUsd.toFixed(2)} with the fee and you have $${a.usdc.toFixed(2)}.`;
-  } else if (side === "sell" && qty > a.sol + DUST) {
+  } else if (side === "sell" && qty > positionOf(a, mint).qty + DUST) {
+    const held = positionOf(a, mint).qty;
+    const unit = opts?.symbol ?? "of it";
     refusal =
-      a.sol < DUST
-        ? "You hold no SOL to sell."
-        : `You hold ${a.sol.toFixed(4)} SOL and that sells ${qty.toFixed(4)}.`;
+      held < DUST
+        ? `You hold no ${opts?.symbol ?? "position"} to sell.`
+        : `You hold ${held.toFixed(4)} ${unit} and that sells ${qty.toFixed(4)}.`;
   } else if (side === "sell" && notionalUsd <= feeUsd) {
     /* A sale smaller than its own fee is not a trade, it is a donation. The
        $0.95 floor puts anything under about a dollar here. */
@@ -281,27 +359,33 @@ export function quote(
 export function execute(
   a: Account,
   input: {
+    /** WHICH COIN. Required — there is no default market any more. */
+    mint: string;
     side: "buy" | "sell";
     qty: number;
     mark: number;
     ts: number;
     squawk?: string;
     source?: Fill["source"];
+    /** For refusal sentences only. Never an identity. */
+    symbol?: string;
     /* Execution conditions, same shape quote() takes. Threaded rather than
        re-derived, so the price the user approved is the price they get. */
     depthUsd?: number | null;
     slippageBps?: number;
   },
 ): { account: Account; fill: Fill } | { refusal: string } {
-  const q = quote(a, input.side, input.qty, input.mark, {
+  const q = quote(a, input.mint, input.side, input.qty, input.mark, {
     depthUsd: input.depthUsd,
     slippageBps: input.slippageBps,
+    symbol: input.symbol,
   });
   if (q.refusal) return { refusal: q.refusal };
 
-  const next: Account = { ...a, fills: [...a.fills] };
+  const next: Account = { ...a, fills: [...a.fills], positions: { ...a.positions } };
   next.feesUsd = a.feesUsd + q.feeUsd;
 
+  const held = positionOf(a, input.mint);
   let realisedUsd = 0;
 
   if (q.side === "buy") {
@@ -315,8 +399,10 @@ export function execute(
      * card the price it actually has to reach.
      */
     const cost = q.notionalUsd + q.feeUsd;
-    next.costBasis = (a.costBasis * a.sol + cost) / (a.sol + q.qty);
-    next.sol = a.sol + q.qty;
+    next.positions[input.mint] = {
+      qty: held.qty + q.qty,
+      costBasis: (held.costBasis * held.qty + cost) / (held.qty + q.qty),
+    };
     next.usdc = a.usdc - cost;
   } else {
     /*
@@ -326,8 +412,9 @@ export function execute(
      * reasoning in lots.
      */
     const proceeds = q.notionalUsd - q.feeUsd;
-    realisedUsd = proceeds - q.qty * a.costBasis;
-    next.sol = a.sol - q.qty;
+    realisedUsd = proceeds - q.qty * held.costBasis;
+    const left = held.qty - q.qty;
+    next.positions[input.mint] = { qty: left, costBasis: held.costBasis };
     next.usdc = a.usdc + proceeds;
     next.realisedUsd = a.realisedUsd + realisedUsd;
 
@@ -340,11 +427,16 @@ export function execute(
      * the user paid for it and can never sell it, so it is a realised loss,
      * not a rounding error to be quietly dropped.
      */
-    if (next.sol < DUST || next.sol * q.price < CRUMB_USD) {
-      realisedUsd -= next.sol * a.costBasis;
+    if (left < DUST || left * q.price < CRUMB_USD) {
+      realisedUsd -= left * held.costBasis;
       next.realisedUsd = a.realisedUsd + realisedUsd;
-      next.sol = 0;
-      next.costBasis = 0;
+      /*
+       * DELETED, not zeroed. A flat position is an absent one — otherwise the
+       * account accumulates a zero row for every coin ever touched, and
+       * anything iterating positions (equity, the holdings list, the worker's
+       * "is this flat" check) walks a list that only ever grows.
+       */
+      delete next.positions[input.mint];
     }
   }
 
@@ -358,6 +450,7 @@ export function execute(
      */
     id: newId("f"),
     ts: input.ts,
+    mint: input.mint,
     side: q.side,
     qty: q.qty,
     price: q.price,

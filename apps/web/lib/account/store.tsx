@@ -36,7 +36,7 @@ export const OPENING_DEPOSIT = 10_000;
  * writing a migration — old state is then ignored instead of being read into
  * the new shape and producing a balance that is wrong in a way nobody can see.
  */
-const KEY = "cipher.paper.v1";
+const KEY = "cipher.paper.v2";
 
 interface Ctx {
   account: Account;
@@ -56,9 +56,20 @@ interface Ctx {
   hydrated: boolean;
   /** Returns the fill, or a sentence explaining why it did not happen. */
   trade(input: {
+    /**
+     * WHICH COIN. Required, and deliberately not defaulted.
+     *
+     * A default would be the old bug with extra steps: every caller that
+     * forgot would credit one particular market, which is exactly how "buy
+     * BTC" used to hand someone SOL. Making it required means the compiler
+     * finds every call site instead of the user finding one of them.
+     */
+    mint: string;
     side: "buy" | "sell";
     qty: number;
     mark: number;
+    /** For refusal sentences only. Never an identity. */
+    symbol?: string;
     squawk?: string;
     source?: Fill["source"];
     /* Execution conditions. Passed straight through to the engine — the
@@ -89,8 +100,25 @@ function load(): Account | null {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Account;
-    // Shape check, not a schema. Corrupt state should reset, never throw.
-    if (typeof parsed?.usdc !== "number" || !Array.isArray(parsed.fills)) return null;
+    /*
+     * Shape check, not a schema. Corrupt state should reset, never throw.
+     *
+     * `positions` IS CHECKED, and the reason is a crash. The ledger went from
+     * one asset to a map keyed by mint, an account stored under the old key
+     * came back with no `positions` at all, and `Object.keys(undefined)` took
+     * the whole terminal down behind a runtime error. The version bump above
+     * is the real fix — old state is ignored rather than read into the new
+     * shape — and this is the guard for the case the bump cannot cover: state
+     * written by a build that is newer, older, or simply wrong.
+     */
+    if (
+      typeof parsed?.usdc !== "number" ||
+      !Array.isArray(parsed.fills) ||
+      typeof parsed.positions !== "object" ||
+      parsed.positions === null
+    ) {
+      return null;
+    }
 
     /*
      * The prompt bar was called Polly and is now Sana, and Fill.source is a

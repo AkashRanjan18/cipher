@@ -22,6 +22,7 @@
  */
 
 import { marketOf } from "../market/markets.ts";
+import { looksLikeMint } from "./tokens.ts";
 
 export interface SolanaMarket {
   mint: string;
@@ -193,7 +194,18 @@ const BY_PAIR = new Map(
  */
 export function mintFor(key: string): string | null {
   const k = key.trim();
-  return (BY_MINT.get(k) ?? BY_PAIR.get(k) ?? BY_SYMBOL.get(k.toUpperCase()))?.mint ?? null;
+  const listed = (BY_MINT.get(k) ?? BY_PAIR.get(k) ?? BY_SYMBOL.get(k.toUpperCase()))?.mint;
+  if (listed) return listed;
+  /*
+   * A MINT IS ALREADY A MINT, and this used to return null for one.
+   *
+   * The lookup above only knows the eleven markets cipher happens to list, so
+   * every token that arrived from the discover feed — the entire chain —
+   * resolved to null, and the ticket read "EMBER is chart-only" for a token
+   * with a $25M cap and a live chart on screen. The listed table is a source
+   * of nicer names and chart pairs, never the set of things that exist.
+   */
+  return looksLikeMint(k) ? k : null;
 }
 
 /**

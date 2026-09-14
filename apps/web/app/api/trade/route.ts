@@ -26,6 +26,8 @@ export async function POST(request: Request) {
   if (!hasDb()) return NextResponse.json({ error: "no database" }, { status: 503 });
 
   let body: {
+    mint?: unknown;
+    symbol?: unknown;
     side?: unknown;
     qty?: unknown;
     mark?: unknown;
@@ -51,7 +53,17 @@ export async function POST(request: Request) {
   const side = body.side === "buy" || body.side === "sell" ? body.side : null;
   const qty = typeof body.qty === "number" ? body.qty : NaN;
   const mark = typeof body.mark === "number" ? body.mark : NaN;
-  if (!side || !(qty > 0) || !(mark > 0)) {
+  /*
+   * The mint is required and validated here rather than defaulted.
+   *
+   * It is the identity of what the user is buying, arriving from a client, so
+   * a missing one is a bad request and not a reason to pick a market on their
+   * behalf. Length-checked only — resolution is lib/chain/tokens.ts's job, and
+   * the ledger does not care whether a mint exists, only that two different
+   * coins never share a row.
+   */
+  const mint = typeof body.mint === "string" ? body.mint.trim() : "";
+  if (!side || !mint || mint.length < 32 || mint.length > 44 || !(qty > 0) || !(mark > 0)) {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
   }
 
@@ -59,9 +71,11 @@ export async function POST(request: Request) {
   if (!account) return NextResponse.json({ error: "no account" }, { status: 404 });
 
   const result = execute(account, {
+    mint,
     side,
     qty,
     mark,
+    symbol: typeof body.symbol === "string" ? body.symbol : undefined,
     ts: Math.floor(Date.now() / 1000),
     squawk: typeof body.squawk === "string" ? body.squawk : undefined,
     source: body.source === "sana" ? "sana" : "ticket",

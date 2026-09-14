@@ -21,27 +21,54 @@ create table if not exists users (
 create table if not exists accounts (
   user_id       text primary key references users(id) on delete cascade,
   usdc          numeric(20, 8) not null,
-  sol           numeric(20, 8) not null,
-  cost_basis    numeric(20, 8) not null,
   realised_usd  numeric(20, 8) not null,
   fees_usd      numeric(20, 8) not null,
   deposited_usd numeric(20, 8) not null,
   updated_at    timestamptz not null default now()
 );
 
+-- What is held, one row per market.
+--
+-- WAS TWO COLUMNS ON accounts: `sol` and `cost_basis`. One shelf, which is why
+-- cipher could list every token on Solana and trade exactly one of them — the
+-- ticket disabled itself on every market but SOL, because a buy would
+-- otherwise have credited `sol` whatever the user clicked.
+--
+-- A row exists only while something is held. Going flat DELETES it rather than
+-- writing a zero: otherwise the table accumulates a row for every coin ever
+-- touched, and every read has to filter them out forever.
+--
+-- numeric(36, 18), wider than the cash columns, because a memecoin is not a
+-- dollar. Nine decimals is normal on Solana and the quantities run to twelve
+-- figures — 183,963,461 BONK for $500 — so the precision has to cover both
+-- ends of the same column.
+create table if not exists positions (
+  user_id    text not null references users(id) on delete cascade,
+  mint       text not null,
+  qty        numeric(36, 18) not null,
+  cost_basis numeric(36, 18) not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, mint)
+);
+
 create table if not exists fills (
   id           text primary key,
   user_id      text not null references users(id) on delete cascade,
   ts           bigint not null,
+  -- WHICH COIN. The mint, never the symbol — anyone can mint a token called
+  -- SOL. A fill without this was only readable because the ledger held one
+  -- asset, and a trade history that cannot say what was traded is not one.
+  mint         text not null,
   side         text not null check (side in ('buy', 'sell')),
-  qty          numeric(20, 8) not null,
-  price        numeric(20, 8) not null,
+  qty          numeric(36, 18) not null,
+  price        numeric(36, 18) not null,
   fee_usd      numeric(20, 8) not null,
   realised_usd numeric(20, 8) not null,
   squawk       text,
   source       text not null
 );
 create index if not exists fills_by_user on fills (user_id, ts desc);
+create index if not exists fills_by_market on fills (user_id, mint, ts desc);
 
 -- The armed rules.
 --

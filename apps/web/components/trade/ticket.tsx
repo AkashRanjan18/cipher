@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { mintFor } from "@/lib/chain/markets";
 import { usePaperAccount } from "@/lib/account/store";
 import { useTriggers } from "@/lib/triggers/store";
 import {
@@ -10,11 +11,10 @@ import {
   unrealised,
   equity,
   allInPrice,
+  positionOf,
 } from "@/lib/account/paper";
 import { usd, pct } from "@/lib/format";
-import { DEFAULTS,
-  newId,
-} from "@cipher/shared";
+import { DEFAULTS, newId } from "@cipher/shared";
 
 /**
  * The trade ticket. Buy, sell, position. Nothing else.
@@ -75,6 +75,7 @@ export function Ticket({
   price,
   solPrice,
   symbol,
+  marks: marksProp,
   market = "SOL",
   depthUsd = null,
 }: {
@@ -88,8 +89,10 @@ export function Ticket({
    * account panel reading +75,295%.
    */
   solPrice?: number;
-  /** The market's id, e.g. "SOLUSDT" — what a resting order watches. */
+  /** The market's id — a mint on Solana, a Binance pair for a chart-only major. */
   symbol: string;
+  /** Every price we have, keyed by mint, for the account total. */
+  marks?: Record<string, number>;
   /** The market the chart is showing. See tradable below. */
   market?: string;
   /** Resting book depth, for pricing this order's impact. Null when unknown. */
@@ -129,11 +132,18 @@ export function Ticket({
    * price and silently corrupt every downstream number: the position card,
    * the P&L, the equity in the header.
    *
-   * Refusing is the honest version, and it is two lines. The fix is the one
-   * paper.ts already names — holdings becomes a map keyed by mint — and it is
-   * a real piece of work, not something to slip in behind a layout change.
+   * GONE, 14 Sep 2026. The ledger holds positions keyed by mint, so a buy
+   * credits the coin that was bought. What is tradable is now what has a mint
+   * and a price — which is every token on Solana, and none of the Binance
+   * majors that exist only as a chart.
    */
-  const tradable = market === "SOL";
+  /*
+   * The mint this ticket trades. Null for a Binance major, which has no
+   * Solana market behind it and therefore nothing to credit a buy to.
+   */
+  const mint = mintFor(symbol);
+  const tradable = mint !== null;
+  const marks = marksProp ?? {};
 
   const buying = side === "buy";
   const value = parseFloat(amount.replace(/,/g, "")) || 0;
@@ -158,8 +168,12 @@ export function Ticket({
   const limitGapPct =
     price && limitPrice > 0 ? ((limitPrice - price) / price) * 100 : null;
 
-  const qty = !price ? 0 : sellAll && !buying ? account.sol : value / fillPrice(price, side);
-  const q = price ? quote(account, side, qty, price, { depthUsd, slippageBps }) : null;
+  const held = mint ? positionOf(account, mint).qty : 0;
+  const qty = !price ? 0 : sellAll && !buying ? held : value / fillPrice(price, side);
+  const q =
+    price && mint
+      ? quote(account, mint, side, qty, price, { depthUsd, slippageBps, symbol: market })
+      : null;
 
   /* Only block on a refusal once the real balance is known. Before hydration
      the account is the opening default, and refusing against it would be a
@@ -181,7 +195,7 @@ export function Ticket({
       ? null
       : buying
         ? maxBuyUsd(account)
-        : account.sol * fillPrice(price, "sell");
+        : held * fillPrice(price, "sell");
 
   function edit(v: string) {
     if (v === "" || /^\d*\.?\d*$/.test(v)) {
@@ -198,7 +212,7 @@ export function Ticket({
     }
     if (!price) return;
     // A percentage of the position, priced back into the box.
-    setAmount(((account.sol * fillPrice(price, "sell") * n) / 100).toFixed(2));
+    setAmount(((held * fillPrice(price, "sell") * n) / 100).toFixed(2));
     setSellAll(n === 100);
   }
 
@@ -247,7 +261,17 @@ export function Ticket({
 
     const before = account.usdc;
     const cash = q?.cashUsd ?? 0;
-    const r = await trade({ side, qty, mark: price, source: "ticket" });
+    if (!mint) return;
+    const r = await trade({
+      mint,
+      symbol: market,
+      side,
+      qty,
+      mark: price,
+      source: "ticket",
+      depthUsd,
+      slippageBps,
+    });
     if ("refusal" in r) {
       setReceipt({ ok: false, text: r.refusal });
       return;
@@ -263,7 +287,7 @@ export function Ticket({
     setReceipt({
       ok: true,
       text:
-        `${buying ? "Bought" : "Sold"} ${r.fill.qty.toFixed(4)} SOL at ` +
+        `${buying ? "Bought" : "Sold"} ${r.fill.qty.toFixed(4)} ${market} at ` +
         `${usd(allInPrice(r.fill))}. Cash is now ${usd(buying ? before - cash : before + cash)}.` +
         (buying
           ? ""
@@ -394,7 +418,7 @@ export function Ticket({
             className="min-w-0 flex-1 bg-transparent font-display text-[30px] font-bold leading-none tabular-nums text-champagne placeholder:text-ash focus:outline-none"
           />
           <span className="shrink-0 font-mono text-[11px] tabular-nums text-ash">
-            {price && qty > 0 ? `${qty.toFixed(4)} SOL` : "Enter amount"}
+            {price && qty > 0 ? `${qty.toFixed(4)} ${market}` : "Enter amount"}
           </span>
         </div>
       </div>
@@ -529,7 +553,7 @@ export function Ticket({
           ? `${market} is chart-only`
           : resting
             ? `Rest ${buying ? "buy" : "sell"} at ${usd(limitPrice)}`
-            : `${buying ? "Buy" : "Sell"} SOL${limiting && marketable && limitPrice > 0 ? " at limit" : ""}`}
+            : `${buying ? "Buy" : "Sell"} ${market}${limiting && marketable && limitPrice > 0 ? " at limit" : ""}`}
       </button>
 
       {/* The refusal shows even while the button is disabled — a dead button
@@ -550,7 +574,7 @@ export function Ticket({
         </p>
       )}
 
-      <Position price={solPrice ?? price} />
+      <Position mint={mint} symbol={market} price={price} marks={marks} />
     </div>
   );
 }
@@ -562,20 +586,41 @@ export function Ticket({
  * price the market has to reach for a sale to break even, which is the number
  * that matters and is not quite the price on the chart when you bought.
  */
-function Position({ price }: { price: number | undefined }) {
-  /* `price` here is SOL's price, not the chart's — see the Ticket prop. The
-     position is SOL whatever market is open. */
+function Position({
+  mint,
+  symbol,
+  price,
+  marks,
+}: {
+  /** What to call it on screen. */
+  symbol: string;
+  /** The market this card is about. Null for a chart-only major. */
+  mint: string | null;
+  /** That market's price. */
+  price: number | undefined;
+  /** Every mark we have, for the account total. */
+  marks: Record<string, number>;
+}) {
+  /*
+   * THE CARD IS ABOUT THE OPEN MARKET; the total is about the account.
+   *
+   * It used to read `account.sol` whatever chart was open, which was the only
+   * thing it could do with one shelf. Now the position shown is the position
+   * in the market being looked at, and the account value underneath sums every
+   * holding at its own price.
+   */
   const { account, hydrated } = usePaperAccount();
-  const { sol, costBasis, usdc, realisedUsd } = account;
+  const { usdc, realisedUsd } = account;
+  const { qty: held, costBasis } = mint ? positionOf(account, mint) : { qty: 0, costBasis: 0 };
 
-  const open = sol > 0;
-  const pnl = price && open ? unrealised(account, price) : 0;
+  const open = held > 0;
+  const pnl = price && open && mint ? unrealised(account, mint, price) : 0;
   const pnlPct = open && costBasis > 0 && price ? ((price - costBasis) / costBasis) * 100 : 0;
-  const value = hydrated && price ? equity(account, price) : null;
+  const value = hydrated ? equity(account, marks) : null;
 
   const rows: [string, string][] = open
     ? [
-        ["Size", `${sol.toFixed(4)} SOL`],
+        ["Size", `${held.toFixed(4)} ${symbol}`],
         ["Cost basis", usd(costBasis)],
         ["Now", price ? usd(price) : "—"],
       ]

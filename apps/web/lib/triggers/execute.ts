@@ -1,5 +1,12 @@
 import { DEFAULTS, type Rule } from "@cipher/shared";
-import { execute, fillPrice, resolveQty, type Account, type Fill } from "../account/paper.ts";
+import {
+  execute,
+  fillPrice,
+  positionOf,
+  resolveQty,
+  type Account,
+  type Fill,
+} from "../account/paper.ts";
 
 /**
  * What happens when a rule comes due.
@@ -121,7 +128,13 @@ export function fireRule(
    * first time they topped up or sold by hand — and wrong in the direction of
    * selling more than they own.
    */
-  const qty = resolveQty(rule.amount, side, account, ctx.mark);
+  /*
+   * THE RULE'S MARKET IS THE MINT. The engine has keyed on it since the
+   * worker started firing rules, and now the ledger does too — so "sell a
+   * third" resolves against a third of THIS position rather than a third of
+   * whatever single asset the account used to hold.
+   */
+  const qty = resolveQty(rule.amount, side, account, rule.market, ctx.mark);
 
   if (qty === null) {
     // resolveQty only returns null for a percentage of a position on the buy
@@ -130,7 +143,9 @@ export function fireRule(
     return { kind: "failed", reason: "could not resolve the size" };
   }
 
-  if (side === "sell" && account.sol <= 0) {
+  const held = positionOf(account, rule.market).qty;
+
+  if (side === "sell" && held <= 0) {
     return { kind: "moot", reason: "the position is already closed" };
   }
 
@@ -145,7 +160,7 @@ export function fireRule(
    * A buy is not clamped to the position — it is bounded by cash, which the
    * ledger checks itself and reports as a refusal worth retrying.
    */
-  const size = side === "sell" ? Math.min(qty, account.sol) : qty;
+  const size = side === "sell" ? Math.min(qty, held) : qty;
 
   if (size * ctx.mark < DUST_USD) {
     return { kind: "moot", reason: "what is left is smaller than the fee to sell it" };
@@ -155,6 +170,7 @@ export function fireRule(
   if (worse) return { kind: "failed", reason: worse };
 
   const result = execute(account, {
+    mint: rule.market,
     side,
     qty: size,
     mark: ctx.mark,

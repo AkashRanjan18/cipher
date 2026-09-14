@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { arm, emptyEngine, type Rule } from "@cipher/shared";
-import { openAccount, execute, type Account } from "../../account/paper.ts";
+import { openAccount, execute, type Account, positionOf } from "../../account/paper.ts";
 import { fireRule } from "../execute.ts";
 
 const T0 = 1_700_000_000_000;
@@ -25,7 +25,7 @@ function ruleFor(
 
 /** An account already holding SOL, bought at `price`. */
 function holding(qty: number, price = 100): Account {
-  const r = execute(openAccount(10_000), { side: "buy", qty, mark: price, ts: TS });
+  const r = execute(openAccount(10_000), { mint: MKT, side: "buy", qty, mark: price, ts: TS });
   if ("refusal" in r) throw new Error(r.refusal);
   return r.account;
 }
@@ -39,7 +39,7 @@ test("a take-profit sells the whole position and books the fill as Sana's", () =
 
   assert.equal(out.kind, "filled");
   if (out.kind !== "filled") return;
-  assert.equal(out.account.sol, 0);
+  assert.equal(positionOf(out.account, MKT).qty, 0);
   assert.equal(out.fill.source, "sana");
   assert.equal(out.fill.squawk, "take profit at 2x");
   assert.ok(out.account.realisedUsd > 0);
@@ -54,7 +54,7 @@ test("a percentage is of the position at fire time, not at arm time", () => {
   assert.equal(out.kind, "filled");
   if (out.kind !== "filled") return;
   // Half of thirty, not half of ten.
-  assert.equal(out.account.sol, 15);
+  assert.equal(positionOf(out.account, MKT).qty, 15);
 });
 
 test("a stop on a position that was already closed by hand is moot, not failed", () => {
@@ -89,7 +89,7 @@ test("a rung asking for slightly more than is held clamps instead of refusing", 
   const out = fireRule(account, rule, { mark: 200, ts: TS });
   assert.equal(out.kind, "filled");
   if (out.kind !== "filled") return;
-  assert.equal(out.account.sol, 0);
+  assert.equal(positionOf(out.account, MKT).qty, 0);
 });
 
 test("a fill the tolerance refuses comes back as failed, so it retries", () => {
@@ -124,7 +124,7 @@ test("each trigger kind reads back as the instruction the user gave", () => {
 
 test("the fee is charged exactly as a hand-placed sell would be", () => {
   const account = holding(10);
-  const byHand = execute(account, { side: "sell", qty: 10, mark: 200, ts: TS });
+  const byHand = execute(account, { mint: MKT, side: "sell", qty: 10, mark: 200, ts: TS });
   const byRule = fireRule(account, ruleFor({ kind: "priceMultiple", value: 2 }), {
     mark: 200,
     ts: TS,

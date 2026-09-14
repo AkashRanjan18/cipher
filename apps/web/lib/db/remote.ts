@@ -102,9 +102,13 @@ export async function cancelRemote(token: string | null, id: string): Promise<bo
 export async function tradeRemote(
   token: string | null,
   input: {
+    /** WHICH COIN. Carried end to end; the route refuses a request without it. */
+    mint: string;
     side: "buy" | "sell";
     qty: number;
     mark: number;
+    /** For refusal sentences only. Never an identity. */
+    symbol?: string;
     squawk?: string;
     source?: Fill["source"];
     depthUsd?: number | null;

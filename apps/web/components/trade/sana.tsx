@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { baseSymbol } from "@/lib/chain/markets";
+import { baseSymbol, mintFor } from "@/lib/chain/markets";
 import { newId } from "@cipher/shared";
 import type { Compiled, CompileContext, Intent, Interval, OrderSpec } from "@cipher/shared";
 import { compile } from "@/lib/compiler/compile";
@@ -13,7 +13,10 @@ import { usePaperAccount } from "@/lib/account/store";
 import { useTriggers } from "@/lib/triggers/store";
 import { useSpeech } from "@/lib/voice/use-speech";
 import { normaliseSpeech } from "@/lib/voice/normalise";
-import { resolveQty, allInPrice } from "@/lib/account/paper";
+import { resolveQty, allInPrice,
+  positionOf,
+  heldMints,
+} from "@/lib/account/paper";
 import { usd, compactUsd, pct } from "@/lib/format";
 import { equity, unrealised } from "@/lib/account/paper";
 
@@ -124,6 +127,19 @@ export function Sana({
    */
   const quote =
     symbol.endsWith("USDT") ? "USDT" : market.toUpperCase() === "SOL" ? "USDC" : "SOL";
+
+  /*
+   * THE OPEN MARKET'S MINT, and the position in it.
+   *
+   * Every read below used `account.sol` — the account's only asset — which was
+   * correct exactly as long as there was only one. Sana now talks about the
+   * market on screen: "you have no BONK to set an exit on" is about BONK, and
+   * "sell half" is half of BONK.
+   *
+   * Null for a Binance major, which has a chart and no market behind it.
+   */
+  const mint = mintFor(symbol);
+  const held = mint ? positionOf(account, mint) : { qty: 0, costBasis: 0 };
   /* The in-flight model request, so a new sentence can abandon the old one. */
   const pending = useRef<AbortController | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -259,7 +275,7 @@ export function Sana({
      * union stops this file compiling until it is handled, which is the point
      * of the union existing at all.
      */
-    const ctx: CompileContext = { symbol, interval, hasPosition: account.sol > 0 };
+    const ctx: CompileContext = { symbol, interval, hasPosition: held.qty > 0 };
     const compiled = compile(text.replace(/^\/(buy|sell)\s*/i, "$1 "), ctx);
 
     /*
@@ -429,7 +445,7 @@ export function Sana({
      */
     const problems = validateOrder(spec, {
       cashUsd: account.usdc,
-      position: account.sol,
+      position: held.qty,
       price: price ?? null,
     });
 
@@ -473,7 +489,7 @@ export function Sana({
     /* ── exits against a position already held ── */
     if (!entry) {
       if (spec.exits.length === 0) return "Nothing to do.";
-      if (account.sol <= 0) return `You have no ${market} to set an exit on.`;
+      if (held.qty <= 0) return `You have no ${market} to set an exit on.`;
       /*
        * AWAITED, not fired and forgotten.
        *
@@ -485,10 +501,10 @@ export function Sana({
       const ok = await armExits({
         rules: spec.exits,
         market: symbol,
-        entryPrice: account.costBasis,
+        entryPrice: held.costBasis,
       });
       if (!ok) return "I couldn't save that exit. Nothing is watching — try again.";
-      return armedLine(spec.exits.length, account.costBasis);
+      return armedLine(spec.exits.length, held.costBasis);
     }
 
     /* ── a resting limit order ── */
@@ -524,7 +540,9 @@ export function Sana({
     /* ── fill now ── */
     if (!price) return "No live price to fill against. Nothing happened.";
 
-    const qty = resolveQty(entry.amount, entry.side, account, price);
+    if (!mint) return `${market} is chart-only — there is no Solana market behind it.`;
+
+    const qty = resolveQty(entry.amount, entry.side, account, mint, price);
     if (qty === null) {
       return `I can't turn "${entry.amount.kind}" into a ${entry.side} size. Nothing happened.`;
     }
@@ -536,6 +554,8 @@ export function Sana({
      * understood correctly and then discarded on the way to the fill.
      */
     const r = await trade({
+      mint,
+      symbol: market,
       side: entry.side,
       qty,
       mark: price,
@@ -620,18 +640,40 @@ export function Sana({
     switch (subject) {
       case "cash":
         return `${usd(account.usdc)} in cash.`;
-      case "position":
-        if (account.sol <= 0) return `You're flat — no ${market}.`;
+      case "position": {
+        /*
+         * ABOUT THE OPEN MARKET, and then about everything else.
+         *
+         * "What's my position" used to have one answer because there was one
+         * position. Now it leads with the market on screen and then says what
+         * else is held, because omitting the rest would be a true sentence
+         * that leaves a false impression.
+         */
+        const others = heldMints(account).filter((m) => m !== mint);
+        const rest =
+          others.length === 0
+            ? ""
+            : ` You also hold ${others.length} other ${others.length === 1 ? "coin" : "coins"}.`;
+        if (held.qty <= 0) return `You're flat on ${market}.${rest}`;
         return (
-          `${account.sol.toFixed(4)} ${market}, average cost ${usd(account.costBasis)}` +
-          (price ? `, worth ${usd(account.sol * price)} now.` : ".")
+          `${held.qty.toFixed(4)} ${market}, average cost ${usd(held.costBasis)}` +
+          (price ? `, worth ${usd(held.qty * price)} now.` : ".") +
+          rest
         );
-      case "equity":
-        return price
-          ? `${usd(equity(account, price))} all in — ${usd(account.usdc)} cash and ${usd(account.sol * price)} in ${market}.`
-          : `${usd(account.usdc)} in cash. No live price to mark the position at.`;
+      }
+      case "equity": {
+        const marks: Record<string, number> = mint && price ? { [mint]: price } : {};
+        const unpriced = heldMints(account).filter((m) => marks[m] === undefined);
+        /* Says what it could NOT mark rather than quietly leaving it out. A
+           total that silently omits half the holdings is a wrong total. */
+        const caveat =
+          unpriced.length === 0
+            ? ""
+            : ` ${unpriced.length} holding${unpriced.length === 1 ? "" : "s"} not marked — no live price here.`;
+        return `${usd(equity(account, marks))} all in, of which ${usd(account.usdc)} is cash.${caveat}`;
+      }
       case "pnl": {
-        const open = price ? unrealised(account, price) : null;
+        const open = price && mint ? unrealised(account, mint, price) : null;
         const booked = account.realisedUsd;
         const parts = [
           `Booked ${booked >= 0 ? "+" : ""}${usd(booked)}`,
