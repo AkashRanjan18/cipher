@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CoinMark } from "./coin-mark";
 import type { Interval, MarketDef } from "@/lib/market";
 import { INTERVAL_ORDER } from "@/lib/market";
 import { usd, compactUsd, pct } from "@/lib/format";
@@ -30,6 +31,7 @@ import { usd, compactUsd, pct } from "@/lib/format";
 
 export function ChartHeader({
   market,
+  icon,
   price,
   marketCap,
   change,
@@ -40,6 +42,8 @@ export function ChartHeader({
   pending,
 }: {
   market: MarketDef;
+  /** The token's own icon, for a market that is a mint rather than a pair. */
+  icon?: string | null;
   price: number | undefined;
   marketCap: number | null;
   change: number | null;
@@ -55,12 +59,9 @@ export function ChartHeader({
     <div className="shrink-0">
       {/* ---------------- row 1: identity and readings ---------------- */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline px-3 py-2">
-        <span
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full font-mono text-sm font-bold text-ink"
-          style={{ background: market.hue }}
-        >
-          {market.glyph}
-        </span>
+        {/* The same mark the list rows use, so clicking a row does not change
+            what the coin looks like. */}
+        <CoinMark symbol={market.base} icon={icon} hue={market.hue} glyph={market.glyph} size={32} />
 
         <div className="mr-1">
           <div className="flex items-center gap-1.5">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CoinMark } from "./coin-mark";
 import { MARKETS } from "@/lib/market";
 
 /**
@@ -117,12 +118,7 @@ export function MarketSearch({ onSelect }: { onSelect: (symbol: string) => void 
                 i === cursor ? "bg-raised" : ""
               }`}
             >
-              <span
-                className="grid h-6 w-6 shrink-0 place-items-center rounded-full font-mono text-[11px] font-bold text-ink"
-                style={{ background: m.hue }}
-              >
-                {m.glyph}
-              </span>
+              <CoinMark symbol={m.base} hue={m.hue} glyph={m.glyph} size={24} />
               <span className="font-sans text-[12px] font-bold">{m.base}</span>
               <span className="truncate font-sans text-[11px] text-ash">{m.name}</span>
             </button>

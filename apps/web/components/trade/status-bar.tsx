@@ -1,6 +1,7 @@
 "use client";
 
 import type { Major } from "@/lib/market";
+import { CoinMark } from "./coin-mark";
 import { MARKETS } from "@/lib/market";
 import { usd, pct } from "@/lib/format";
 import { STRIP_ITEMS } from "@/lib/social/mock";
@@ -46,12 +47,7 @@ export function StatusBar({
               onClick={() => onSelect(id)}
               className="flex shrink-0 items-center gap-1.5 border-r border-hairline px-3 transition-colors hover:bg-slate"
             >
-              <span
-                className="grid h-3.5 w-3.5 place-items-center rounded-full font-mono text-[8px] font-bold text-ink"
-                style={{ background: def.hue }}
-              >
-                {def.glyph}
-              </span>
+              <CoinMark symbol={def.base} hue={def.hue} glyph={def.glyph} size={14} />
               <span className="font-mono text-[11px] font-bold tabular-nums">
                 {live ? usd(live.priceUsd) : "—"}
               </span>

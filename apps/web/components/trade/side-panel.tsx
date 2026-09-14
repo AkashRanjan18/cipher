@@ -8,6 +8,7 @@ import { FeedList, LeaderList } from "./rail";
 import { Scroller } from "@/components/ui/scroller";
 import { AlertsList } from "./alerts";
 import { useUniverse, type Feed, type UniverseToken } from "./use-universe";
+import { CoinMark } from "./coin-mark";
 import type { Lifecycle } from "@/lib/chain/tokens";
 
 /**
@@ -308,21 +309,7 @@ function TokenRow({
         selected ? "border-accent bg-raised" : "border-transparent hover:bg-slate"
       }`}
     >
-      {/* Jupiter ships an icon for most tokens. Where it does not, the first
-          letter on a neutral ground — never an invented logo. */}
-      {token.icon ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={token.icon}
-          alt=""
-          className="h-7 w-7 shrink-0 rounded-full object-cover"
-          loading="lazy"
-        />
-      ) : (
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-raised font-mono text-[12px] font-bold text-ash">
-          {(token.symbol || "?").slice(0, 1)}
-        </span>
-      )}
+      <CoinMark symbol={token.symbol} icon={token.icon} />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
@@ -422,12 +409,10 @@ function MajorList({
               selected ? "border-accent bg-raised" : "border-transparent hover:bg-slate"
             }`}
           >
-            <span
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-full font-mono text-[12px] font-bold text-ink"
-              style={{ background: m.hue }}
-            >
-              {m.glyph}
-            </span>
+            {/* The SAME component the Solana rows use, so SOL is the same
+                Solana logo in Majors as it is in Trending — the same file,
+                not a matching one. */}
+            <CoinMark symbol={m.base} hue={m.hue} glyph={m.glyph} />
 
             <div className="min-w-0 flex-1">
               <div className="truncate font-sans text-[12.5px] font-bold leading-tight">

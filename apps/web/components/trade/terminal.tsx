@@ -513,6 +513,7 @@ function TerminalBody({
         <section className="relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel">
           <ChartHeader
             market={market}
+            icon={token?.icon ?? null}
             price={last}
             marketCap={marketCap}
             change={change}
