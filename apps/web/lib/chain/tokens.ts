@@ -90,6 +90,10 @@ export interface TokenInfo {
   /** Traded volume and trader count over 24h, when Jupiter reports it. */
   volume24hUsd: number | null;
   traders24h: number | null;
+  /** Percent move over 24h. Null, not zero, when there is no history to measure. */
+  change24h: number | null;
+  /** Jupiter's hosted icon. Null rather than a placeholder we invented. */
+  icon: string | null;
 }
 
 export type Resolution =
@@ -257,6 +261,12 @@ export function lifecycleOf(raw: Record<string, unknown>): Lifecycle {
   return raw.graduatedAt ? "graduated" : "bonding";
 }
 
+/** One numeric field out of a stats block, null when it is not there. */
+function field(stats: unknown, key: string): number | null {
+  const v = (stats as Record<string, unknown> | undefined)?.[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
 /** Buy plus sell volume over a window. Jupiter reports the two sides apart. */
 function volume(stats: unknown): number | null {
   const s = stats as Record<string, unknown> | undefined;
@@ -290,10 +300,9 @@ export function fromJupiter(raw: Record<string, unknown>): TokenInfo {
     dev: raw.dev ? String(raw.dev) : null,
     createdAt: raw.createdAt ? String(raw.createdAt) : null,
     volume24hUsd: volume(raw.stats24h),
-    traders24h:
-      typeof (raw.stats24h as Record<string, unknown>)?.numTraders === "number"
-        ? ((raw.stats24h as Record<string, number>).numTraders)
-        : null,
+    change24h: field(raw.stats24h, "priceChange"),
+    icon: typeof raw.icon === "string" && raw.icon ? raw.icon : null,
+    traders24h: field(raw.stats24h, "numTraders"),
     audit: audit
       ? {
           mintAuthorityDisabled:

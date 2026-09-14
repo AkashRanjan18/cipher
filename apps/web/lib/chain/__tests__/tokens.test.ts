@@ -9,7 +9,29 @@ import { fromJupiter, looksLikeMint, resolveToken, risks, type TokenInfo } from 
  * liquidity than the genuine token, and the genuine token's symbol is not the
  * string anyone types.
  */
+/**
+ * The fields a fixture does not care about.
+ *
+ * These tests are about IDENTITY — which token did the user mean — so they
+ * name holders, liquidity and verification and nothing else. TokenInfo has
+ * since grown the lifecycle fields, and spelling all of them out in every
+ * fixture would bury the three values each test is actually about.
+ */
+const BLANK = {
+  fdv: null,
+  lifecycle: "legacy" as const,
+  launchpad: null,
+  graduatedAt: null,
+  dev: null,
+  createdAt: null,
+  volume24hUsd: null,
+  traders24h: null,
+  change24h: null,
+  icon: null,
+};
+
 const REAL_BONK: TokenInfo = {
+  ...BLANK,
   mint: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
   symbol: "Bonk",
   name: "Bonk",
@@ -25,11 +47,13 @@ const REAL_BONK: TokenInfo = {
     freezeAuthorityDisabled: true,
     topHoldersPercentage: 30.2,
     devBalancePercentage: 0,
+    devMints: null,
   },
 };
 
 /** Two holders, $2.3M of "liquidity", and the exact symbol people type. */
 const FAKE_BONK: TokenInfo = {
+  ...BLANK,
   mint: "FakeMintAddress1111111111111111111111111111",
   symbol: "BONK",
   name: "Bend Over Now, Kid",
@@ -44,6 +68,7 @@ const FAKE_BONK: TokenInfo = {
 };
 
 const BONK_SOL: TokenInfo = {
+  ...BLANK,
   mint: "BonkSo11111111111111111111111111111111111111",
   symbol: "bonkSOL",
   name: "Bonk SOL",
@@ -58,6 +83,7 @@ const BONK_SOL: TokenInfo = {
 };
 
 const LETS_BONK: TokenInfo = {
+  ...BLANK,
   mint: "LetsBonk11111111111111111111111111111111111",
   symbol: "LetsBONK",
   name: "Let's BONK",

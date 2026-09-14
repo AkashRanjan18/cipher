@@ -13,7 +13,7 @@ import {
 import { usePrivy } from "@privy-io/react-auth";
 import { openAccount, execute, type Account, type Fill } from "./paper";
 import { fireRule, type Outcome } from "../triggers/execute";
-import { fetchSnapshot, resetRemote, tradeRemote } from "../db/remote";
+import { fetchSnapshot, fetchSnapshotResult, resetRemote, tradeRemote } from "../db/remote";
 import type { Rule } from "@cipher/shared";
 
 /**
@@ -155,13 +155,26 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /*
-   * SERVER MODE, decided by whether the server answers.
+   * SERVER MODE, decided by whether the server answers — AND RETRIED.
    *
    * Not by a feature flag and not by whether the user is signed in: signed in
    * with no DATABASE_URL is a perfectly ordinary state, and the right answer
-   * there is the local account rather than an error. Asking once and believing
-   * the reply keeps the two possibilities from needing two code paths at every
-   * call site.
+   * there is the local account rather than an error.
+   *
+   * BUT "ask once and believe the reply" was wrong, and the failure was seen
+   * rather than imagined. One request landing on a route that was still
+   * compiling left the session permanently local — showing a balance out of
+   * localStorage while Postgres held a different one, and while the worker
+   * went on acting on the Postgres copy. Two ledgers, one screen, no warning.
+   * The screenshot said 10.11 SOL; the database said flat.
+   *
+   * `fetchSnapshotResult` already separates the two cases and this threw the
+   * distinction away by calling `fetchSnapshot`, which collapses both to null:
+   *
+   *   unconfigured   503 or 401. No database, or not a session. Permanent —
+   *                  asking again in a second cannot change either.
+   *   unavailable    anything else. A cold route, a dropped connection, a
+   *                  restart. Transient by definition, so retry.
    */
   useEffect(() => {
     if (!authenticated) {
@@ -175,12 +188,26 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
       const t = await getAccessToken();
       if (!alive) return;
       token.current = t;
-      const snap = await fetchSnapshot(t);
-      if (!alive || !snap?.account) return;
-      serverRef.current = true;
-      setServer(true);
-      commit(snap.account);
-      setHydrated(true);
+
+      /* Backing off rather than hammering: a server that is starting up wants
+         a second, and a server that is down is not helped by five requests. */
+      for (const wait of [0, 400, 1200, 3000, 6000]) {
+        if (wait) await new Promise((r) => setTimeout(r, wait));
+        if (!alive) return;
+
+        const result = await fetchSnapshotResult(t);
+        if (!alive) return;
+
+        if (result.kind === "unconfigured") return; // local, correctly.
+        if (result.kind === "ok" && result.snapshot.account) {
+          serverRef.current = true;
+          setServer(true);
+          commit(result.snapshot.account);
+          setHydrated(true);
+          return;
+        }
+      }
+      console.warn("[cipher] server account unreachable; staying local this session");
     })();
     return () => {
       alive = false;

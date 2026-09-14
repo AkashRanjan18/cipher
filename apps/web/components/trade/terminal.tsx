@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Candle, Interval } from "@/lib/market";
-import { SYMBOL, intervalSeconds, subscribeCandles, marketOf } from "@/lib/market";
+import { SYMBOL, intervalSeconds, subscribeCandles, marketOf, type MarketDef } from "@/lib/market";
 import { usd, pct } from "@/lib/format";
 import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/account/store";
 import { TriggerProvider, useTriggers } from "@/lib/triggers/store";
-import { mintFor } from "@/lib/chain/markets";
+import { mintFor, marketByMint } from "@/lib/chain/markets";
+import { looksLikeMint } from "@/lib/chain/tokens";
+import { useTokenInfo } from "./use-token-info";
 import { equity } from "@/lib/account/paper";
 import { PriceChart } from "./price-chart";
 import { SidePanel } from "./side-panel";
@@ -90,8 +92,37 @@ function TerminalBody({
   const [sanaFolded, setSanaFolded] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  const market = marketOf(symbol);
+  /*
+   * THE OPEN MARKET IS NOW EITHER A BINANCE PAIR OR A SOLANA MINT.
+   *
+   * The left panel lists the whole chain, so `symbol` stopped being one of
+   * fourteen strings the moment a row in Trending became clickable. Every
+   * Binance-shaped thing below — the websocket, the book depth, `marketOf` —
+   * has to know which it is holding, because `marketOf` does not fail on an
+   * unknown key: it returns MARKETS[0], so a mint would silently render as
+   * BTC. A chart header naming the wrong coin is the exact class of bug this
+   * codebase keeps deciding is unacceptable.
+   */
+  const onChain = looksLikeMint(symbol);
   const majors = useMajors();
+  const token = useTokenInfo(onChain ? symbol : null);
+
+  /* Display identity. For a mint it comes from the token itself; the listed
+     Solana markets carry a nicer name, so they win where they exist. */
+  const listed = onChain ? marketByMint(symbol) : null;
+  const market: MarketDef = onChain
+    ? {
+        symbol,
+        base: listed?.symbol ?? token?.symbol ?? "…",
+        name: listed?.name ?? token?.name ?? "",
+        /* Supply is a hardcoded table for the Binance majors and has no
+           equivalent here. Zero rather than a guess: market cap for an
+           on-chain token comes from Jupiter, which reports it directly. */
+        supply: 0,
+        hue: listed?.hue ?? "#516af6",
+        glyph: listed?.glyph ?? (token?.symbol ?? "?").slice(0, 1),
+      }
+    : marketOf(symbol);
 
   /*
    * Refetch when the market or the interval changes — but not on mount for
@@ -125,11 +156,45 @@ function TerminalBody({
    */
   useEffect(() => setLive(undefined), [symbol]);
 
-  // Live bars pushed over a websocket. Resubscribes per market and interval.
-  useEffect(
-    () => subscribeCandles(interval, (c) => setLive(c.close), symbol),
-    [interval, symbol],
-  );
+  /*
+   * Live bars pushed over a websocket — BINANCE ONLY.
+   *
+   * There is no equivalent for a Solana token without an RPC provider's pool
+   * subscription, so an on-chain market's price arrives from the /api/prices
+   * poll instead: seconds rather than a tick. That is the honest ceiling, and
+   * it is the one place Helius would actually buy something.
+   *
+   * Subscribing with a mint would open a socket to a Binance stream that does
+   * not exist and reconnect against it forever.
+   */
+  useEffect(() => {
+    if (onChain) return;
+    return subscribeCandles(interval, (c) => setLive(c.close), symbol);
+  }, [interval, symbol, onChain]);
+
+  /* An on-chain market's live price, from the same feed the trigger engine
+     watches. One request per market, cached server-side for everyone. */
+  useEffect(() => {
+    if (!onChain) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/prices?mints=${symbol}`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { prices: Record<string, { usd: number }> };
+        const usd = body.prices?.[symbol]?.usd;
+        if (alive && typeof usd === "number") setLive(usd);
+      } catch {
+        /* Keep the last price rather than blanking the header. */
+      }
+    };
+    void load();
+    const id = window.setInterval(load, 5_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [symbol, onChain]);
 
   /*
    * The drag itself, on the WINDOW rather than the handle.
@@ -172,6 +237,17 @@ function TerminalBody({
      number, not something anyone trades off tick by tick. */
   useEffect(() => {
     let alive = true;
+    /*
+     * AN AMM HAS NO ORDER BOOK, so there is nothing to ask for here on a
+     * Solana market. The equivalent question is price impact at size, which
+     * /api/quote already answers — a different reading rather than the same
+     * one from another source, and a change to make deliberately rather than
+     * by quietly substituting a number that means something else.
+     */
+    if (onChain) {
+      setDepth(null);
+      return;
+    }
     const load = async () => {
       try {
         const res = await fetch(`/api/depth?symbol=${symbol}`);
@@ -183,7 +259,7 @@ function TerminalBody({
       }
     };
     setDepth(null);
-    load();
+    void load();
     const id = window.setInterval(load, 20_000);
     return () => {
       alive = false;
@@ -250,7 +326,16 @@ function TerminalBody({
 
   /* Cap for the open market, from the same supply table the list uses — so
      the header and the row a click arrived from cannot disagree. */
-  const marketCap = last ? last * market.supply : null;
+  /*
+   * Cap comes from the supply table for a Binance pair and from Jupiter for a
+   * mint. Never price × 0, which is what the table would give for a token it
+   * has never heard of — a market cap of exactly zero printed with confidence.
+   */
+  const marketCap = onChain
+    ? (token?.mcap ?? null)
+    : last
+      ? last * market.supply
+      : null;
 
   /*
    * A real 24-hour change, found by walking back to the bar closest to 24h
