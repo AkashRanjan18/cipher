@@ -21,7 +21,20 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const asked = new URL(request.url).searchParams.get("mints");
-  const mints = asked ? asked.split(",").filter(Boolean).slice(0, 50) : ALL_MINTS;
+  /*
+   * A HUNDRED, NOT FIFTY, and the old cap was silently wrong.
+   *
+   * Jupiter's endpoint takes 50 ids per request, and `fetchPrices` already
+   * chunks at 50 — so this slice was not protecting the upstream call, it was
+   * discarding mints past the fiftieth. Asking for sixty and being handed the
+   * first fifty means the caller renders ten coins with no price and cannot
+   * tell that from ten coins Jupiter has never heard of.
+   *
+   * Two chunks per request, and the five-second cache means at most 24
+   * upstream calls a minute for the whole deployment however many people are
+   * watching. That is inside the budget; a third chunk would not be.
+   */
+  const mints = asked ? asked.split(",").filter(Boolean).slice(0, 100) : ALL_MINTS;
 
   try {
     /*

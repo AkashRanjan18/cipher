@@ -9,6 +9,7 @@ import { Scroller } from "@/components/ui/scroller";
 import { AlertsList } from "./alerts";
 import { useUniverse, type Feed, type UniverseToken } from "./use-universe";
 import { CoinMark } from "./coin-mark";
+import { useSolPrices, type Mark } from "./sol-prices";
 import type { Lifecycle } from "@/lib/chain/tokens";
 
 /**
@@ -276,12 +277,46 @@ function TokenList({
     );
   }
 
+  return <Rows tokens={universe.tokens} symbol={symbol} onSelect={onSelect} />;
+}
+
+/**
+ * The rows, priced from the SHARED feed rather than from the token list.
+ *
+ * The discover response carries a price, and using it was the obvious thing —
+ * it is right there, it costs nothing extra, and it is fifteen seconds old
+ * from a different endpoint than the chart header polls. So SOL read $100.74
+ * here and $100.77 four inches to the right, at the same instant.
+ *
+ * The list price now comes from the same object the header reads, so the two
+ * move together or not at all. The discover price is kept only as the value
+ * to show before the first poll lands — better a number a few seconds stale
+ * than a dash where a price should be.
+ *
+ * Split into its own component because the hook registers the visible mints,
+ * and hooks cannot sit behind the early returns above.
+ */
+function Rows({
+  tokens,
+  symbol,
+  onSelect,
+}: {
+  tokens: UniverseToken[];
+  symbol: string;
+  onSelect: (symbol: string) => void;
+}) {
+  const marks = useSolPrices(
+    "market-list",
+    tokens.map((t) => t.mint),
+  );
+
   return (
     <div className="flex flex-col">
-      {universe.tokens.map((t) => (
+      {tokens.map((t) => (
         <TokenRow
           key={t.mint}
           token={t}
+          mark={marks[t.mint] ?? null}
           selected={t.mint === symbol}
           onSelect={() => onSelect(t.mint)}
         />
@@ -292,14 +327,22 @@ function TokenList({
 
 function TokenRow({
   token,
+  mark,
   selected,
   onSelect,
 }: {
   token: UniverseToken;
+  /** The live price, once the shared poll has one. */
+  mark: Mark | null;
   selected: boolean;
   onSelect: () => void;
 }) {
-  const up = (token.change24h ?? 0) >= 0;
+  /* The live feed wins wherever it has an answer. Both numbers come from the
+     same response, so the price and the change can never disagree about which
+     moment they describe. */
+  const price = mark?.usd ?? token.priceUsd;
+  const change = mark ? mark.change24h : token.change24h;
+  const up = (change ?? 0) >= 0;
 
   return (
     <button
@@ -328,14 +371,14 @@ function TokenRow({
 
       <div className="shrink-0 text-right">
         <div className="font-mono text-[12px] font-bold leading-tight tabular-nums">
-          {token.priceUsd ? usd(token.priceUsd) : "—"}
+          {price ? usd(price) : "—"}
         </div>
         <div
           className={`font-mono text-[10px] leading-tight tabular-nums ${
-            token.change24h === null ? "text-mute" : up ? "text-up" : "text-down"
+            change === null ? "text-mute" : up ? "text-up" : "text-down"
           }`}
         >
-          {token.change24h === null ? "—" : pct(token.change24h)}
+          {change === null ? "—" : pct(change)}
         </div>
       </div>
     </button>

@@ -9,6 +9,7 @@ import { TriggerProvider, useTriggers } from "@/lib/triggers/store";
 import { mintFor, marketByMint } from "@/lib/chain/markets";
 import { looksLikeMint } from "@/lib/chain/tokens";
 import { useTokenInfo } from "./use-token-info";
+import { SolPriceProvider, useSolPrices } from "./sol-prices";
 import { equity, heldMints } from "@/lib/account/paper";
 import { PriceChart } from "./price-chart";
 import { SidePanel } from "./side-panel";
@@ -42,7 +43,12 @@ import { Flow } from "./flow";
  * all read it — a panel owning it would have to push it up through three
  * components on every click.
  */
-export function Terminal(props: { initial: Candle[]; initialInterval: Interval }) {
+export function Terminal(props: {
+  initial: Candle[];
+  initialInterval: Interval;
+  /** Which market opens. A mint on Solana, or a Binance pair for a chart. */
+  initialSymbol: string;
+}) {
   /*
    * The provider wraps the body rather than sitting inside it, because a
    * component cannot consume a context it provides in the same render — and
@@ -50,19 +56,28 @@ export function Terminal(props: { initial: Candle[]; initialInterval: Interval }
    */
   return (
     <PaperAccountProvider>
-      <TerminalBody {...props} />
+      <SolPriceProvider>
+        <TerminalBody {...props} />
+      </SolPriceProvider>
     </PaperAccountProvider>
   );
 }
 
 function TerminalBody({
+  initialSymbol,
   initial,
   initialInterval,
 }: {
   initial: Candle[];
   initialInterval: Interval;
+  initialSymbol: string;
 }) {
-  const [symbol, setSymbol] = useState<string>(SYMBOL);
+  /*
+   * Opens on whatever the page chose — the SOL mint, not the Binance pair.
+   * Defaulting to SYMBOL here is what made the header and the market list
+   * disagree on SOL's price: two venues, one coin, six cents apart.
+   */
+  const [symbol, setSymbol] = useState<string>(initialSymbol);
   const [interval, setInterval] = useState<Interval>(initialInterval);
   const [candles, setCandles] = useState<Candle[]>(initial);
   const [live, setLive] = useState<number | undefined>(undefined);
@@ -172,29 +187,21 @@ function TerminalBody({
     return subscribeCandles(interval, (c) => setLive(c.close), symbol);
   }, [interval, symbol, onChain]);
 
-  /* An on-chain market's live price, from the same feed the trigger engine
-     watches. One request per market, cached server-side for everyone. */
+  /*
+   * An on-chain market's live price, FROM THE SHARED FEED.
+   *
+   * This used to run its own five-second poll. It got the right number and
+   * the market list got a different right number, because the list carried
+   * whatever price arrived with the token feed — so SOL read $100.77 in the
+   * header and $100.74 in the row beside it. Both components read one object
+   * now, so they move together or not at all.
+   */
+  const openMarks = useSolPrices("open-market", onChain ? [symbol] : []);
+  const openMark = onChain ? (openMarks[symbol] ?? null) : null;
+
   useEffect(() => {
-    if (!onChain) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await fetch(`/api/prices?mints=${symbol}`);
-        if (!res.ok) return;
-        const body = (await res.json()) as { prices: Record<string, { usd: number }> };
-        const usd = body.prices?.[symbol]?.usd;
-        if (alive && typeof usd === "number") setLive(usd);
-      } catch {
-        /* Keep the last price rather than blanking the header. */
-      }
-    };
-    void load();
-    const id = window.setInterval(load, 5_000);
-    return () => {
-      alive = false;
-      window.clearInterval(id);
-    };
-  }, [symbol, onChain]);
+    if (openMark) setLive(openMark.usd);
+  }, [openMark]);
 
   /*
    * The drag itself, on the WINDOW rather than the handle.
@@ -354,8 +361,21 @@ function TerminalBody({
   const cutoff = candles.length ? candles[candles.length - 1].time - DAY : 0;
   const dayAgo = candles.find((c) => c.time >= cutoff);
   const spansDay = Boolean(dayAgo && candles[0].time <= cutoff);
-  const change =
-    spansDay && dayAgo && last ? ((last - dayAgo.open) / dayAgo.open) * 100 : null;
+  /*
+   * ON-CHAIN: the change that came with the price. Anything else is a THIRD
+   * number for the same coin — the header derived it by walking the candle
+   * series back 24h while the row showed Jupiter's own figure, so SOL was down
+   * 1.65% in one place and 1.28% in the other. Same response, same moment,
+   * same number.
+   *
+   * For a Binance pair the candle walk stays: it is the only source there, and
+   * it is honest about refusing when the loaded window is shorter than a day.
+   */
+  const change = onChain
+    ? (openMark?.change24h ?? null)
+    : spansDay && dayAgo && last
+      ? ((last - dayAgo.open) / dayAgo.open) * 100
+      : null;
 
   /* Traded volume over the same 24h, priced in dollars. The raw figure on a
      candle is base units — SOL, not USD — and printing it with a dollar sign
