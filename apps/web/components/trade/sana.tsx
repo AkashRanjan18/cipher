@@ -116,6 +116,14 @@ export function Sana({
   const { armExits, armEntry, armed, cancelRule, server } = useTriggers();
   /* The prop is named `price`; aliased so the answer helpers read plainly. */
   const livePrice = price;
+  /*
+   * What the market is quoted IN.
+   *
+   * Binance pairs quote in USDT. On Solana everything routes through SOL —
+   * except SOL, which cannot be quoted in itself: the label read "SOL/SOL".
+   */
+  const quote =
+    symbol.endsWith("USDT") ? "USDT" : market.toUpperCase() === "SOL" ? "USDC" : "SOL";
   /* The in-flight model request, so a new sentence can abandon the old one. */
   const pending = useRef<AbortController | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -960,8 +968,17 @@ export function Sana({
           }}
           className="flex items-center gap-2.5 rounded-xl bg-champagne py-2 pl-3 pr-2 shadow-lg shadow-black/30 ring-1 ring-black/10 focus-within:ring-4 focus-within:ring-accent"
         >
+          {/*
+            * The quote asset, not a hardcoded one.
+            *
+            * This said "/USDT" for every market, which was true while the
+            * list was fourteen Binance pairs and became false the moment the
+            * panel listed Solana. A bonding-curve token quoted against SOL
+            * was labelled NTDA/USDT — a pair that does not exist, printed in
+            * the most confident place on the screen.
+            */}
           <span className="shrink-0 rounded-lg bg-ink/10 px-2 py-1 font-mono text-[11px] text-ink/60">
-            <b className="font-bold text-ink">{market}</b>/USDT
+            <b className="font-bold text-ink">{market}</b>/{quote}
           </span>
           <input
             ref={inputRef}

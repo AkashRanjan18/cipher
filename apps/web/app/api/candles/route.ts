@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchCandles, isInterval, isMarket, SYMBOL } from "@/lib/market";
-import { candlesFor } from "@/lib/chain/candles";
+import { candlesFor, RateLimited } from "@/lib/chain/candles";
 import { looksLikeMint } from "@/lib/chain/tokens";
 
 /**
@@ -43,6 +43,19 @@ export async function GET(req: Request) {
        */
       return NextResponse.json({ candles });
     } catch (e) {
+      /*
+       * 429 is not 502, and the difference matters to the person looking at
+       * it. GeckoTerminal's free tier is thirty requests a minute across the
+       * whole deployment and a cold chart costs two, so opening several new
+       * tokens quickly hits it. "Too many charts at once" is recoverable by
+       * waiting; "unavailable" reads as the token being broken.
+       */
+      if (e instanceof RateLimited) {
+        return NextResponse.json(
+          { error: "too many charts at once — try again in a moment", kind: "rateLimited" },
+          { status: 429 },
+        );
+      }
       console.error("[cipher] solana candles failed:", e);
       return NextResponse.json({ error: "upstream unavailable" }, { status: 502 });
     }

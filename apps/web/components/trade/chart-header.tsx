@@ -79,7 +79,9 @@ export function ChartHeader({
             </button>
           </div>
           <p className="mt-1 font-sans text-[10px] leading-none text-ash">
-            {market.name} · live
+            {/* A token whose name IS its ticker read "NTDA · NTDA · live".
+                Saying it twice is not more informative than saying it once. */}
+            {market.name && market.name !== market.base ? `${market.name} · live` : "live"}
           </p>
         </div>
 

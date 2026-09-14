@@ -103,6 +103,30 @@ const RIGHT_OFFSET = 12;
 const volumeColor = (c: Candle, up: string, down: string) =>
   c.close >= c.open ? wash(up, VOLUME_ALPHA) : wash(down, VOLUME_ALPHA);
 
+/**
+ * Strictly ascending by time, keeping the LAST of any duplicate.
+ *
+ * Last rather than first because the repeated bucket is the one still being
+ * filled, and its final copy carries the current close. Returns the input
+ * untouched when it is already clean, which is almost always.
+ */
+function ascending(candles: Candle[]): Candle[] {
+  let ok = true;
+  for (let i = 1; i < candles.length; i++) {
+    if (candles[i].time <= candles[i - 1].time) {
+      ok = false;
+      break;
+    }
+  }
+  if (ok) return candles;
+
+  const byTime = new Map<number, Candle>();
+  for (const c of candles) {
+    if (Number.isFinite(c.time)) byTime.set(c.time, c);
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
+}
+
 export function PriceChart({
   candles,
   livePrice,
@@ -282,18 +306,38 @@ export function PriceChart({
     if (!price || !volume || candles.length === 0) return;
 
     /*
+     * THE LIBRARY ASSERTS RATHER THAN COPES, so the invariant is enforced here
+     * as well as at every feed.
+     *
+     *   Assertion failed: data must be asc ordered by time,
+     *   index=299, time=1789290840, prev time=1789290840
+     *
+     * That is a full-screen runtime error over the entire terminal — the
+     * chart, the ticket, the balance, all of it — thrown because one upstream
+     * repeated a bucket. GeckoTerminal does exactly that with the bucket still
+     * forming, and it was fixed there too, but a data feed is a thing that
+     * will surprise you again and the app taking itself down is never the
+     * right response to a duplicate row.
+     *
+     * Cheap: already-ascending data is the common case and this is one pass
+     * that copies nothing when it holds.
+     */
+    const clean = ascending(candles);
+    if (clean.length === 0) return;
+
+    /*
      * Reapply the format before the data. Switching Price -> MCap moves the
      * series by eight orders of magnitude, and the axis built for one is
      * unreadable for the other.
      */
-    const p = precisionFor(candles);
+    const p = precisionFor(clean);
     price.applyOptions({
       priceFormat: { type: "price", precision: p, minMove: 10 ** -p },
     });
 
-    price.setData(candles as never);
+    price.setData(clean as never);
     volume.setData(
-      candles.map((d) => ({
+      clean.map((d) => ({
         time: d.time,
         value: d.volume,
         color: volumeColor(
