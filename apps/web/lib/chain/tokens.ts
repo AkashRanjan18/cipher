@@ -261,6 +261,35 @@ export function lifecycleOf(raw: Record<string, unknown>): Lifecycle {
   return raw.graduatedAt ? "graduated" : "bonding";
 }
 
+/**
+ * A token's icon, routed away from gateways that refuse to serve it.
+ *
+ * Most launchpad metadata is pinned to IPFS and addressed through a public
+ * gateway, and the two most common ones — ipfs.io and dweb.link — return 429
+ * to us on a SINGLE cold request, not merely under load. Measured: fifteen of
+ * twenty graduated tokens had an icon that would not load, every one of them
+ * on those two hosts. On screen that is indistinguishable from a token with no
+ * icon at all, so half the list wore a grey letter for no reason a user could
+ * see.
+ *
+ * The CID is the content address and any gateway serves the same bytes, so
+ * this swaps the host and nothing else. ipfs.filebase.io answered the same CID
+ * in 0.49s where ipfs.io refused it outright.
+ *
+ * cipher: still someone else's uptime, and the honest fix is proxying icons
+ * through our own route with a cache — one fetch per token for everyone,
+ * immune to any single gateway. That needs SSRF guards (https only, no private
+ * addresses, image content-types only), which is a piece of work rather than a
+ * line, and it is worth doing before this is public.
+ */
+const DEAD_GATEWAYS = /^https:\/\/(ipfs\.io|dweb\.link)\/ipfs\//;
+const GATEWAY = "https://ipfs.filebase.io/ipfs/";
+
+export function normaliseIcon(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw) return null;
+  return raw.replace(DEAD_GATEWAYS, GATEWAY);
+}
+
 /** One numeric field out of a stats block, null when it is not there. */
 function field(stats: unknown, key: string): number | null {
   const v = (stats as Record<string, unknown> | undefined)?.[key];
@@ -301,7 +330,7 @@ export function fromJupiter(raw: Record<string, unknown>): TokenInfo {
     createdAt: raw.createdAt ? String(raw.createdAt) : null,
     volume24hUsd: volume(raw.stats24h),
     change24h: field(raw.stats24h, "priceChange"),
-    icon: typeof raw.icon === "string" && raw.icon ? raw.icon : null,
+    icon: normaliseIcon(raw.icon),
     traders24h: field(raw.stats24h, "numTraders"),
     audit: audit
       ? {

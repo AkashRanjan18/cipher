@@ -158,6 +158,31 @@ test("the limit is honoured after filtering, not before", async () => {
   assert.ok(out.every((t) => t.lifecycle === "bonding"));
 });
 
+/* ─────────────────────────────── icons ─────────────────────────────────── */
+
+test("an icon on a gateway that refuses to serve is rerouted, CID untouched", () => {
+  /*
+   * Measured, not assumed: fifteen of twenty graduated tokens had an icon
+   * that would not load, and every one was on ipfs.io or dweb.link — both of
+   * which return 429 to a single cold request. On screen that is
+   * indistinguishable from having no icon, so half the list wore a grey
+   * letter for no reason a user could see.
+   */
+  const cid = "bafkreihsdoqkmpr5ryebaduoutyhj3nxco6wdp4s4743l2qrae4sz4hqrm";
+  const t = fromJupiter({ ...BONDING, icon: `https://ipfs.io/ipfs/${cid}` });
+  assert.equal(t.icon, `https://ipfs.filebase.io/ipfs/${cid}`);
+
+  const d = fromJupiter({ ...BONDING, icon: `https://dweb.link/ipfs/${cid}` });
+  assert.equal(d.icon, `https://ipfs.filebase.io/ipfs/${cid}`);
+});
+
+test("an icon anywhere else is left exactly as it came", () => {
+  const url = "https://raw.githubusercontent.com/solana-labs/token-list/main/x/logo.png";
+  assert.equal(fromJupiter({ ...BONDING, icon: url }).icon, url);
+  assert.equal(fromJupiter({ ...BONDING, icon: "" }).icon, null);
+  assert.equal(fromJupiter({ ...BONDING }).icon, null);
+});
+
 /* ────────────────────────────── launch risks ───────────────────────────── */
 
 test("a serial launcher is named, with the number", () => {
