@@ -8,12 +8,10 @@ import {
   quote,
   fillPrice,
   maxBuyUsd,
-  unrealised,
-  equity,
   allInPrice,
   positionOf,
 } from "@/lib/account/paper";
-import { usd, pct } from "@/lib/format";
+import { usd } from "@/lib/format";
 import { DEFAULTS, newId } from "@cipher/shared";
 
 /**
@@ -73,26 +71,13 @@ const SLIPPAGE_PRESETS = [50, 100, 300, 1000];
 
 export function Ticket({
   price,
-  solPrice,
   symbol,
-  marks: marksProp,
   market = "SOL",
   depthUsd = null,
 }: {
   price: number | undefined;
-  /**
-   * SOL's own price, whatever market is open.
-   *
-   * `price` is the CHART's price and is what an order is filled at; this is
-   * what the POSITION is worth. They are the same number only while SOL is
-   * open, and using one for the other valued four SOL at BTC's price — an
-   * account panel reading +75,295%.
-   */
-  solPrice?: number;
   /** The market's id — a mint on Solana, a Binance pair for a chart-only major. */
   symbol: string;
-  /** Every price we have, keyed by mint, for the account total. */
-  marks?: Record<string, number>;
   /** The market the chart is showing. See tradable below. */
   market?: string;
   /** Resting book depth, for pricing this order's impact. Null when unknown. */
@@ -143,7 +128,6 @@ export function Ticket({
    */
   const mint = mintFor(symbol);
   const tradable = mint !== null;
-  const marks = marksProp ?? {};
 
   const buying = side === "buy";
   const value = parseFloat(amount.replace(/,/g, "")) || 0;
@@ -611,103 +595,6 @@ export function Ticket({
         </p>
       )}
 
-      <Position mint={mint} symbol={market} price={price} marks={marks} />
-    </div>
-  );
-}
-
-/**
- * The position, under the ticket.
- *
- * "Cost basis" rather than "entry", because it is already all-in — it is the
- * price the market has to reach for a sale to break even, which is the number
- * that matters and is not quite the price on the chart when you bought.
- */
-function Position({
-  mint,
-  symbol,
-  price,
-  marks,
-}: {
-  /** What to call it on screen. */
-  symbol: string;
-  /** The market this card is about. Null for a chart-only major. */
-  mint: string | null;
-  /** That market's price. */
-  price: number | undefined;
-  /** Every mark we have, for the account total. */
-  marks: Record<string, number>;
-}) {
-  /*
-   * THE CARD IS ABOUT THE OPEN MARKET; the total is about the account.
-   *
-   * It used to read `account.sol` whatever chart was open, which was the only
-   * thing it could do with one shelf. Now the position shown is the position
-   * in the market being looked at, and the account value underneath sums every
-   * holding at its own price.
-   */
-  const { account, hydrated } = usePaperAccount();
-  const { usdc, realisedUsd } = account;
-  const { qty: held, costBasis } = mint ? positionOf(account, mint) : { qty: 0, costBasis: 0 };
-
-  const open = held > 0;
-  const pnl = price && open && mint ? unrealised(account, mint, price) : 0;
-  const pnlPct = open && costBasis > 0 && price ? ((price - costBasis) / costBasis) * 100 : 0;
-  const value = hydrated ? equity(account, marks) : null;
-
-  const rows: [string, string][] = open
-    ? [
-        ["Size", `${held.toFixed(4)} ${symbol}`],
-        ["Cost basis", usd(costBasis)],
-        ["Now", price ? usd(price) : "—"],
-      ]
-    : [
-        ["Cash", hydrated ? usd(usdc) : "—"],
-        ["Position", "flat"],
-      ];
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-line bg-slate">
-      <div className="flex items-baseline justify-between px-3 py-2">
-        <h3 className="font-sans text-[10px] font-bold uppercase tracking-[0.11em] text-ash">
-          Your account
-        </h3>
-        <span className="font-mono text-[12px] font-bold tabular-nums text-champagne">
-          {value === null ? "—" : usd(value)}
-        </span>
-      </div>
-      <dl className="flex flex-col gap-1.5 px-3 pb-3 font-sans text-[11.5px]">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex justify-between">
-            <dt className="text-ash">{k}</dt>
-            <dd className="font-mono tabular-nums text-champagne">{v}</dd>
-          </div>
-        ))}
-
-        {open && (
-          <div className="flex justify-between">
-            <dt className="text-ash">Open P&amp;L</dt>
-            <dd className={`font-mono font-bold tabular-nums ${pnl >= 0 ? "text-up" : "text-down"}`}>
-              {pnl >= 0 ? "+" : "−"}
-              {usd(Math.abs(pnl))} ({pct(pnlPct, false)})
-            </dd>
-          </div>
-        )}
-
-        {hydrated && realisedUsd !== 0 && (
-          <div className="flex justify-between border-t border-hairline pt-1.5">
-            <dt className="text-ash">Booked</dt>
-            <dd
-              className={`font-mono font-bold tabular-nums ${
-                realisedUsd >= 0 ? "text-up" : "text-down"
-              }`}
-            >
-              {realisedUsd >= 0 ? "+" : "−"}
-              {usd(Math.abs(realisedUsd))}
-            </dd>
-          </div>
-        )}
-      </dl>
     </div>
   );
 }

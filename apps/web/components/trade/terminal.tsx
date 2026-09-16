@@ -395,8 +395,6 @@ function TerminalBody({
     return out;
   }, [prices]);
 
-  const solPrice = prices["SOLUSDT"] ?? (symbol === "SOLUSDT" ? last : undefined);
-
   /* Cap for the open market, from the same supply table the list uses — so
      the header and the row a click arrived from cannot disagree. */
   /*
@@ -824,7 +822,7 @@ function TerminalBody({
           */}
         {/* No scroller of its own any more — it moves with the region. */}
         <aside className="flex flex-col gap-2.5 [&>*]:shrink-0">
-          <Ticket price={last} solPrice={solPrice} symbol={symbol} market={market.base} depthUsd={depth} />
+          <Ticket price={last} symbol={symbol} market={market.base} depthUsd={depth} />
           {/*
             * Under the ticket, where fomo puts it: what the coin IS and who has
             * been trading it, read after deciding to look and before deciding
