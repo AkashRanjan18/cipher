@@ -582,3 +582,21 @@ test("the crossing query uses the partial index rather than reading the table", 
   await h.pg.exec("set enable_seqscan = on;");
   assert.match(text, /rules_watching/);
 });
+
+test("reset returns the deposit basis to the opening balance, not just the cash", () => {
+  /* It updated usdc, realised and fees and left deposited_usd alone, which
+     agreed only while the two numbers happened to both be $10,000. Once the
+     opening balance changed they disagreed and the header read
+     "BAG $0 -100.00%" on a freshly reset account: nothing, measured against a
+     deposit of ten thousand. */
+  return (async () => {
+    await ensureUser(USER);
+    await h.pg.query("update accounts set usdc = 4321, deposited_usd = 9999 where user_id = $1", [
+      USER,
+    ]);
+    await resetAccount(USER);
+    const a = (await loadAccount(USER))!;
+    assert.equal(a.usdc, OPENING_DEPOSIT);
+    assert.equal(a.depositedUsd, OPENING_DEPOSIT);
+  })();
+});

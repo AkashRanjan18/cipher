@@ -60,6 +60,30 @@ export interface TokenAudit {
   devMints: number | null;
 }
 
+/**
+ * The four windows Jupiter measures, and the labels they may honestly wear.
+ *
+ * fomo's panel shows 5M · 1H · 4H · 1D. Jupiter reports 5m, 1h, 6h and 24h —
+ * there is no four-hour window anywhere in the payload. Printing "4H" over
+ * six hours of data would be a label that is simply false, and the whole
+ * point of the row is that a trader reads the number against the period, so
+ * cipher shows 6H where it has six hours.
+ */
+export const WINDOWS = ["5m", "1h", "6h", "24h"] as const;
+export type WindowKey = (typeof WINDOWS)[number];
+
+export interface TokenWindow {
+  /** Percent, over the window. Null when there is no history to measure. */
+  priceChangePct: number | null;
+  buyVolumeUsd: number;
+  sellVolumeUsd: number;
+  /** Trade COUNTS, not people. Jupiter reports no split of traders by side. */
+  buys: number;
+  sells: number;
+  /** Unique wallets that traded, both sides together. */
+  traders: number;
+}
+
 export interface TokenInfo {
   mint: string;
   symbol: string;
@@ -95,6 +119,19 @@ export interface TokenInfo {
   change24h: number | null;
   /** Jupiter's hosted icon. Null rather than a placeholder we invented. */
   icon: string | null;
+  /**
+   * Tokens in existence. The denominator behind `fdv`, shown beside it so
+   * a reader can see what the valuation is a valuation OF.
+   */
+  totalSupply: number | null;
+  /**
+   * The same measurements over four periods, for the activity panel.
+   *
+   * Null for a window Jupiter did not report — a token minted four minutes ago
+   * has no 24-hour history, and rendering zeroes there would say the opposite
+   * of what is true: not "nothing traded", but "we do not know yet".
+   */
+  windows: Record<WindowKey, TokenWindow | null>;
 }
 
 export type Resolution =
@@ -297,6 +334,21 @@ function field(stats: unknown, key: string): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+/** One of Jupiter's stats blocks → our shape. Null when the block is absent. */
+function windowOf(stats: unknown): TokenWindow | null {
+  const s = stats as Record<string, unknown> | undefined;
+  if (!s) return null;
+  const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  return {
+    priceChangePct: typeof s.priceChange === "number" ? s.priceChange : null,
+    buyVolumeUsd: n(s.buyVolume),
+    sellVolumeUsd: n(s.sellVolume),
+    buys: n(s.numBuys),
+    sells: n(s.numSells),
+    traders: n(s.numTraders),
+  };
+}
+
 /** Buy plus sell volume over a window. Jupiter reports the two sides apart. */
 function volume(stats: unknown): number | null {
   const s = stats as Record<string, unknown> | undefined;
@@ -363,6 +415,13 @@ export function fromJupiter(raw: Record<string, unknown>): TokenInfo {
     graduatedAt: raw.graduatedAt ? String(raw.graduatedAt) : null,
     dev: raw.dev ? String(raw.dev) : null,
     createdAt: raw.createdAt ? String(raw.createdAt) : null,
+    totalSupply: typeof raw.totalSupply === "number" ? raw.totalSupply : null,
+    windows: {
+      "5m": windowOf(raw.stats5m),
+      "1h": windowOf(raw.stats1h),
+      "6h": windowOf(raw.stats6h),
+      "24h": windowOf(raw.stats24h),
+    },
     volume24hUsd: volume(raw.stats24h),
     change24h: field(raw.stats24h, "priceChange"),
     icon: normaliseIcon(raw.icon),

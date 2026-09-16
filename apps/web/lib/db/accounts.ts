@@ -141,11 +141,23 @@ export async function saveFill(userId: string, account: Account, fill: Fill): Pr
 export async function resetAccount(userId: string): Promise<void> {
   const sql = db();
   const opening = openAccount(OPENING_DEPOSIT);
+  /*
+   * `deposited_usd` TOO, and leaving it out was a real bug hiding behind a
+   * coincidence. Reset restored the cash to the opening balance and left the
+   * deposit basis at whatever it had been, which agreed only because the two
+   * numbers were both $10,000. The moment the opening balance changed they
+   * disagreed, and the header read "BAG $0 −100.00%" on a freshly reset
+   * account: cash of nothing measured against a deposit of ten thousand.
+   *
+   * Reset means the account is as it was on the first day. The basis every
+   * return is measured from is part of that.
+   */
   await sql`
     update accounts set
       usdc = ${opening.usdc},
       realised_usd = ${opening.realisedUsd},
       fees_usd = ${opening.feesUsd},
+      deposited_usd = ${opening.depositedUsd},
       updated_at = now()
     where user_id = ${userId}
   `;

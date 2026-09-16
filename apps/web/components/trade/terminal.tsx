@@ -21,6 +21,7 @@ import { Scroller } from "@/components/ui/scroller";
 import { AccountMenu } from "@/components/auth/account-menu";
 import { MyTrades } from "./my-trades";
 import { Ticket } from "./ticket";
+import { AboutToken } from "./about-token";
 import { Sana, SanaMark } from "./sana";
 import { Flow } from "./flow";
 
@@ -822,8 +823,15 @@ function TerminalBody({
           * overflow will clip the account panel mid-row again.
           */}
         {/* No scroller of its own any more — it moves with the region. */}
-        <aside className="flex flex-col [&>*]:shrink-0">
+        <aside className="flex flex-col gap-2.5 [&>*]:shrink-0">
           <Ticket price={last} solPrice={solPrice} symbol={symbol} market={market.base} depthUsd={depth} />
+          {/*
+            * Under the ticket, where fomo puts it: what the coin IS and who has
+            * been trading it, read after deciding to look and before deciding
+            * to buy. Only for a real mint — a Binance major has a chart and no
+            * token behind it, so there is nothing to be about.
+            */}
+          {onChain && <AboutToken token={token} symbol={market.base} />}
           <Flow candles={candles} last={last} />
         </aside>
           </div>
@@ -886,7 +894,19 @@ function Bag({ marks }: { marks: Record<string, number> }) {
   const held = heldMints(account);
   const priced = held.some((m) => marks[m] !== undefined);
   const value = hydrated && (held.length === 0 || priced) ? equity(account, marks) : null;
-  const ret = value === null ? null : ((value - account.depositedUsd) / account.depositedUsd) * 100;
+  /*
+   * A RETURN ON NOTHING IS NOT MINUS A HUNDRED PERCENT.
+   *
+   * The opening deposit went to zero and this divided by it, so the header
+   * read "BAG $0 −100.00%" on a fresh account — a screen telling someone they
+   * had lost everything before they had done anything. There is no percentage
+   * to state until money goes in: `null` renders as "—", which is the honest
+   * answer to "what is your return" when the denominator is zero.
+   */
+  const ret =
+    value === null || account.depositedUsd <= 0
+      ? null
+      : ((value - account.depositedUsd) / account.depositedUsd) * 100;
 
   return (
     <div className="flex items-center gap-3">

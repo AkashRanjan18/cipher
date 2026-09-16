@@ -336,7 +336,16 @@ export function Ticket({
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      {/*
+        * ONE STRIP, not two buttons in a grid.
+        *
+        * Side is a toggle between two states of the same control, and two
+        * separately bordered cards read as two independent things you could
+        * somehow have both of. Filling the active half and leaving the other
+        * transparent is the shape every exchange uses, and it makes the
+        * current side legible without reading either word.
+        */}
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate p-1">
         {(["buy", "sell"] as const).map((s) => (
           <button
             key={s}
@@ -347,12 +356,12 @@ export function Ticket({
               setReceipt(null);
             }}
             aria-pressed={side === s}
-            className={`rounded-xl border py-2.5 font-display text-[15px] font-bold capitalize transition-colors ${
+            className={`rounded-lg py-2 font-display text-[15px] font-bold capitalize transition-colors ${
               side === s
                 ? s === "buy"
-                  ? "border-up/50 bg-up-soft text-up"
-                  : "border-down/50 bg-down-soft text-down"
-                : "border-line bg-slate text-ash hover:text-champagne"
+                  ? "bg-up-soft text-up"
+                  : "bg-down-soft text-down"
+                : "text-ash hover:text-champagne"
             }`}
           >
             {s}
@@ -555,6 +564,28 @@ export function Ticket({
             ? `Rest ${buying ? "buy" : "sell"} at ${usd(limitPrice)}`
             : `${buying ? "Buy" : "Sell"} ${market}${limiting && marketable && limitPrice > 0 ? " at limit" : ""}`}
       </button>
+
+      {/*
+        * The rate, on the ticket, where the money leaves.
+        *
+        * fomo puts "Lowest fees: 0.05%" here. cipher states the number and not
+        * the superlative: "lowest" is a claim that has to stay true against
+        * every competitor forever, and the first day it is not, it is a lie on
+        * the screen where someone is spending money. The same reasoning is
+        * already written against the fee strip in the left panel.
+        */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px]">🏷</span>
+        <span className="font-sans text-[11px] text-ash">
+          <b className="font-bold text-action">0.50% fee</b> with a referral code
+        </span>
+        <span
+          className="ml-auto cursor-help font-mono text-[11px] text-mute"
+          title={`Charged on the notional, floored at $0.95 under $200 — the priority fee and the Jito tip are fixed per trade, so under about $190 the percentage does not cover submitting it. Without a referral code the rate is 1.00%.`}
+        >
+          ⓘ
+        </span>
+      </div>
 
       {/* The refusal shows even while the button is disabled — a dead button
           with no reason beside it is the worst state a ticket has. */}
