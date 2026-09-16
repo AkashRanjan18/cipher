@@ -127,13 +127,100 @@ function ascending(candles: Candle[]): Candle[] {
   return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
 
+/**
+ * The OHLC readout, and the change on the bar being read.
+ *
+ * Every terminal prints this because reading a candle's exact values by eye is
+ * guesswork. The CHANGE is the part cipher was missing: open and close on
+ * their own make you do the subtraction, and the number people actually want
+ * from a bar is how far it moved and by what percent.
+ *
+ * DECIMALS COME FROM THE SERIES, not from a fixed format. `toPrecision(4)`
+ * rendered SOL's $103.19 as "103.2" — dropping a cent from the number someone
+ * is deciding on — while a memecoin at $0.0000027 needs nine places to say
+ * anything at all. The same precision the price axis uses keeps the legend and
+ * the scale agreeing.
+ */
+function Legend({
+  bar,
+  name,
+  interval,
+  candles,
+}: {
+  bar: Candle;
+  name: string;
+  interval: string;
+  candles: Candle[];
+}) {
+  /*
+   * DECIMALS SCALE WITH THE PRICE, and this is the legend's own rule rather
+   * than the axis's.
+   *
+   * `precisionFor` gives four places to anything over a dollar, which renders
+   * SOL as "97.1406" — four digits of noise on a number nobody quotes past the
+   * cent. Two is what every terminal shows for a dollar-priced asset. But two
+   * would render a memecoin at $0.0000027 as "0.00", so the rule has to bend
+   * with the magnitude: roughly five significant figures, wherever the decimal
+   * point happens to be.
+   */
+  const places = (v: number) => (v >= 1 ? 2 : v >= 0.01 ? 4 : v >= 0.0001 ? 6 : 9);
+  const scale = places(Math.abs(bar.close) || 1);
+  const fmt = (v: number) =>
+    Math.abs(v) >= 1000
+      ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : v.toFixed(scale);
+
+  /* Against the bar's OWN open — this describes one candle, not the day. */
+  const delta = bar.close - bar.open;
+  const pct = bar.open > 0 ? (delta / bar.open) * 100 : 0;
+  const up = delta >= 0;
+  const tone = up ? "text-up" : "text-down";
+  const sign = up ? "+" : "";
+
+  return (
+    /* pointer-events-none: the legend sits over the canvas, and swallowing the
+       mouse there would kill the crosshair that feeds it. */
+    <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 rounded bg-ink/80 px-2 py-1 font-mono text-[11px] tabular-nums backdrop-blur-sm">
+      <span className="font-sans text-[11px] font-bold text-champagne">
+        {name} · {interval} · cipher
+      </span>
+
+      {(
+        [
+          ["O", bar.open],
+          ["H", bar.high],
+          ["L", bar.low],
+          ["C", bar.close],
+        ] as const
+      ).map(([k, v]) => (
+        <span key={k} className="text-mute">
+          {k}
+          <span className={tone}>{fmt(v)}</span>
+        </span>
+      ))}
+
+      <span className={tone}>
+        {sign}
+        {fmt(delta)} ({sign}
+        {pct.toFixed(2)}%)
+      </span>
+    </div>
+  );
+}
+
 export function PriceChart({
   candles,
   livePrice,
   barSeconds,
+  name,
+  interval,
   resetSignal = 0,
 }: {
   candles: Candle[];
+  /** What the series is OF. "Solana", "Bonk" — the token, not the ticker. */
+  name: string;
+  /** Which bar size, for the legend. "1h", "15m". */
+  interval: string;
   /** Latest traded price, from the shared poll. Folds into the forming bar. */
   livePrice?: number;
   /** Seconds per bar, so "now" can be placed in the right bucket. */
@@ -407,31 +494,7 @@ export function PriceChart({
       {legend && (
         /* pointer-events-none: the legend sits over the canvas, and swallowing
            the mouse there would kill the crosshair that feeds it. */
-        <div className="pointer-events-none absolute left-2 top-2 z-10 flex gap-3 rounded bg-ink/80 px-2 py-1 font-mono text-[11px] tabular-nums backdrop-blur-sm">
-          {(
-            [
-              ["O", legend.open],
-              ["H", legend.high],
-              ["L", legend.low],
-              ["C", legend.close],
-            ] as const
-          ).map(([k, v]) => (
-            <span key={k} className="text-ash">
-              {k}{" "}
-              <span
-                className={
-                  legend.close >= legend.open
-                    ? "text-up"
-                    : "text-down"
-                }
-              >
-                {v >= 1000
-                  ? v.toLocaleString("en-US", { maximumFractionDigits: 0 })
-                  : v.toPrecision(4)}
-              </span>
-            </span>
-          ))}
-        </div>
+        <Legend bar={legend} name={name} interval={interval} candles={candles} />
       )}
     </div>
   );

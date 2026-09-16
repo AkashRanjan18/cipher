@@ -636,10 +636,14 @@ function TerminalBody({
             */}
           <div data-wheel-lock className="h-[55vh] min-h-[320px]">
             <PriceChart
-                resetSignal={chartReset}
+              resetSignal={chartReset}
               candles={candles}
               livePrice={live}
               barSeconds={intervalSeconds(interval)}
+              /* The token's NAME, not its ticker — "Solana" reads as a market
+                 and "SOL" reads as the thing beside it in the header. */
+              name={market.name || market.base}
+              interval={interval}
             />
           </div>
 
