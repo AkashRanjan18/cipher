@@ -442,13 +442,23 @@ function TerminalBody({
       ? ((last - dayAgo.open) / dayAgo.open) * 100
       : null;
 
-  /* Traded volume over the same 24h, priced in dollars. The raw figure on a
-     candle is base units — SOL, not USD — and printing it with a dollar sign
-     read as a 69-cent market. */
+  /*
+   * Traded volume over the same 24h. THE UNIT DEPENDS ON THE SOURCE.
+   *
+   * Binance klines report volume in BASE UNITS — SOL, not dollars — so they
+   * have to be multiplied by the price, and skipping that printed a 69-cent
+   * market. GeckoTerminal reports volume ALREADY IN DOLLARS, and multiplying
+   * that by the price again inflates it by the price of the coin.
+   *
+   * Which it did: cipher showed $2.14B of SOL volume in a single pool while
+   * the entire aggregated market did $249M. A pool cannot out-trade every
+   * venue combined by ninefold, which is what made it obvious. The honest
+   * figure for that pool was $21.7M.
+   */
   const dayVolumeUsd = spansDay
     ? candles
         .filter((c) => c.time >= cutoff)
-        .reduce((sum, c) => sum + c.volume * c.close, 0)
+        .reduce((sum, c) => sum + (onChain ? c.volume : c.volume * c.close), 0)
     : null;
 
   return (
@@ -603,7 +613,13 @@ function TerminalBody({
             marketCap={marketCap}
             change={change}
             volumeUsd={dayVolumeUsd}
-            depthUsd={depth}
+            /*
+             * An AMM has no order book, so `depth` is null on a Solana market
+             * — but "how much is in the pool" is a real and better answer to
+             * the same question, and Jupiter has been returning it in the
+             * price response all along while the header printed a dash.
+             */
+            depthUsd={onChain ? (openMark?.liquidityUsd ?? null) : depth}
             interval={interval}
             onInterval={setInterval}
             pending={pending}

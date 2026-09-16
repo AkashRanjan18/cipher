@@ -40,6 +40,8 @@ export interface Mark {
   change24h: number;
   /** The Solana slot the price was derived at. */
   blockId: number;
+  /** Dollars of liquidity behind the price. The AMM's answer to "depth". */
+  liquidityUsd: number | null;
 }
 
 interface Ctx {
@@ -94,7 +96,10 @@ export function SolPriceProvider({ children }: { children: ReactNode }) {
         const res = await fetch(`/api/prices?mints=${wanted}`);
         if (!res.ok || !alive) return;
         const body = (await res.json()) as {
-          prices: Record<string, { usd: number; change24h?: number; blockId?: number }>;
+          prices: Record<
+            string,
+            { usd: number; change24h?: number; blockId?: number; liquidityUsd?: number }
+          >;
         };
         if (!alive) return;
         /*
@@ -111,6 +116,7 @@ export function SolPriceProvider({ children }: { children: ReactNode }) {
               usd: p.usd,
               change24h: typeof p.change24h === "number" ? p.change24h : 0,
               blockId: typeof p.blockId === "number" ? p.blockId : 0,
+              liquidityUsd: typeof p.liquidityUsd === "number" ? p.liquidityUsd : null,
             };
           }
           return next;
