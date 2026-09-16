@@ -7,6 +7,7 @@ import {
   type NavigateIntent,
 } from "@cipher/shared";
 import { parseWithGrammar } from "./grammar.ts";
+import { askForMissing, askForMissingTrigger } from "./missing.ts";
 import { normaliseSpeech } from "../voice/normalise.ts";
 import { resolveMarket } from "../market/markets.ts";
 
@@ -285,7 +286,13 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
    * and would be caught by three of the matchers below.
    */
   const spec = parseWithGrammar(text);
-  if (spec) return ok({ kind: "order", spec }, spec.warnings);
+  if (spec) {
+    /* A parse can succeed and still be wrong: a stated condition with no price
+       becomes `trigger: null`, which fills NOW. Ask rather than trade. */
+    const noPrice = askForMissingTrigger(text, spec);
+    if (noPrice) return noPrice;
+    return ok({ kind: "order", spec }, spec.warnings);
+  }
 
   for (const matcher of [rules, screen, query, ui]) {
     const hit = matcher(text);
@@ -294,6 +301,16 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
 
   const nav = navigate(text, ctx);
   if (nav) return nav;
+
+  /*
+   * LAST, deliberately. `askForMissing` recognises order-shaped sentences by
+   * their verbs, and "close" opens a position in one vocabulary and shuts a
+   * panel in another — so "close the panel" would ask how much panel to sell
+   * if this ran any earlier. Everything with a better claim on the sentence
+   * has already had it.
+   */
+  const incomplete = askForMissing(text);
+  if (incomplete) return incomplete;
 
   return refuse(
     "notUnderstood",

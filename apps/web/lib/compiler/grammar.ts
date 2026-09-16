@@ -108,15 +108,22 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * The token is captured as whatever word follows; resolving it to a mint is
    * a separate step that needs network, so the grammar stays offline.
    */
+  /*
+   * BOTH SIDES. This read `\bbuy\b` for months, so "sell $200 of SOL" matched
+   * nothing here, fell through to the token-denominated branch — which needs a
+   * bare number and saw a dollar sign — and came out as "I didn't get that".
+   * cipher could buy a dollar amount and could not sell one, which is half an
+   * order book missing on the commonest sentence anybody types.
+   */
   const buy = text.match(
-    /\bbuy\s+(?:me\s+)?(\$\s*[\d.,]+\s*[km]?)\s+(?:of\s+|worth\s+of\s+)?([a-z0-9]{2,15})\b/,
+    /\b(buy|sell)\s+(?:me\s+)?(\$\s*[\d.,]+\s*[km]?)\s+(?:of\s+|worth\s+of\s+)?([a-z0-9]{2,15})\b/,
   );
   if (buy) {
-    const amount = parseAmount(buy[1]);
+    const amount = parseAmount(buy[2]);
     if (!amount) return null;
     entry = {
-      side: "buy",
-      token: buy[2],
+      side: buy[1] as "buy" | "sell",
+      token: buy[3],
       mint: null,
       amount,
       slippageBps: DEFAULTS.slippageBps,
@@ -140,6 +147,82 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * parsed as five hundred tokens of a coin called "dollars", which is the
    * kind of bug that is funny until it fills.
    */
+  /*
+   * THE WHOLE POSITION — "sell my position on SOL", "close my bonk", "dump
+   * all my sol", "sell everything".
+   *
+   * A hundred percent OF THE POSITION, not a token count, because the size is
+   * only known when the order runs: a stop could have taken half of it in the
+   * meantime, and a spec carrying the quantity read at arm time would try to
+   * sell tokens that are no longer there.
+   *
+   * It comes before the sized branch on purpose. "sell all my sol" has no
+   * number in it at all, so nothing below would ever have matched it — this
+   * was the second of the four plainest sentences a person types that cipher
+   * could not read.
+   */
+  if (!entry) {
+    /*
+     * A SIZE RELATIVE TO THE POSITION — "sell half of my SOL", "sell 25% of
+     * my bonk", "sell all my sol", "close my bonk", "sell my position on SOL".
+     *
+     * Percent OF THE POSITION, not a token count, because the size is only
+     * known when the order runs: a stop could take half of it in between, and
+     * a spec carrying the quantity read at arm time would try to sell coins
+     * that are no longer there.
+     *
+     * TWO PATTERNS, NOT ONE WITH EVERYTHING OPTIONAL. The first version made
+     * every part optional and matched far more than it should have — "sell a
+     * third at two x" came out as selling 33% of a token called "at", because
+     * after the fraction the next word-shaped thing was a preposition. So a
+     * named fraction now REQUIRES an "of" or a "my" between it and the token,
+     * which every real phrasing has and no stray match does.
+     */
+    const frac = text.match(
+      /\b(?:sell|close|dump|exit)\s+(?:(?:a|the)\s+)?(?:(half|third|quarter|rest|all|everything)|([\d.]+)\s*%)\s+(?:of\s+)?(?:my\s+)?(?:(?:entire|whole)\s+)?([a-z][a-z0-9]{1,14})\b/,
+    );
+
+    /*
+     * The whole position with no fraction named. Gated on a marker, because
+     * without one "sell solana" was a full liquidation from two words — no
+     * number, no question, the position gone. "Sell" alone says nothing about
+     * size; it is the commonest incomplete order there is, and it belongs in
+     * the branch that asks how much.
+     */
+    const closing = /\b(close|dump|exit)\b/.test(text) || /\b(my\s+position|entire|whole)\b/.test(text);
+    const whole = closing
+      ? text.match(
+          /\b(?:sell|close|dump|exit)\s+(?:my\s+)?(?:(?:entire|whole)\s+)?(?:position\s+(?:on|in)\s+)?(?:my\s+)?([a-z][a-z0-9]{1,14})\b/,
+        )
+      : null;
+
+    const named = frac?.[3] ?? whole?.[1] ?? null;
+    const STOPWORD = /^(?:it|everything|all|them|position|my|the|rest|half|third|quarter|at|in|on|of|to|for|and|when|if|out)$/;
+
+    if (named && !STOPWORD.test(named)) {
+      const pct = frac?.[2] ? Number(frac[2]) : null;
+      const percent = frac?.[1]
+        ? (FRACTIONS[frac[1]] ?? null)
+        : pct != null && pct > 0 && pct <= 100
+          ? pct
+          : whole
+            ? 100
+            : null;
+
+      if (percent != null) {
+        entry = {
+          side: "sell",
+          token: named,
+          mint: null,
+          amount: { kind: "percentOfPosition", value: percent },
+          slippageBps: DEFAULTS.slippageBps,
+          privateSubmission: DEFAULTS.privateSubmission,
+          trigger: null,
+        };
+      }
+    }
+  }
+
   if (!entry) {
     const sized = text.match(
       /\b(buy|sell)\s+(?:me\s+)?([\d.,]+)\s*(?:tokens?\s+of\s+|coins?\s+of\s+|of\s+)?(?!dollars?\b|usd\b|bucks?\b|worth\b|tokens?\b|coins?\b)([a-z][a-z0-9]{1,14})\b/,

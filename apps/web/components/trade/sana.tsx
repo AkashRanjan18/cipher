@@ -34,6 +34,42 @@ import { equity, unrealised } from "@/lib/account/paper";
  * one failure this product cannot have.
  */
 
+/** Words that mean a share of the position, accepted as a typed answer. */
+const SIZE_WORDS = /^(all|all of it|everything|the rest|rest|half|a half|third|a third|quarter|a quarter)$/;
+
+/**
+ * Does this reply answer the question, or start a new one?
+ *
+ * Narrow on purpose. The cost of a false positive is a sentence folded into a
+ * trade it was not part of, so a reply only counts when it looks like nothing
+ * BUT a value: a bare number, optionally signed, optionally with a currency or
+ * percent marker, or one of the words above. Everything else — including
+ * "actually make it 500" — goes back through the router as a fresh sentence.
+ */
+function isAnswer(text: string, expects: "price" | "percent" | "size"): boolean {
+  const t = text.trim().toLowerCase().replace(/[.!]$/, "");
+  if (t.length > 24) return false;
+  if (expects === "size" && SIZE_WORDS.test(t)) return true;
+  return /^[-+]?\s*\$?\s*[\d,]+(?:\.\d+)?\s*[km%]?$/.test(t);
+}
+
+/**
+ * The reply, in a form the grammar accepts.
+ *
+ * Measured against the parser rather than guessed: "stop at 20" is a REFUSAL
+ * and "stop at 20%" is a drawdown, so a percent answer that arrives bare has
+ * to gain its sign before it goes back in. A price is happy either way, and
+ * keeps the dollar mark only because the readback reads better with it.
+ */
+function normaliseAnswer(text: string, expects: "price" | "percent" | "size"): string {
+  const t = text.trim().toLowerCase().replace(/[.!]$/, "");
+  if (expects === "size" && SIZE_WORDS.test(t)) return t === "rest" ? "the rest" : t;
+  if (expects === "percent") return /%/.test(t) ? t : `${t}%`;
+  if (expects === "price") return /^\$/.test(t) ? t : `$${t.replace(/^\+/, "")}`;
+  /* A size that is a number: dollars unless they marked it a percentage. */
+  return /%/.test(t) || /^\$/.test(t) ? t : `$${t}`;
+}
+
 interface Turn {
   id: number;
   mine: boolean;
@@ -53,6 +89,8 @@ interface Turn {
   choices?: { label: string; sentence: string }[];
   /** A placeholder while the model is being asked. Replaced by the answer. */
   thinking?: boolean;
+  /** A question whose answer is a value the user types, not one of N choices. */
+  fill?: { template: string; expects: "price" | "percent" | "size"; example: string };
   /** Set once the user has answered the card, so it stops asking. */
   resolved?: string;
 }
@@ -142,6 +180,15 @@ export function Sana({
   const held = mint ? positionOf(account, mint) : { qty: 0, costBasis: 0 };
   /* The in-flight model request, so a new sentence can abandon the old one. */
   const pending = useRef<AbortController | null>(null);
+  /*
+   * The question Sana is currently waiting on an answer to, if any.
+   *
+   * A ref rather than state because `handle` must stay referentially stable,
+   * and a stable callback that reads state reads the value from the render
+   * that built it — the trap already documented against `trade()`. Nothing
+   * renders from this either; the card carries its own copy for the input.
+   */
+  const pendingFill = useRef<Turn["fill"] | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
@@ -206,6 +253,43 @@ export function Sana({
     setOpen(true);
 
     /*
+     * IS THIS AN ANSWER TO THE LAST QUESTION, OR A NEW INSTRUCTION?
+     *
+     * When Sana has asked "how much SOL?", the next thing typed is almost
+     * always the answer — and "$500" on its own is not a sentence any grammar
+     * can do anything with, so without this it comes back as "I didn't get
+     * that" one keystroke after cipher asked the question itself.
+     *
+     * The test is deliberately narrow: it has to LOOK like a value, and it has
+     * to be short. "What's my P&L" typed straight after a question is a new
+     * instruction and is treated as one, which is why this checks the shape of
+     * the reply rather than assuming anything that follows a question answers
+     * it. Getting that wrong would fold a query into a trade.
+     *
+     * A REF, not state. This is read inside a callback that must stay
+     * referentially stable, and reading state from one captures the value from
+     * the render that created it — the trap that made `trade()` write every
+     * order to a browser nobody reads.
+     */
+    const awaiting = pendingFill.current;
+    if (awaiting && isAnswer(text, awaiting.expects)) {
+      pendingFill.current = null;
+      /* The card stops asking and records what it was told, the same way an
+         approved order card records that it was approved. */
+      setTurns((prev) =>
+        prev.map((t) => (t.fill && !t.resolved ? { ...t, resolved: text } : t)),
+      );
+      push({ mine: true, text });
+      /* The template is completed and the WHOLE SENTENCE is compiled again,
+         through the same grammar, validation and readback as anything typed
+         by hand. Nothing patches a half-built spec with a value. */
+      const sentence = awaiting.template.replace("{}", normaliseAnswer(text, awaiting.expects));
+      dispatch(compile(sentence, { symbol, interval, hasPosition: held.qty > 0 }));
+      return;
+    }
+    pendingFill.current = null;
+
+    /*
      * A new instruction supersedes an unanswered old one.
      *
      * Otherwise "Yep, do it" stays live on a card from ten minutes and four
@@ -218,7 +302,7 @@ export function Sana({
      */
     setTurns((prev) =>
       prev.map((t) =>
-        (t.spec || t.choices) && !t.resolved
+        (t.spec || t.choices || t.fill) && !t.resolved
           ? { ...t, resolved: "Superseded — you asked for something else." }
           : t,
       ),
@@ -333,7 +417,17 @@ export function Sana({
         return;
 
       case "clarify":
-        push({ mine: false, text: intent.question, choices: intent.options });
+        /* Remembered so the next thing typed can be read as the answer. Only
+           one question is ever live: a second one replaces the first, because
+           answering a question two sentences old is how a number lands in the
+           wrong order. */
+        pendingFill.current = intent.fill ?? null;
+        push({
+          mine: false,
+          text: intent.question,
+          choices: intent.options.length ? intent.options : undefined,
+          fill: intent.fill,
+        });
         return;
 
       case "query":
@@ -927,6 +1021,20 @@ export function Sana({
                         </button>
                       ))}
                     </div>
+                  )}
+
+                  {/*
+                    * A question whose answer is a number has nothing to offer
+                    * as a button, so it says what shape the answer takes and
+                    * waits for the bar. Typing it there is the same path a
+                    * choice takes: the template is completed and the finished
+                    * sentence is compiled from scratch.
+                    */}
+                  {t.fill && !t.resolved && (
+                    <p className="mt-2 font-sans text-[11.5px] text-ash">
+                      Type it below — like{" "}
+                      <span className="font-mono text-champagne">{t.fill.example}</span>.
+                    </p>
                   )}
 
                   {t.lines && (

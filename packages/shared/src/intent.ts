@@ -201,6 +201,34 @@ export interface ClarifyIntent {
     /** The full sentence, rewritten so it can only parse one way. */
     sentence: string;
   }[];
+  /**
+   * A MISSING VALUE rather than a choice between two readings.
+   *
+   * "Buy SOL at $95" is not ambiguous — it is incomplete. There is exactly one
+   * reading and it has a hole in it, and the set of answers is every number,
+   * so there are no buttons to offer. The user types it.
+   *
+   * The same rule as `options` still holds and it is the reason this is a
+   * TEMPLATE rather than a field name: the answer is substituted into a whole
+   * sentence and that sentence is compiled from scratch. Nothing anywhere
+   * patches a half-built spec with a value — a patched spec is a code path
+   * that no typed sentence ever takes, and money paths must not have those.
+   *
+   * Chains naturally when more than one thing is missing: the filled sentence
+   * recompiles, and if it is still short of something the next clarify falls
+   * out of the same machinery.
+   */
+  fill?: {
+    /** The sentence with `{}` where the answer goes. "buy {} of sol at $95" */
+    template: string;
+    /**
+     * What is being asked for. Drives the keyboard, the placeholder and the
+     * check that "banana" is not a price before it reaches the compiler.
+     */
+    expects: "price" | "percent" | "size";
+    /** A real example of a valid answer, shown in the input. "$500" */
+    example: string;
+  };
 }
 
 export type Intent =

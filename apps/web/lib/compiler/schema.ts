@@ -106,14 +106,35 @@ export const intentSchema = z.discriminatedUnion("kind", [
       "resetChart",
     ]),
   }),
-  z.object({
-    kind: z.literal("clarify"),
-    question: z.string().min(1).max(200),
-    options: z
-      .array(z.object({ label: z.string().min(1).max(40), sentence: z.string().min(1).max(200) }))
-      .min(2)
-      .max(4),
-  }),
+  z
+    .object({
+      kind: z.literal("clarify"),
+      question: z.string().min(1).max(200),
+      options: z
+        .array(z.object({ label: z.string().min(1).max(40), sentence: z.string().min(1).max(200) }))
+        .max(4),
+      fill: z
+        .object({
+          /* The hole is the contract. A template without one silently returns
+             the same incomplete sentence and the bar asks the question again,
+             forever. */
+          template: z.string().min(1).max(200).includes("{}"),
+          expects: z.enum(["price", "percent", "size"]),
+          example: z.string().min(1).max(20),
+        })
+        .optional(),
+    })
+    /*
+     * A QUESTION MUST BE ANSWERABLE. Two ways exist — pick one of several
+     * rewritten sentences, or type a value into a template — and a clarify
+     * carrying neither is a dead end: the card renders a question with no
+     * buttons and no input, and the only way out is to retype the sentence.
+     * `options` used to be min(2), which enforced this for choices and made
+     * the typed answer impossible, since "what price?" has no shortlist.
+     */
+    .refine((c) => c.fill != null || c.options.length >= 2, {
+      message: "a clarify needs either two or more options or a fill template",
+    }),
   z.object({
     kind: z.literal("refusal"),
     reason: z.enum(["outOfScope", "notUnderstood", "notBuilt"]),
