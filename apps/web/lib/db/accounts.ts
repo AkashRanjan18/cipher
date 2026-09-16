@@ -1,8 +1,10 @@
 import { openAccount, type Account, type Fill, type Position } from "../account/paper.ts";
 import { db, num } from "./client.ts";
+import { OPENING_DEPOSIT } from "@cipher/shared";
 
-/** The opening balance, mirrored from the client store. */
-export const OPENING_DEPOSIT = 10_000;
+/* Re-exported so existing importers keep working; defined in shared because
+   this file and the client store each used to carry their own copy. */
+export { OPENING_DEPOSIT };
 
 /**
  * The paper ledger, server-side.

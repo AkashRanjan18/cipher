@@ -14,7 +14,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { openAccount, execute, type Account, type Fill } from "./paper";
 import { fireRule, type Outcome } from "../triggers/execute";
 import { fetchSnapshot, fetchSnapshotResult, resetRemote, tradeRemote } from "../db/remote";
-import type { Rule } from "@cipher/shared";
+import { OPENING_DEPOSIT, type Rule } from "@cipher/shared";
 
 /**
  * The paper account, held in React and persisted to the browser.
@@ -28,8 +28,9 @@ import type { Rule } from "@cipher/shared";
  * When accounts exist server-side this file changes and nothing else does.
  */
 
-/** The opening balance. */
-export const OPENING_DEPOSIT = 10_000;
+/* Defined in @cipher/shared: the server ledger needs the same number, and a
+   second copy is how the two halves start disagreeing about a balance. */
+export { OPENING_DEPOSIT };
 
 /*
  * Versioned key. If the Account shape ever changes, bump this rather than

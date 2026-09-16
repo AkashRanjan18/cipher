@@ -147,8 +147,22 @@ after(async () => {
 beforeEach(async () => {
   await h.reset();
   await ensureUser(USER);
+  await fund();
   serve({ [SOL]: 100 });
 });
+
+/**
+ * Give a user money to spend.
+ *
+ * Explicit, because these tests used to inherit it: the opening deposit was
+ * $10,000, every test that bought something relied on that, and setting the
+ * deposit to zero broke five of them at once. A test that depends on a
+ * product constant is testing the constant. This states what it needs.
+ */
+const FUNDED = 10_000;
+async function fund(usdc = FUNDED, user = USER): Promise<void> {
+  await h.pg.query(`update accounts set usdc = $2 where user_id = $1`, [user, usdc]);
+}
 
 /** Give a user something to sell, in one market. */
 async function position(qty: number, costBasis: number, user = USER, mint = SOL): Promise<void> {
@@ -197,7 +211,7 @@ test("a stop fires with nobody watching, and the money moves", async () => {
 
   const account = (await loadAccount(USER))!;
   assert.equal(positionOf(account, SOL).qty, 0, "the whole position should have been sold");
-  assert.ok(account.usdc > 10_000, "proceeds never reached the balance");
+  assert.ok(account.usdc > FUNDED, "proceeds never reached the balance");
   assert.equal(account.fills.length, 1);
   assert.equal(account.fills[0].side, "sell");
   assert.equal(account.fills[0].squawk, "stop at -50%");

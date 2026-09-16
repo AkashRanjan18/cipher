@@ -852,9 +852,11 @@ function TerminalBody({
  * first, and it moves by the full amount.
  *
  * Both render "—" until the account is read out of storage. The server always
- * renders the opening deposit, and flashing $10,000 before correcting to the
+ * renders the opening deposit, and flashing a balance before correcting to the
  * real figure is, for one frame, the screen telling someone they have money
- * they do not have.
+ * they do not have. That mattered more when the opening deposit was $10,000;
+ * it is zero now, so the flash is harmless — but the guard stays, because the
+ * bug it prevents comes back the moment anyone funds an account.
  */
 function Bag({ marks }: { marks: Record<string, number> }) {
   const { account, hydrated, reset } = usePaperAccount();
@@ -947,7 +949,14 @@ function Bag({ marks }: { marks: Record<string, number> }) {
             : "border-line text-ash hover:text-champagne"
         }`}
       >
-        {confirming ? `Wipe to $${OPENING_DEPOSIT / 1000}k?` : "Reset"}
+        {/* `$0k?` is what the old label rendered once the opening balance went
+            to zero. The confirmation has to name the number it is wiping TO,
+            because that is the whole question being asked. */}
+        {confirming
+          ? OPENING_DEPOSIT === 0
+            ? "Wipe to $0?"
+            : `Wipe to $${(OPENING_DEPOSIT / 1000).toLocaleString("en-US")}k?`
+          : "Reset"}
       </button>
     </div>
   );

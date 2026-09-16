@@ -2,7 +2,7 @@ import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import type { Rule } from "@cipher/shared";
 import { database, type Harness } from "./harness.ts";
-import { ensureUser, loadAccount, loadFills, saveFill, resetAccount } from "../accounts.ts";
+import { ensureUser, loadAccount, loadFills, saveFill, resetAccount, OPENING_DEPOSIT } from "../accounts.ts";
 import {
   beat,
   cancelRule,
@@ -87,10 +87,12 @@ function price(over: Partial<SolPrice> = {}): SolPrice {
 
 /* ──────────────────────────────── accounts ─────────────────────────────── */
 
-test("a new user opens with the paper deposit, and twice is still once", async () => {
+test("a new user opens at the opening deposit, and twice is still once", async () => {
   await ensureUser(USER);
   const a = await loadAccount(USER);
-  assert.equal(a?.usdc, 10_000);
+  /* The constant, not a literal: the deposit went to zero on 17 Sep 2026 and
+     five tests that had quietly inherited $10,000 failed at once. */
+  assert.equal(a?.usdc, OPENING_DEPOSIT);
   assert.deepEqual(a?.positions, {});
   assert.deepEqual(a?.fills, []);
 });
@@ -191,7 +193,8 @@ test("resetting an account also disarms its rules, and nobody else's", async () 
     (await rulesFor(OTHER)).map((r) => r.id),
     ["theirs"],
   );
-  assert.equal((await loadAccount(USER))!.usdc, 10_000);
+  /* Reset returns the account to the opening deposit, whatever that is. */
+  assert.equal((await loadAccount(USER))!.usdc, OPENING_DEPOSIT);
 });
 
 /* ───────────────────────────────── rules ───────────────────────────────── */
