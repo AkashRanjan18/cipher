@@ -345,9 +345,32 @@ export function PriceChart({
       // Its own scale, so volume does not squash the price series.
       priceScaleId: "volume",
     });
+    /*
+     * HOW MUCH OF THE PANE THE PRICES OCCUPY, which is what decides how long a
+     * wick looks.
+     *
+     * Left at the library default — top 0.2, bottom 0.1 — the series filled
+     * 70% of the height. The same candles on fomo fill about 50%, which is why
+     * cipher's wicks read as roughly 1.7x longer for data that is, measured
+     * against Binance, only about a third wider. Nearly all of the difference
+     * was magnification, not the feed.
+     *
+     * A wick is the same number of DOLLARS either way. Giving the range half
+     * the pane instead of seven tenths makes it the number of PIXELS a trader
+     * expects, and leaves the headroom that stops a spike touching the frame.
+     *
+     * The bottom margin also clears the volume strip. Price previously ran to
+     * 90% while volume started at 80%, so the histogram was drawn through the
+     * bottom of the candles — which on a thin bar is indistinguishable from a
+     * long lower wick, and made the problem look worse than it was.
+     */
+    c.priceScale("right").applyOptions({
+      scaleMargins: { top: 0.15, bottom: 0.35 },
+    });
+
     c.priceScale("volume").applyOptions({
-      // Volume occupies the bottom fifth; price keeps the rest.
-      scaleMargins: { top: 0.8, bottom: 0 },
+      // Its own strip at the very bottom, below where price now stops.
+      scaleMargins: { top: 0.85, bottom: 0 },
     });
 
     /*
