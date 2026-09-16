@@ -66,6 +66,11 @@ const entry = z.object({
    */
   slippageBps: z.number().int().min(1).max(10_000),
   privateSubmission: z.boolean(),
+  /* Named speeds, not lamports: the right figure changes with congestion and
+     a resting order can be days old before it fires. */
+  priority: z.enum(["normal", "high", "turbo"]),
+  /* Capped. A fat-fingered "tip 5" is five SOL to a builder on a $20 trade. */
+  tipSol: z.number().positive().max(1).nullable(),
 });
 
 const orderSpec = z.object({

@@ -8,6 +8,7 @@ import {
 } from "@cipher/shared";
 import { parseWithGrammar } from "./grammar.ts";
 import { askForMissing, askForMissingTrigger } from "./missing.ts";
+import { unconsumed } from "./unconsumed.ts";
 import { normaliseSpeech } from "../voice/normalise.ts";
 import { resolveMarket } from "../market/markets.ts";
 
@@ -250,15 +251,56 @@ function ui(text: string): Compiled | null {
 const OUT_OF_SCOPE: [RegExp, string][] = [
   [/\b(weather|news|headline|tweet|twitter|reddit|telegram|google|search the web)\b/,
    "I only do what this terminal does. I can't search the web or read social feeds."],
+  /*
+   * An opinion is an opinion however it is phrased. "Is SOL going to pump"
+   * and "what do you think of bonk" were refused for the WRONG reason —
+   * "I didn't get that", which invites a rephrase of a question cipher will
+   * never answer however it is put.
+   */
   [/\b(should i|is it a good|will it|predict|forecast|moon|going to go|worth buying)\b/,
    "I don't give opinions on what to trade. Tell me what you want done and I'll do it."],
-  [/\b(withdraw|deposit|send|transfer)\b.*\b(wallet|address|bank)\b/,
-   "Funding isn't built yet. The account here is paper money."],
+  [/\b(going to|gonna)\s+(pump|dump|moon|rug|run|crash|go\s+up|go\s+down)\b|\bwhat do you think\b|\bthoughts on\b|\byour take\b|\bis\s+\w+\s+a\s+(good|bad)\s+(buy|call|bet)\b/,
+   "I don't call the market. Tell me what you want done and I'll do it."],
+  /*
+   * Moving money OUT is a different refusal from not understanding, and the
+   * wallet/address/bank qualifier meant the plainest phrasing — "send $500 to
+   * my friend" — missed it entirely.
+   */
+  [/\b(withdraw|deposit|send|transfer|pay|wire)\b.*\b(wallet|address|bank|friend|someone|him|her|them|to\s+\w+)\b/,
+   "Funding and transfers aren't built yet. The account here is paper money."],
+];
+
+/**
+ * Things cipher WILL do and cannot do yet.
+ *
+ * A different refusal from out-of-scope, and the difference is the whole
+ * reason there are three reasons. "Short SOL with 5x leverage" came back as
+ * "I didn't get that", which tells a user they typed it wrong — so they try
+ * four more phrasings of a sentence that was perfectly clear. The honest
+ * answer is that perps are phase 3.
+ *
+ * It also has to run BEFORE the order grammar, because "long sol 3x" parses
+ * as a spot buy of a token called "long" and "close my short" sold a hundred
+ * percent of a position in a coin named "short". Leverage silently becoming
+ * spot is the worst outcome available here: same direction, wrong instrument,
+ * and no liquidation price anywhere on the card.
+ */
+const NOT_BUILT: [RegExp, string][] = [
+  [
+    /\b(short|shorting|long)\b.*\b(\d+\s*x|leverage|lever|margin|perp|perpetual)\b|\b(\d+\s*x|leverage|margin|perp|perpetual)\b.*\b(short|shorting|long)\b|\b(perp|perpetual|funding rate|liquidation price|margin mode|isolated|cross margin)\b/,
+    "Perps aren't built yet — no shorting, no leverage. Spot only for now, so I can buy or sell what you actually hold.",
+  ],
+  [
+    /\bclose\s+my\s+(short|long|position)\s*$/,
+    "Perps aren't built yet, so there's no short or long to close. Name the token and I'll sell the spot position — \"sell all my SOL\".",
+  ],
 ];
 
 function outOfScope(text: string): Compiled | null {
   const hit = OUT_OF_SCOPE.find(([re]) => re.test(text));
-  return hit ? refuse("outOfScope", hit[1]) : null;
+  if (hit) return refuse("outOfScope", hit[1]);
+  const later = NOT_BUILT.find(([re]) => re.test(text));
+  return later ? refuse("notBuilt", later[1]) : null;
 }
 
 /* ──────────────────────────────── the router ───────────────────────────── */
@@ -291,7 +333,12 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
        becomes `trigger: null`, which fills NOW. Ask rather than trade. */
     const noPrice = askForMissingTrigger(text, spec);
     if (noPrice) return noPrice;
-    return ok({ kind: "order", spec }, spec.warnings);
+    /*
+     * Anything the sentence asked for that the spec does not carry, said out
+     * loud on the readback. A dropped modifier is a warning rather than a
+     * refusal: the buy is still wanted, the tip just did not take.
+     */
+    return ok({ kind: "order", spec }, [...spec.warnings, ...unconsumed(text, spec)]);
   }
 
   for (const matcher of [rules, screen, query, ui]) {

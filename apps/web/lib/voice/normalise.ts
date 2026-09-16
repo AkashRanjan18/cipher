@@ -56,7 +56,7 @@ const SCALES: Record<string, number> = {
  * against the tradeable list instead, and refusing on an ambiguous match.
  */
 const HOMOPHONES: Record<string, string> = {
-  by: "buy", bye: "buy", "buy-in": "buy",
+  bye: "buy", "buy-in": "buy",
   soul: "sol", sole: "sol", saul: "sol", sal: "sol", salt: "sol",
   cell: "sell", sale: "sell",
   bok: "bonk", bonked: "bonk",
@@ -181,6 +181,25 @@ export function normaliseSpeech(raw: string): string {
 
   // Homophones, whole words only.
   t = t.replace(/\b[a-z-]+\b/g, (w) => HOMOPHONES[w] ?? w);
+
+  /*
+   * "BY" → "BUY" ONLY WHERE AN ORDER COULD START, which is what the note on
+   * HOMOPHONES always claimed and the code did not do.
+   *
+   * It sat in the table and rewrote every "by" in the sentence, so "trail my
+   * sol by 40%" became "trail my sol buy 40%" and stopped parsing — and this
+   * runs on TYPED text as well as spoken, so it broke a sentence nobody
+   * dictated. "By" is a perfectly ordinary preposition in the middle of an
+   * instruction: trail BY 40%, stop BY 20%, down BY half.
+   *
+   * At the front of the string or the front of a clause it is the transcriber
+   * mishearing the verb, which is the case this exists for and the only one.
+   *
+   * `^\s*` rather than `^`, because the pipeline pads the string with a space
+   * at both ends so that every `\b` rule after it has something to anchor
+   * against. A bare `^` matches the pad and never the word.
+   */
+  t = t.replace(/(^\s*|[,;]\s*|\b(?:and|then)\s+)by\b/g, "$1buy");
 
   t = digitiseNumbers(t);
 

@@ -115,19 +115,29 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * cipher could buy a dollar amount and could not sell one, which is half an
    * order book missing on the commonest sentence anybody types.
    */
+  /*
+   * THE VERBS PEOPLE ACTUALLY USE. "ape $200 into bonk" and "get me $100 of
+   * wif" are not slang at the edges — they are how this is said out loud, and
+   * both refused. `into` matters as much as the verbs: it is the preposition
+   * that goes with aping, and without it the token was never captured.
+   */
   const buy = text.match(
-    /\b(buy|sell)\s+(?:me\s+)?(\$\s*[\d.,]+\s*[km]?)\s+(?:of\s+|worth\s+of\s+)?([a-z0-9]{2,15})\b/,
+    /\b(buy|sell|ape|grab|cop|get\s+me|dump)\s+(?:me\s+)?(\$\s*[\d.,]+\s*[km]?)\s+(?:of\s+|worth\s+of\s+|into\s+|in\s+)?([a-z0-9]{2,15})\b/,
   );
   if (buy) {
     const amount = parseAmount(buy[2]);
     if (!amount) return null;
+    /* Every verb here opens a position except the two that close one. */
+    const closes = /^(sell|dump)$/.test(buy[1]);
     entry = {
-      side: buy[1] as "buy" | "sell",
+      side: closes ? "sell" : "buy",
       token: buy[3],
       mint: null,
       amount,
       slippageBps: DEFAULTS.slippageBps,
       privateSubmission: DEFAULTS.privateSubmission,
+      priority: DEFAULTS.priority,
+      tipSol: DEFAULTS.tipSol,
       trigger: null,
     };
   }
@@ -189,7 +199,20 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      * size; it is the commonest incomplete order there is, and it belongs in
      * the branch that asks how much.
      */
-    const closing = /\b(close|dump|exit)\b/.test(text) || /\b(my\s+position|entire|whole)\b/.test(text);
+    /*
+     * "MY" IS A MARKER TOO. "Sell my SOL" names the position as surely as
+     * "sell my position on SOL" does — the possessive is the whole point of
+     * saying it — and without it here "sell my sol when it reaches 150" asked
+     * how much, having just been told.
+     *
+     * "Sell SOL" still asks, and the difference between the two is exactly one
+     * word, which is the right place for the line: one of them refers to
+     * something the user holds and the other names a market.
+     */
+    const closing =
+      /\b(close|dump|exit)\b/.test(text) ||
+      /\b(my\s+position|entire|whole)\b/.test(text) ||
+      /\b(?:sell|close|dump|exit)\s+my\s+[a-z]/.test(text);
     const whole = closing
       ? text.match(
           /\b(?:sell|close|dump|exit)\s+(?:my\s+)?(?:(?:entire|whole)\s+)?(?:position\s+(?:on|in)\s+)?(?:my\s+)?([a-z][a-z0-9]{1,14})\b/,
@@ -217,9 +240,43 @@ export function parseWithGrammar(input: string): OrderSpec | null {
           amount: { kind: "percentOfPosition", value: percent },
           slippageBps: DEFAULTS.slippageBps,
           privateSubmission: DEFAULTS.privateSubmission,
+          priority: DEFAULTS.priority,
+          tipSol: DEFAULTS.tipSol,
           trigger: null,
         };
       }
+    }
+  }
+
+  /*
+   * THE SIZE AND THE TOKEN AT OPPOSITE ENDS OF THE SENTENCE.
+   *
+   * "Sell everything if SOL goes below 80" names the size first and the token
+   * six words later, joined by the condition — so every pattern that expects
+   * them adjacent missed it, and cipher asked what price to trigger at while
+   * the number sat at the end of the sentence it had just read.
+   *
+   * Only the whole-position words qualify. A fraction this far from its token
+   * is ambiguous about which position it is a fraction OF, and guessing that
+   * is guessing at what gets sold.
+   */
+  if (!entry) {
+    const split = text.match(
+      /\b(?:sell|dump|close|exit)\s+(?:everything|all|it|out)\b.*?\b(?:if|when|once|after)\s+(?:the\s+)?([a-z][a-z0-9]{1,14})\b/,
+    );
+    const named = split?.[1];
+    if (named && !/^(?:it|the|price|market|we|i|you|they|this|that)$/.test(named)) {
+      entry = {
+        side: "sell",
+        token: named,
+        mint: null,
+        amount: { kind: "percentOfPosition", value: 100 },
+        slippageBps: DEFAULTS.slippageBps,
+        privateSubmission: DEFAULTS.privateSubmission,
+        priority: DEFAULTS.priority,
+        tipSol: DEFAULTS.tipSol,
+        trigger: null,
+      };
     }
   }
 
@@ -237,6 +294,8 @@ export function parseWithGrammar(input: string): OrderSpec | null {
           amount: { kind: "tokens", value },
           slippageBps: DEFAULTS.slippageBps,
           privateSubmission: DEFAULTS.privateSubmission,
+          priority: DEFAULTS.priority,
+          tipSol: DEFAULTS.tipSol,
       trigger: null,
         };
       }
@@ -259,7 +318,20 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * amount, and nothing else.
    */
   if (entry) {
-    const limit = text.match(/\b(?:at|@)\s*\$?\s*([\d.,]+)\b(?!\s*[x%])/);
+    /*
+     * "AT" IS NOT THE ONLY WORD FOR IT. People say a resting price four ways
+     * and only one of them uses "at": below, under, above, over, "when it
+     * hits", "if it drops to", "once it reaches". "Sell everything if SOL goes
+     * below 80" asked "what price should this trigger at?" — a question whose
+     * answer was the last word of the sentence.
+     *
+     * The lookahead still excludes `x` and `%`, because "at 2x" is a multiple
+     * and "at 50%" is a drawdown, and reading either as a price in dollars is
+     * how a take-profit becomes a limit order at two dollars.
+     */
+    const limit = text.match(
+      /\b(?:at|@|below|under|above|over|to|hits?|reaches|touches)\s*\$?\s*([\d.,]+)\b(?!\s*[x%])/,
+    );
     if (limit) {
       const at = Number(limit[1].replace(/,/g, ""));
       if (at > 0) entry.trigger = { kind: "priceAbsolute", value: at };
@@ -277,20 +349,70 @@ export function parseWithGrammar(input: string): OrderSpec | null {
   if (/\bpublic\s+(?:submission|mempool)\b/.test(text) && entry) {
     entry.privateSubmission = false;
   }
+  if (/\b(private|protected)\s+(?:submission|mempool)\b|\bvia\s+jito\b/.test(text) && entry) {
+    entry.privateSubmission = true;
+  }
+
+  /*
+   * PRIORITY — "high priority fee", "turbo", "fast", "max priority".
+   *
+   * One of the five knobs the whole prompt bar exists for, and one of the two
+   * the grammar used to drop on the floor: the sentence asked for a high
+   * priority fee, the order armed with an ordinary one, and the readback said
+   * nothing about it.
+   */
+  if (entry) {
+    if (/\b(turbo|max(?:imum)?\s+priority|ultra)\b/.test(text)) entry.priority = "turbo";
+    else if (/\b(high|higher|fast|faster|urgent|aggressive)\b.{0,20}\b(priority|fee|speed)\b/.test(text))
+      entry.priority = "high";
+    else if (/\bpriority\b.{0,20}\b(high|turbo|max)\b/.test(text)) entry.priority = "high";
+    else if (/\b(low|slow|cheap|minimum|min)\b.{0,20}\b(priority|fee)\b/.test(text))
+      entry.priority = "normal";
+  }
+
+  /*
+   * JITO TIP — "with a 0.001 sol tip", "tip 0.002", "0.005 sol tip".
+   *
+   * A real number rather than a name, because a tip is a direct bid against
+   * the other bundles in the same auction and "0.001 SOL" means that.
+   */
+  const tip = text.match(
+    /\b(?:tip(?:ping)?\s+(?:of\s+)?)?([\d.]+)\s*sol\s+tip\b|\btip\s+(?:of\s+)?([\d.]+)\s*(?:sol)?\b/,
+  );
+  if (tip && entry) {
+    const v = Number(tip[1] ?? tip[2]);
+    /* An upper bound, because a fat-fingered "tip 5" is five SOL to a builder
+       for a $20 trade. validate.ts warns; this refuses the absurd outright. */
+    if (v > 0 && v <= 1) entry.tipSol = v;
+  }
 
   /*
    * TAKE PROFIT — "sell a third at 2x", "sell 50% at 3x", "take profit at 2x"
    * Global regex: a sentence can carry several, and a ladder is the point.
    */
-  for (const m of text.matchAll(
-    /\b(?:sell|take profit(?:\s+on)?)\s+(?:(a third|a half|half|third|quarter|a quarter|all|everything|[\d.]+\s*%|\$\s*[\d.,]+\s*[km]?)\s+)?(?:at|@)\s+([\d.]+\s*x)/g,
-  )) {
-    const trigger = parseMultiple(m[2].replace(/\s/g, ""));
-    if (!trigger) continue;
-    // Bare "take profit at 2x" with no size means the whole position.
-    const amount = m[1] ? parseAmount(m[1]) : { kind: "percentOfPosition" as const, value: 100 };
-    if (!amount) continue;
-    exits.push({ id: nextId(), trigger, amount });
+  /*
+   * ONLY THE FIRST RUNG CARRIES THE VERB, and anchoring on it lost the rest.
+   *
+   * "sell 25% at 2x and 25% at 5x" is one sentence with two rungs, and the
+   * second has no "sell" in front of it — nobody repeats the verb. The old
+   * pattern required one per rung, so it armed the 2x, dropped the 5x without
+   * a word, and the readback showed a ladder with one step. A ladder losing
+   * half of itself is the quietest way to change what somebody asked for.
+   *
+   * The verb still has to appear SOMEWHERE, or "at 2x" in any sentence at all
+   * would arm an exit against a position nobody mentioned.
+   */
+  if (/\b(sell|take\s+profit)\b/.test(text)) {
+    for (const m of text.matchAll(
+      /(?:(a third|a half|half|third|quarter|a quarter|all|everything|the rest|rest|[\d.]+\s*%|\$\s*[\d.,]+\s*[km]?)\s+)?(?:at|@)\s*([\d.]+)\s*x\b/g,
+    )) {
+      const trigger = parseMultiple(`${m[2]}x`);
+      if (!trigger) continue;
+      // Bare "take profit at 2x" with no size means the whole position.
+      const amount = m[1] ? parseAmount(m[1]) : { kind: "percentOfPosition" as const, value: 100 };
+      if (!amount) continue;
+      exits.push({ id: nextId(), trigger, amount });
+    }
   }
 
   /*
@@ -332,7 +454,15 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * token and the trigger would never be found.
    */
   const stop = text.match(
-    /(?<!\btrail\s)(?<!\btrailing\s)\bstop(?:\s+loss)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@)\s*-?\s*([\d.]+)\s*%/,
+    /*
+     * "Cut my losses at -15%" and "stop me out if it drops 25%" are stops.
+     * Both refused, and a refused stop is the one refusal that costs money —
+     * the user believes the position is protected and nothing is watching it.
+     *
+     * `my` and `me out` are allowed between the verb and the level, and `if
+     * it drops` joins `at` as a way of naming one.
+     */
+    /(?<!\btrail\s)(?<!\btrailing\s)\b(?:stop|cut)(?:\s+my)?(?:\s+losses?)?(?:\s+loss)?(?:\s+me\s+out)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b|if\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@|if\s+it\s+(?:drops?|falls?)(?:\s+by)?)\s*-?\s*([\d.]+)\s*%/,
   );
   if (stop) {
     const percent = Number(stop[2]);
@@ -350,7 +480,9 @@ export function parseWithGrammar(input: string): OrderSpec | null {
 
   /* TRAILING STOP — "trail 30%", "trailing stop 30%", "trailing stop loss at 10%" */
   const trail = text.match(
-    /\btrail(?:ing)?(?:\s+stop)?(?:\s+loss)?\s+(?:at\s+)?([\d.]+)\s*%/,
+    /* "trail my sol by 40%" — the token and the "by" both sat between the
+       verb and the number, and neither was allowed for. */
+    /\btrail(?:ing)?(?:\s+stop)?(?:\s+loss)?(?:\s+my)?(?:\s+(?!at\b|by\b)[a-z][a-z0-9]{1,14})?\s*(?:at\s+|by\s+)?([\d.]+)\s*%/,
   );
   if (trail) {
     const percent = Number(trail[1]);

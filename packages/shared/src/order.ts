@@ -80,6 +80,29 @@ export interface Entry {
   slippageBps: number;
   /** Jito bundle rather than the public mempool. */
   privateSubmission: boolean;
+  /**
+   * How hard to push for a block, and what to pay the builder to take you.
+   *
+   * These two and `slippageBps` and `privateSubmission` are the whole of
+   * cipher's first differentiator on spot: the knobs Photon and BullX expose
+   * as settings most people set wrong, and that fomo does not expose at all.
+   * They were the reason for the prompt bar and they were the two of the five
+   * that the grammar silently threw away — "buy $500 of bonk with a high
+   * priority fee" armed an order with an ordinary fee and said nothing.
+   *
+   * NAMED SPEEDS RATHER THAN LAMPORTS, because nobody knows what a good
+   * priority fee is in lamports and the right number changes with congestion.
+   * The executor resolves a name to a figure at submission time, when it can
+   * see what the network is actually charging; a number chosen at arm time is
+   * already stale by the time a resting order fires, which could be days.
+   *
+   * `tipSol` is different and is a real number, because a Jito tip is a
+   * direct bid against other bundles in the same auction and the user naming
+   * "0.001 SOL" means exactly that.
+   */
+  priority: "normal" | "high" | "turbo";
+  /** Jito tip in SOL. Null means the executor picks. Only read when private. */
+  tipSol: number | null;
 }
 
 export interface OrderSpec {
@@ -98,4 +121,8 @@ export const DEFAULTS = {
   slippageBps: 300,
   /** Private by default: the user did not ask to be sandwiched. */
   privateSubmission: true,
+  /** Ordinary speed. "High" and "turbo" cost real money and are opt-in. */
+  priority: "normal",
+  /** Null, not zero: zero is a bid of nothing, null is "you decide". */
+  tipSol: null,
 } as const;

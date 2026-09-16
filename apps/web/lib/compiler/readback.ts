@@ -115,7 +115,7 @@ export function readback(spec: OrderSpec): ReadbackLine[] {
   const token = spec.entry?.token;
 
   if (spec.entry) {
-    const { side, amount: amt, slippageBps, privateSubmission } = spec.entry;
+    const { side, amount: amt, slippageBps, privateSubmission, priority, tipSol } = spec.entry;
 
     /*
      * "1 SOL of SOL" — the token was being named twice.
@@ -172,6 +172,31 @@ export function readback(spec: OrderSpec): ReadbackLine[] {
         label: "ROUTING",
         value: "public",
         note: "visible in the public mempool before it lands — you can be front-run",
+      });
+    }
+
+    /*
+     * The other two knobs, on the same rule: shown when asked for, silent at
+     * their defaults. Both cost real money, so a reader who said "turbo" has
+     * to see it on the card they are approving — and one who said nothing
+     * should not be asked to approve a line about fee levels.
+     */
+    if (priority !== DEFAULTS.priority) {
+      lines.push({
+        label: "PRIORITY",
+        value: priority,
+        note:
+          priority === "turbo"
+            ? "pays well over the odds to land in the next block"
+            : "pays above the going rate to land sooner",
+      });
+    }
+
+    if (tipSol != null) {
+      lines.push({
+        label: "TIP",
+        value: `${tipSol} SOL`,
+        note: "bid to the block builder, on top of the fee — paid whether or not you profit",
       });
     }
   }
