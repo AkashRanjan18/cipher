@@ -62,36 +62,49 @@ function supply(n: number): string {
  */
 function Split({
   label,
-  left,
-  right,
+  leftLead,
+  leftUnit,
+  rightLead,
+  rightUnit,
   leftValue,
   rightValue,
 }: {
   label: string;
-  left: string;
-  right: string;
+  /** The number, set bold. "175" */
+  leftLead: string;
+  /** What it counts, set muted. "buys" */
+  leftUnit: string;
+  rightLead: string;
+  rightUnit: string;
   leftValue: number;
   rightValue: number;
 }) {
-  const total = leftValue + rightValue;
-  /*
-   * Half each when nothing has traded. A zero-width bar reads as a rendering
-   * failure, and 0 vs 0 genuinely is an even split — there is no imbalance to
-   * show because there is nothing there.
-   */
-  const share = total > 0 ? (leftValue / total) * 100 : 50;
+  /* `|| 1` below, not a share: with both sides at zero the two bars take
+     half each, because 0 against 0 genuinely is even and a zero-width bar
+     reads as a rendering failure rather than as an absence of trading. */
 
   return (
-    <div className="flex flex-col gap-1" aria-label={label}>
-      <div className="flex items-baseline justify-between gap-2 font-mono text-[11.5px] tabular-nums">
-        <span className="truncate text-champagne">{left}</span>
-        <span className="truncate text-champagne">{right}</span>
+    <div className="flex flex-col gap-1.5" aria-label={label}>
+      <div className="flex items-baseline justify-between gap-2 text-[15px]">
+        <span className="truncate text-ash">
+          <b className="font-bold tabular-nums text-champagne">{leftLead}</b> {leftUnit}
+        </span>
+        <span className="truncate text-ash">
+          <b className="font-bold tabular-nums text-champagne">{rightLead}</b> {rightUnit}
+        </span>
       </div>
-      {/* One track, two fills. `flex` rather than an absolute overlay so the
-          two shares can never sum to more than the row. */}
-      <div className="flex h-1 overflow-hidden rounded-full bg-hairline">
-        <div className="bg-up" style={{ width: `${share}%` }} />
-        <div className="flex-1 bg-down" />
+      {/*
+        * TWO BARS WITH A GAP, not one track split in two.
+        *
+        * A single track reads as a progress bar — one quantity filling toward
+        * a total. These are two independent quantities being compared, and
+        * separating them says so. Sized by `flex-grow` from the raw values, so
+        * the widths are the ratio itself rather than a percentage computed
+        * twice and rounded differently each time.
+        */}
+      <div className="flex h-[7px] gap-[5px]">
+        <i className="block rounded-full bg-up" style={{ flexGrow: leftValue || 1 }} />
+        <i className="block rounded-full bg-down" style={{ flexGrow: rightValue || 1 }} />
       </div>
     </div>
   );
@@ -100,9 +113,9 @@ function Split({
 /** A plain key/value line for the facts that have no second side. */
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5">
-      <dt className="font-sans text-[11.5px] text-ash">{label}</dt>
-      <dd className="font-mono text-[11.5px] tabular-nums text-champagne">{value}</dd>
+    <div className="flex items-baseline justify-between gap-3 py-2">
+      <dt className="text-[14px] text-ash">{label}</dt>
+      <dd className="text-[14px] font-semibold tabular-nums text-champagne">{value}</dd>
     </div>
   );
 }
@@ -115,7 +128,7 @@ function LinkChip({ href, children }: { href: string; children: React.ReactNode 
       /* noreferrer as well as noopener: the target should not be told which
          terminal the click came from. */
       rel="noopener noreferrer"
-      className="flex items-center gap-1.5 rounded-lg border border-line bg-slate px-2.5 py-1.5 font-sans text-[11px] font-bold text-champagne transition-colors hover:border-ash"
+      className="flex h-8 items-center gap-1.5 rounded-lg border border-line bg-slate px-2.5 text-[14px] font-semibold text-champagne transition-colors hover:border-ash"
     >
       {children}
     </a>
@@ -136,7 +149,7 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
     return (
       <section className="flex shrink-0 flex-col gap-2 rounded-2xl border border-line bg-panel p-3">
         <h2 className="font-display text-[15px] tracking-tight text-champagne">About {symbol}</h2>
-        <p className="font-sans text-[11.5px] text-mute">Loading…</p>
+        <p className="text-[14px] text-mute">Loading…</p>
       </section>
     );
   }
@@ -144,7 +157,7 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
   const w = token.windows[window];
 
   return (
-    <section className="flex shrink-0 flex-col gap-3 rounded-2xl border border-line bg-panel p-3">
+    <section className="flex shrink-0 flex-col gap-4 rounded-2xl border border-line bg-panel p-3.5">
       <div>
         {/*
           * NO `font-bold` ON THE DISPLAY FACE. Caacupé One ships one weight,
@@ -153,7 +166,7 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
           * against the card's padding. The trap is written down in CLAUDE.md;
           * this is what it looks like when you walk into it.
           */}
-        <h2 className="font-display text-[15px] tracking-tight text-champagne">
+        <h2 className="font-display text-[18px] tracking-tight text-champagne">
           About {token.symbol || symbol}
         </h2>
         {/*
@@ -162,13 +175,13 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
           * "no description found" is a fact about the data, and inventing a
           * sentence about somebody's coin would be worse than a blank.
           */}
-        <p className="mt-0.5 font-sans text-[11.5px] text-mute">
+        <p className="mt-1 text-[14px] text-mute">
           {token.name && token.name !== token.symbol ? token.name : "No description found"}
         </p>
       </div>
 
       {/* ---- the window chips ---- */}
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-4 gap-2">
         {WINDOWS.map((k) => {
           const stat = token.windows[k];
           const change = stat?.priceChangePct ?? null;
@@ -178,13 +191,13 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
               key={k}
               onClick={() => setWindow(k)}
               aria-pressed={on}
-              className={`flex flex-col items-center gap-0.5 rounded-lg border py-1.5 transition-colors ${
-                on ? "border-line bg-raised" : "border-transparent bg-slate hover:border-line"
+              className={`flex h-14 flex-col items-center justify-center gap-0.5 rounded-lg border transition-colors ${
+                on ? "border-transparent bg-raised" : "border-line hover:border-ash"
               }`}
             >
-              <span className="font-sans text-[11px] font-bold text-champagne">{LABEL[k]}</span>
+              <span className="text-[14px] text-ash">{LABEL[k]}</span>
               <span
-                className={`font-mono text-[10.5px] tabular-nums ${
+                className={`text-[14px] font-semibold tabular-nums ${
                   change === null ? "text-mute" : change >= 0 ? "text-up" : "text-down"
                 }`}
               >
@@ -200,18 +213,22 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
 
       {/* ---- who is on each side, over the selected window ---- */}
       {w ? (
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-4">
           <Split
             label="Trades"
-            left={`${count.format(w.buys)} buys`}
-            right={`${count.format(w.sells)} sells`}
+            leftLead={count.format(w.buys)}
+            leftUnit="buys"
+            rightLead={count.format(w.sells)}
+            rightUnit="sells"
             leftValue={w.buys}
             rightValue={w.sells}
           />
           <Split
             label="Volume"
-            left={`${compactUsd(w.buyVolumeUsd)} vol.`}
-            right={`${compactUsd(w.sellVolumeUsd)} vol.`}
+            leftLead={compactUsd(w.buyVolumeUsd)}
+            leftUnit="vol."
+            rightLead={compactUsd(w.sellVolumeUsd)}
+            rightUnit="vol."
             leftValue={w.buyVolumeUsd}
             rightValue={w.sellVolumeUsd}
           />
@@ -223,7 +240,7 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
       )}
 
       {/* ---- where to go and look for yourself ---- */}
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2.5">
         <LinkChip href={`https://solscan.io/token/${token.mint}`}>Solscan</LinkChip>
         <LinkChip href={`https://x.com/search?q=${encodeURIComponent(token.mint)}`}>
           Search on X

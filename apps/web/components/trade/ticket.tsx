@@ -306,7 +306,7 @@ export function Ticket({
      * card once collapsed to 2.65px tall: present in the DOM, correct in every
      * number, and invisible.
      */
-    <div className="flex shrink-0 flex-col gap-2.5 rounded-2xl border border-line bg-panel p-3 [&>*]:shrink-0">
+    <div className="flex shrink-0 flex-col gap-2.5 rounded-2xl border border-line bg-panel p-2.5 [&>*]:shrink-0">
       {/*
         * Order type sits ABOVE side, because it is the wider decision: it
         * changes what the ticket asks you for, while side only changes which
@@ -345,7 +345,7 @@ export function Ticket({
         * transparent is the shape every exchange uses, and it makes the
         * current side legible without reading either word.
         */}
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate p-1">
+      <div className="grid grid-cols-2 gap-2">
         {(["buy", "sell"] as const).map((s) => (
           <button
             key={s}
@@ -356,12 +356,12 @@ export function Ticket({
               setReceipt(null);
             }}
             aria-pressed={side === s}
-            className={`rounded-lg py-2 font-display text-[15px] font-bold capitalize transition-colors ${
+            className={`h-[50px] rounded-xl font-display text-[18px] capitalize transition-colors ${
               side === s
                 ? s === "buy"
                   ? "bg-up-soft text-up"
                   : "bg-down-soft text-down"
-                : "text-ash hover:text-champagne"
+                : "bg-slate text-mute hover:text-champagne"
             }`}
           >
             {s}
@@ -408,11 +408,11 @@ export function Ticket({
         </div>
       )}
 
-      <div className="rounded-xl border border-line bg-slate px-3.5 py-3 focus-within:border-accent/50">
-        <div className="flex items-baseline gap-1.5">
+      <div className="flex h-[86px] items-center rounded-xl bg-slate px-5 ring-accent/40 focus-within:ring-1">
+        <div className="flex w-full items-baseline gap-1.5">
           <span
-            className={`font-display text-[30px] font-bold leading-none ${
-              value > 0 ? "text-champagne" : "text-ash"
+            className={`font-display text-[36px] leading-none ${
+              value > 0 ? "text-champagne" : "text-mute"
             }`}
           >
             $
@@ -424,20 +424,20 @@ export function Ticket({
             onChange={(e) => edit(e.target.value)}
             placeholder="0"
             aria-label={buying ? "Amount to spend in dollars" : "Amount to sell in dollars"}
-            className="min-w-0 flex-1 bg-transparent font-display text-[30px] font-bold leading-none tabular-nums text-champagne placeholder:text-ash focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent font-display text-[36px] leading-none tabular-nums text-champagne placeholder:text-mute focus:outline-none"
           />
-          <span className="shrink-0 font-mono text-[11px] tabular-nums text-ash">
+          <span className="shrink-0 text-[16px] tabular-nums text-mute">
             {price && qty > 0 ? `${qty.toFixed(4)} ${market}` : "Enter amount"}
           </span>
         </div>
       </div>
 
-      <div className="relative flex items-center gap-1.5">
+      <div className="relative flex items-center gap-2.5">
         {(buying ? BUY_PRESETS : SELL_PRESETS).map((n) => (
           <button
             key={n}
             onClick={() => preset(n)}
-            className="flex-1 rounded-lg border border-line bg-slate py-1.5 font-sans text-[11.5px] font-bold text-champagne transition-colors hover:border-ash"
+            className="h-10 flex-1 rounded-lg bg-slate text-[16px] font-bold text-champagne transition-colors hover:bg-raised"
           >
             {buying ? `$${n}` : `${n}%`}
           </button>
@@ -457,10 +457,8 @@ export function Ticket({
           aria-expanded={settingsOpen}
           aria-label="Execution settings"
           title={`${(slippageBps / 100).toFixed(2)}% slippage · ${privateSubmission ? "private" : "public"}`}
-          className={`shrink-0 rounded-lg border px-2 py-1.5 font-mono text-[12px] transition-colors ${
-            settingsOpen
-              ? "border-accent/50 bg-raised text-accent"
-              : "border-line bg-slate text-ash hover:text-champagne"
+          className={`grid h-10 w-6 shrink-0 place-items-center rounded-lg font-mono text-[15px] transition-colors ${
+            settingsOpen ? "text-accent" : "text-ash hover:text-champagne"
           }`}
         >
           ⚙
@@ -538,7 +536,7 @@ export function Ticket({
       <button
         onClick={useAvailable}
         disabled={available === null || available <= 0}
-        className="-mt-0.5 self-start font-sans text-[11.5px] text-accent transition-[filter] hover:brightness-125 disabled:text-ash"
+        className="-mt-0.5 self-start pl-2.5 text-[16px] text-ash transition-colors hover:text-champagne disabled:text-mute"
       >
         {available === null ? "—" : `${usd(available)} available`}
       </button>
@@ -550,9 +548,17 @@ export function Ticket({
           !tradable || !price || !!blocked || value <= 0 || (limiting && limitPrice <= 0)
         }
         onClick={() => void submit()}
-        className={`rounded-xl py-3 font-display text-[15px] font-bold transition-transform active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-40 ${
-          !tradable
-            ? "cursor-not-allowed bg-raised text-mute"
+        /*
+         * NEUTRAL WHEN IT CANNOT BE PRESSED, coloured only when it can.
+         *
+         * A saturated green button that does nothing is the worst affordance
+         * on the screen — it is the brightest thing in the panel and it is a
+         * dead end. Disabled it reads as the surface it sits on, which is what
+         * the reference does and what makes the live state mean something.
+         */
+        className={`h-[54px] rounded-xl font-display text-[18px] transition-transform active:scale-[0.985] disabled:cursor-not-allowed ${
+          !tradable || !price || !!blocked || value <= 0 || (limiting && limitPrice <= 0)
+            ? "border border-line bg-slate text-ash"
             : buying
               ? "bg-up text-ink"
               : "bg-down text-ink"
@@ -574,13 +580,13 @@ export function Ticket({
         * the screen where someone is spending money. The same reasoning is
         * already written against the fee strip in the left panel.
         */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-[10px]">🏷</span>
-        <span className="font-sans text-[11px] text-ash">
-          <b className="font-bold text-action">0.50% fee</b> with a referral code
+      <div className="flex items-center gap-2 px-2">
+        <span className="text-[13px]">🏷</span>
+        <span className="text-[14px] font-semibold text-action">
+          0.50% fee <span className="font-normal text-ash">with a referral code</span>
         </span>
         <span
-          className="ml-auto cursor-help font-mono text-[11px] text-mute"
+          className="ml-auto cursor-help font-mono text-[15px] text-ash"
           title={`Charged on the notional, floored at $0.95 under $200 — the priority fee and the Jito tip are fixed per trade, so under about $190 the percentage does not cover submitting it. Without a referral code the rate is 1.00%.`}
         >
           ⓘ
