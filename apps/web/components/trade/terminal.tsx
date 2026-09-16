@@ -140,26 +140,91 @@ function TerminalBody({
     : marketOf(symbol);
 
   /*
-   * Refetch when the market or the interval changes — but not on mount for
-   * the pair the server already fetched, because refetching that would blank
-   * the chart for one round trip on every page load.
+   * Refetch when the market or the interval changes — but NOT on mount for
+   * what the server already fetched.
+   *
+   * The guard compared against SYMBOL, the Binance pair, and the page now
+   * opens on the SOL mint — so it stopped matching and every load refetched
+   * candles the server had already sent. Three times, because `initial` was a
+   * dependency. Compared against `initialSymbol` it means what it says.
+   *
+   * `initial` is deliberately NOT a dependency. It is the server's payload for
+   * one particular market and interval; re-running this because its identity
+   * changed refetches something nobody asked for.
    */
+  /*
+   * What is already drawn, so the effect can be run twice and do the work
+   * once. StrictMode invokes every effect twice in development, which quietly
+   * defeats a "have I run before" boolean — the first pass consumes the flag
+   * and the second pass does the thing the flag existed to prevent. Keying on
+   * the market instead is idempotent: running it ten times fetches nothing new.
+   */
+  const loaded = useRef(`${initialSymbol}|${initialInterval}`);
+
   useEffect(() => {
-    if (symbol === SYMBOL && interval === initialInterval) {
-      setCandles(initial);
-      return;
-    }
+    const key = `${symbol}|${interval}`;
+    /* Already on screen. `initial.length` is the escape hatch: a failed server
+       render leaves nothing to show, and then the client must go and get it. */
+    if (loaded.current === key && initial.length > 0) return;
+
     let alive = true;
-    startTransition(async () => {
-      const res = await fetch(`/api/candles?symbol=${symbol}&interval=${interval}`);
-      if (!res.ok || !alive) return;
-      const { candles: next } = (await res.json()) as { candles: Candle[] };
-      if (alive) setCandles(next);
+    let attempt = 0;
+
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/candles?symbol=${symbol}&interval=${interval}`);
+        if (!alive) return;
+        if (!res.ok) throw new Error(String(res.status));
+        const { candles: next } = (await res.json()) as { candles: Candle[] };
+        if (!alive) return;
+
+        /*
+         * NEVER REPLACE A CHART WITH NOTHING.
+         *
+         * An empty series means "we could not see", not "this token has no
+         * history" — and blanking a drawn chart to say so throws away the only
+         * information on screen. A stale chart is readable; an empty one is
+         * indistinguishable from a broken app, which is what it looked like.
+         *
+         * A token that genuinely has no candles starts empty and stays empty,
+         * which is correct: there was never anything to lose.
+         */
+        if (next.length === 0) {
+          setCandles((prev) => (prev.length > 0 ? prev : next));
+          if (retry()) return;
+          return;
+        }
+        setCandles(next);
+        loaded.current = key;
+      } catch {
+        /* Keep whatever is drawn and try again. The upstreams here fail
+           transiently — a 429 from GeckoTerminal's free tier, a DNS blip —
+           and both are gone by the next attempt. */
+        retry();
+      }
+    };
+
+    /** Up to three goes, backing off. Returns false once they are spent. */
+    function retry(): boolean {
+      if (!alive || attempt >= 3) return false;
+      const wait = [600, 1800, 4000][attempt];
+      attempt += 1;
+      window.setTimeout(() => {
+        if (alive) void load();
+      }, wait);
+      return true;
+    }
+
+    startTransition(() => {
+      void load();
     });
+
     return () => {
       alive = false;
     };
-  }, [symbol, interval, initial, initialInterval]);
+    // `initial` is intentionally absent — see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, interval, initialSymbol, initialInterval]);
 
   /*
    * Drop the live price the moment the market changes.
