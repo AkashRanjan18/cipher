@@ -31,20 +31,31 @@
   --color-champagne: #f7f7f7;
 
   /*
-   * The surface ladder, re-cast violet.
+   * The surface ladder — NEUTRAL COOL, back to the spec.
    *
-   * The ground is #060510, which is fomo's exact value and is NOT neutral —
-   * it carries nearly three times as much blue as red, and that tint is most
-   * of why warm colours look warmer on their page than on a grey-black one.
+   * It was re-cast violet at #060510, which is fomo's exact ground, on the
+   * reasoning that a neutral panel over a violet ground reads as dirty rather
+   * than as a step up. That reasoning is sound and it answered the wrong
+   * question: CLAUDE.md names #06070a and says in the same line "NOT fomo's
+   * violet #060510". The palette had drifted to the one value the spec called
+   * out by number to avoid, and every surface above it followed.
    *
-   * The steps above it keep the spacing from the spec but take the same cast,
-   * because a neutral grey panel sitting on a violet ground reads as a
-   * different shade of dirty rather than as a step up.
+   * Restored 17 Sep 2026 against a reference panel whose ground is #07080a —
+   * the same neutral family the spec asks for — and which read wrong here for
+   * exactly this reason. The ladder keeps its spacing; only the cast changes.
+   *
+   * `raised` is derived rather than quoted: the spec names ground, sections
+   * and boxes, and this is one step above boxes on the same neutral axis.
+   *
+   * THE TEXT IS DELIBERATELY NOT TOUCHED. CLAUDE.md's champagne is #f3e9d8, a
+   * warm cream, and the code has been on #f7f7f7 for long enough that going
+   * back would recolour every word in the product — a bigger decision than a
+   * background, and not one this change is entitled to make.
    */
-  --color-ink: #060510;
-  --color-panel: #0b0a16;
-  --color-slate: #121120;
-  --color-raised: #1a1828;
+  --color-ink: #06070a;
+  --color-panel: #0a0b0f;
+  --color-slate: #12141b;
+  --color-raised: #1c1f27;
 
   /*
    * Borders.
@@ -57,8 +68,9 @@
    * panels look lit rather than outlined. These are the opaque equivalents on
    * this ground.
    */
-  --color-line: #23212f;
-  --color-hairline: #191825;
+  /* Neutralised with the ladder above, at the spec's own two values. */
+  --color-line: #1e212b;
+  --color-hairline: #171a22;
 
   /* Secondary and tertiary text, both from fomo's header. */
   --color-ash: #9899a3;
