@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  PLATFORM_FEE_BPS,
   QuoteError,
   SOL_MINT,
   effectivePrice,
@@ -10,6 +9,7 @@ import {
   toBaseUnits,
 } from "@/lib/chain/jupiter";
 import { fromJupiter, resolveToken, risks } from "@/lib/chain/tokens";
+import { feeFor } from "@/lib/account/paper";
 
 /**
  * What a real swap would actually cost, against real liquidity, right now.
@@ -84,7 +84,8 @@ export async function GET(request: Request) {
       outputMint: t.mint,
       amount: toBaseUnits(solIn, 9),
       slippageBps,
-      platformFeeBps: PLATFORM_FEE_BPS,
+      /* No platformFeeBps — the commission is added below, once. See the note
+         in lib/chain/fill.ts for why it cannot live in both places. */
     });
 
     const outTokens = fromBaseUnits(q.outAmount, t.decimals);
@@ -104,7 +105,11 @@ export async function GET(request: Request) {
         pricePerToken: effectivePrice(q, 9, t.decimals) * solPrice,
         impactPct: impactPct(q),
         route: q.route,
-        feeUsd: (usd * PLATFORM_FEE_BPS) / 10_000,
+        /* The ledger's own schedule, so a preview and the fill it previews
+           cannot quote different commissions. A flat percentage here would
+           also have under-reported every order below $200, where the real
+           charge is the $0.95 floor rather than half a percent of nothing. */
+        feeUsd: feeFor(usd),
         slippageBps: q.slippageBps,
       },
     });

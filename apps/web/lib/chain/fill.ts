@@ -1,5 +1,4 @@
 import {
-  PLATFORM_FEE_BPS,
   QuoteError,
   USDC_MINT,
   fromBaseUnits,
@@ -19,9 +18,9 @@ import {
  * get from the majors, which is exactly where cipher is meant to live.
  *
  * This asks Jupiter instead. Same endpoint the real swap will use, same route,
- * same `platformFeeBps`, same `otherAmountThreshold`. The paper fill stops
- * being a simulation and becomes a DRY RUN: identical in every respect to the
- * real thing except that nothing is signed.
+ * same `otherAmountThreshold`. The paper fill stops being a simulation and
+ * becomes a DRY RUN: identical in every respect to the real thing except that
+ * nothing is signed.
  *
  * QUOTED AGAINST USDC, not SOL, because that is what the ledger holds. Routing
  * a dollar figure through SOL to reach a token adds a second leg that the
@@ -90,9 +89,27 @@ export async function quoteFill(req: FillRequest): Promise<QuotedFill> {
       outputMint,
       amount: toBaseUnits(size, inDecimals),
       slippageBps,
-      /* cipher's cut, quoted in — so the price the ledger records is the
-         price after the fee the user will actually pay. */
-      platformFeeBps: PLATFORM_FEE_BPS,
+      /*
+       * NO platformFeeBps. THE FEE IS CHARGED ONCE, BY THE LEDGER.
+       *
+       * This asked for it, and `quote()` in paper.ts then ran `feeFor()` over
+       * the result — so every signed-in trade paid cipher's commission twice.
+       * A $500 SOL buy came out 1.04% above mid instead of 0.54%, which is why
+       * a position opened at a $97.00 mark showed a cost basis of $97.92. The
+       * signed-out path never had the bug, because it prices from the model
+       * rather than from a quote, so the two paths disagreed about what the
+       * same trade cost.
+       *
+       * `feeFor` is the one that has to survive, because it carries the $0.95
+       * floor under $200 of notional and basis points cannot express a floor.
+       * What comes back from here is therefore the raw market price, and the
+       * commission is added on top exactly where the refusals and the balance
+       * already read it from.
+       *
+       * cipher: when the relayer lands, the fee moves on-chain and IS
+       * platformFeeBps plus a fee account. At that point this comes back and
+       * `feeFor` becomes the floor top-up, not the whole charge.
+       */
     },
     signal,
   );

@@ -10,7 +10,7 @@ import { AlertsList } from "./alerts";
 import { useUniverse, type Feed, type UniverseToken } from "./use-universe";
 import { CoinMark } from "./coin-mark";
 import { useSolPrices, type Mark } from "./sol-prices";
-import type { Lifecycle } from "@/lib/chain/tokens";
+import { displayCap, type Lifecycle } from "@/lib/chain/tokens";
 
 /**
  * The left panel: a navigator, not a feed.
@@ -365,7 +365,7 @@ function TokenRow({
           <Stage token={token} />
         </div>
         <div className="truncate font-sans text-[10px] leading-tight text-mute">
-          {token.mcap ? `${compactUsd(token.mcap)} MC` : token.name || "—"}
+          {displayCap(token) ? `${compactUsd(displayCap(token))} MC` : token.name || "—"}
         </div>
       </div>
 

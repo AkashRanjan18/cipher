@@ -332,3 +332,64 @@ test("impact is capped at 50%", () => {
   const q = quote(a, MINT, "buy", 10_000, 100, { depthUsd: 1_000 });
   assert.equal(q.impactBps, 5_000);
 });
+
+/* ───────────────── a real quote replaces the model, and only the model ─── */
+
+test("a quoted price is used exactly as given, not re-marked", () => {
+  const a = openAccount(10_000);
+  /* mark and quote deliberately disagree: the route is the truth, the mark is
+     only what the screen happened to be showing when the button was pressed. */
+  const q = quote(a, MINT, "buy", 1, 100, {
+    quoted: { price: 103.5, impactBps: 7, route: "Orca" },
+  });
+  assert.equal(q.price, 103.5);
+  assert.equal(q.impactBps, 7);
+  assert.equal(q.route, "Orca");
+});
+
+test("the commission is charged ONCE on a quoted fill", () => {
+  /*
+   * THE BUG THIS EXISTS FOR. `quoteFill` used to ask Jupiter for the route
+   * with `platformFeeBps: 50` baked in, and then this function ran `feeFor`
+   * over the result — so a signed-in trade paid cipher twice. A $500 SOL buy
+   * came out 1.04% above mid instead of 0.54%, and a position opened against a
+   * $97.00 mark reported a cost basis of $97.92.
+   *
+   * It survived because the two paths disagreed silently: signed OUT prices
+   * from the model and was right, signed IN priced from a quote and was not.
+   * Nothing compared them, so nothing failed.
+   */
+  const a = openAccount(10_000);
+  const price = 100;
+  const qty = 5; // $500 of notional, comfortably over the $200 floor
+  const q = quote(a, MINT, "buy", qty, price, {
+    quoted: { price, impactBps: 0, route: "Orca" },
+  });
+
+  assert.equal(q.notionalUsd, 500);
+  assert.equal(q.feeUsd, 2.5); // 0.50%, once
+  assert.equal(q.cashUsd, 502.5);
+});
+
+test("a quoted fill and a modelled fill of the same price cost the same", () => {
+  // The two paths are the same product. If they can disagree about what a
+  // trade costs, one of them is lying to somebody.
+  const a = openAccount(10_000);
+  const modelled = quote(a, MINT, "buy", 4, 250, { depthUsd: null });
+  const quoted = quote(a, MINT, "buy", 4, 250, {
+    quoted: { price: modelled.price, impactBps: modelled.impactBps, route: "Orca" },
+  });
+  assert.equal(quoted.feeUsd, modelled.feeUsd);
+  assert.equal(quoted.cashUsd, modelled.cashUsd);
+});
+
+test("the $0.95 floor still applies to a quoted fill", () => {
+  /* The reason the fee cannot live inside the Jupiter quote: basis points
+     cannot express a floor, and under $200 the floor is the whole charge. */
+  const a = openAccount(10_000);
+  const q = quote(a, MINT, "buy", 1, 50, {
+    quoted: { price: 50, impactBps: 0, route: "Orca" },
+  });
+  assert.equal(q.notionalUsd, 50);
+  assert.equal(q.feeUsd, 0.95);
+});

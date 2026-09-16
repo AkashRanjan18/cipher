@@ -7,7 +7,7 @@ import { usd, pct } from "@/lib/format";
 import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/account/store";
 import { TriggerProvider, useTriggers } from "@/lib/triggers/store";
 import { mintFor, marketByMint } from "@/lib/chain/markets";
-import { looksLikeMint } from "@/lib/chain/tokens";
+import { displayCap, looksLikeMint } from "@/lib/chain/tokens";
 import { useTokenInfo } from "./use-token-info";
 import { SolPriceProvider, useSolPrices } from "./sol-prices";
 import { equity, heldMints } from "@/lib/account/paper";
@@ -404,7 +404,7 @@ function TerminalBody({
    * has never heard of — a market cap of exactly zero printed with confidence.
    */
   const marketCap = onChain
-    ? (token?.mcap ?? null)
+    ? (token ? displayCap(token) : null)
     : last
       ? last * market.supply
       : null;
@@ -455,11 +455,39 @@ function TerminalBody({
    * venue combined by ninefold, which is what made it obvious. The honest
    * figure for that pool was $21.7M.
    */
-  const dayVolumeUsd = spansDay
-    ? candles
-        .filter((c) => c.time >= cutoff)
-        .reduce((sum, c) => sum + (onChain ? c.volume : c.volume * c.close), 0)
-    : null;
+  /*
+   * ON-CHAIN VOLUME COMES FROM THE TOKEN, NOT FROM THE CHART WINDOW.
+   *
+   * Summing the visible candles made a property of the market depend on which
+   * interval you were looking at. Three hundred bars is twelve days at 1h and
+   * five HOURS at 1m, so `spansDay` was false on the short intervals and the
+   * stat rendered as "—": the same coin showed $12.38M of volume on one tab
+   * and nothing at all on the next. A number that disappears when you zoom in
+   * is worse than one that is slightly stale, because it reads as a dead feed.
+   *
+   * Jupiter reports the real figure directly, over a true rolling 24 hours,
+   * across every pool — which is the right scope for cipher specifically,
+   * since routing spends the whole market rather than one venue. It is why
+   * this reads roughly double fomo's, whose volume and liquidity are both a
+   * single pool's. Buys and sells are summed rather than double-counted: on
+   * PUMP the two sides carry 178,229 and 170,558 trades at $95.6 and $102.8
+   * average, which are disjoint sets of swaps, not one set counted twice.
+   *
+   * IT WILL LOOK ENORMOUS ON SOL, and that is not a bug. Nearly every memecoin
+   * on Solana is quoted against SOL, so SOL's traded volume includes its work
+   * as the pair currency in everything else — about $6.9B against a few
+   * hundred million of SOL/USD. The figure answers "how much of this token
+   * changed hands", which is the question worth asking for the tokens cipher
+   * exists to trade, and an odd one only for the handful that are themselves
+   * the denominator.
+   */
+  const dayVolumeUsd = onChain
+    ? (token?.volume24hUsd ?? null)
+    : spansDay
+      ? candles
+          .filter((c) => c.time >= cutoff)
+          .reduce((sum, c) => sum + c.volume * c.close, 0)
+      : null;
 
   return (
     /*

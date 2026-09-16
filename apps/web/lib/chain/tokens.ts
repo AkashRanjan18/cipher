@@ -71,8 +71,9 @@ export interface TokenInfo {
   holderCount: number;
   liquidityUsd: number;
   priceUsd: number;
+  /** Price times CIRCULATING supply. Not what a trader means by "market cap". */
   mcap: number | null;
-  /** Fully diluted, which on a launchpad token is usually the honest number. */
+  /** Price times TOTAL supply. This is the one to show — see `displayCap`. */
   fdv: number | null;
   audit: TokenAudit | null;
 
@@ -303,6 +304,40 @@ function volume(stats: unknown): number | null {
   const buy = typeof s.buyVolume === "number" ? s.buyVolume : 0;
   const sell = typeof s.sellVolume === "number" ? s.sellVolume : 0;
   return buy + sell;
+}
+
+/**
+ * THE market cap, singular — what every screen prints under that label.
+ *
+ * Jupiter returns two numbers and they are nearly two different coins. For
+ * PUMP on 16 Sep 2026, at a price both cipher and fomo agreed on to within
+ * 0.14%:
+ *
+ *     mcap   $1.63B    price x circulating supply (468B)
+ *     fdv    $2.90B    price x total supply       (834B)
+ *
+ * cipher was showing the first and fomo the second, which is how the same coin
+ * read as $1.65B here and $2.9B there — a 1.76x disagreement on the number
+ * people size positions with.
+ *
+ * FDV IS THE ONE TO SHOW, and not because fomo shows it. On a launchpad token
+ * the whole supply is minted at once and most of it is already tradeable, so
+ * "circulating" is a distinction inherited from equities that does not survive
+ * contact with a memecoin. Every venue a cipher user also has open — pump.fun,
+ * DexScreener, Photon, BullX — quotes FDV and calls it market cap. When
+ * somebody says a coin is "at 2 million", this is the number they mean. Being
+ * technically correct and alone by a factor of two is not correct: they would
+ * reasonably conclude cipher's data is broken, and on this number they would
+ * be the ones reading it right.
+ *
+ * It is one function rather than a field on each row because three screens
+ * were each reaching for `mcap` on their own, which is how they would drift.
+ */
+export function displayCap(t: Pick<TokenInfo, "fdv" | "mcap">): number | null {
+  /* Falls back rather than returning null: an old token whose total supply
+     Jupiter does not carry still has a circulating figure worth printing, and
+     a blank stat reads as a broken feed. */
+  return t.fdv ?? t.mcap;
 }
 
 /** Jupiter's search payload → our shape. Unknown fields are dropped, not trusted. */

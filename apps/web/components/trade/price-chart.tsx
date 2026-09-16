@@ -160,10 +160,25 @@ function Legend({
    * SOL as "97.1406" — four digits of noise on a number nobody quotes past the
    * cent. Two is what every terminal shows for a dollar-priced asset. But two
    * would render a memecoin at $0.0000027 as "0.00", so the rule has to bend
-   * with the magnitude: roughly five significant figures, wherever the decimal
-   * point happens to be.
+   * with the magnitude: five significant figures, wherever the decimal point
+   * happens to be.
+   *
+   * BUCKETS DID NOT DELIVER THAT. Thresholds at 0.01 and 0.0001 give a fixed
+   * number of places across a hundredfold span, so what you actually got was
+   * three to five significant figures depending on where inside a bucket the
+   * price sat. PUMP at 0.003495 landed on six places — "0.003495", four
+   * figures — against fomo's "0.0035374". Reading one digit short on a coin
+   * quoted in ten-thousandths is the difference between two prices.
+   *
+   * Taking it from the exponent makes it exactly five, everywhere.
    */
-  const places = (v: number) => (v >= 1 ? 2 : v >= 0.01 ? 4 : v >= 0.0001 ? 6 : 9);
+  const places = (v: number) => {
+    if (v >= 1) return 2;
+    /* 0.0035 → exponent -3 → 7 places → 0.0035374. Clamped because a token
+       priced at 1e-12 would otherwise ask for a number wider than the panel,
+       and because log10(0) is -Infinity. */
+    return Math.min(12, Math.max(4, 4 - Math.floor(Math.log10(v))));
+  };
   const scale = places(Math.abs(bar.close) || 1);
   const fmt = (v: number) =>
     Math.abs(v) >= 1000
