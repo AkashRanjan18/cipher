@@ -4,8 +4,9 @@ import { useMemo, useState } from "react";
 import { usePaperAccount } from "@/lib/account/store";
 import { roundTrips, type RoundTrip } from "@/lib/account/roundtrips";
 import { baseSymbol, marketByMint } from "@/lib/chain/markets";
+import type { Denom } from "@/lib/chain/denom";
 import { useTriggers } from "@/lib/triggers/store";
-import { pct, since, units, usd } from "@/lib/format";
+import { compactUsd, pct, since, units, usd } from "@/lib/format";
 import type { Amount, Rule } from "@cipher/shared";
 import { CoinMark } from "./coin-mark";
 import { useSolPrices } from "./sol-prices";
@@ -40,7 +41,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "closed", label: "Closed" },
 ];
 
-export function Positions() {
+export function Positions({ denom }: { denom: Denom }) {
   const [tab, setTab] = useState<Tab>("open");
   const { account, hydrated } = usePaperAccount();
   const { armed, waiting, hydrated: rulesReady } = useTriggers();
@@ -124,7 +125,7 @@ export function Positions() {
         * trigger store. Gating the whole card on both would leave Open saying
         * "reading…" because the rules were slow.
         */}
-      {tab === "open" && <Open held={open} ready={hydrated} />}
+      {tab === "open" && <Open held={open} ready={hydrated} denom={denom} />}
       {tab === "pending" && <Pending armed={armed} waiting={waiting} ready={rulesReady} />}
       {tab === "closed" && <Closed trips={closed} ready={hydrated} />}
     </section>
@@ -133,12 +134,114 @@ export function Positions() {
 
 /* ---------------------------------------------------------------- open --- */
 
+/**
+ * ONE OPEN POSITION, in the layout the user supplied.
+ *
+ * Value and quantity on the left, P&L and percent on the right, a dashed
+ * hairline, then entry and invested along the bottom. The CSS lives in
+ * globals.css under `.pnl` with its geometry untouched — every length is an
+ * em off one knob, so the proportions hold at any size.
+ *
+ * The caret is the reference's SVG rather than a ▲ glyph: a text triangle is
+ * a different shape and a different baseline in every browser, and this one
+ * rotates for a loss instead of being a second character.
+ */
+function PositionCard({
+  symbol,
+  icon,
+  qty,
+  costBasis,
+  mark,
+  supply,
+  denom,
+}: {
+  symbol: string;
+  icon: string | null;
+  qty: number;
+  costBasis: number;
+  /** Null while the price poll has not answered for this mint. */
+  mark: number | null;
+  supply: number | null;
+  denom: Denom;
+}) {
+  /*
+   * A MISSING MARK IS NOT A ZERO. The poll has not answered yet, or Jupiter
+   * has no route for this token today; either way the position is worth an
+   * unknown amount, and writing that down as nothing shows someone their
+   * money vanishing because a request was slow. `equity()` skips it too.
+   */
+  const value = mark === null ? null : qty * mark;
+  const invested = qty * costBasis;
+  const pnl = value === null ? null : value - invested;
+  const pnlPct = pnl === null || invested <= 0 ? null : (pnl / invested) * 100;
+  const down = pnl !== null && pnl < 0;
+
+  /*
+   * AVERAGE ENTRY IN WHATEVER THE CHART IS SPEAKING.
+   *
+   * fomo writes "$1.4M MC" here and that is the more useful number on a
+   * memecoin — "I got in at $1.4M" places a position against where the token
+   * is now, and "$0.0000041" does not. It is the same fact multiplied by
+   * supply, so it is a unit change rather than a second source, and it falls
+   * back to the price when no supply is known.
+   */
+  const entry =
+    denom === "mcap" && supply !== null
+      ? `${compactUsd(costBasis * supply)} MC`
+      : usd(costBasis);
+
+  return (
+    <div className={`pnl ${down ? "is-down" : ""}`}>
+      <div className="pnl__top">
+        <div className="pnl__col min-w-0">
+          <div className="pnl__value">{value === null ? "—" : usd(value)}</div>
+          {/* The reference puts the holding under the value. The coin's mark
+              goes here too, because the column lists several and a card with
+              no name on it is unreadable the moment there are two. */}
+          <div className="pnl__sub flex items-center gap-1.5">
+            <CoinMark symbol={symbol} icon={icon} size={14} />
+            {units(qty)} {symbol}
+          </div>
+        </div>
+        <div className="pnl__col pnl__col--right">
+          <div className="pnl__value pnl__value--gain">
+            {pnl === null ? "—" : `${down ? "−" : "+"}${usd(Math.abs(pnl))}`}
+          </div>
+          <div className="pnl__sub pnl__sub--gain">
+            {pnlPct !== null && (
+              <svg className="pnl__caret" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+                <path d="M5 1.2 9.2 8.4H0.8z" />
+              </svg>
+            )}
+            {pnlPct === null ? "—" : `${Math.abs(pnlPct).toFixed(2)}%`}
+          </div>
+        </div>
+      </div>
+
+      <div className="pnl__rule" />
+
+      <div className="pnl__foot">
+        <div className="pnl__pair">
+          <span className="pnl__label">Avg. entry</span>
+          <span className="pnl__stat">{entry}</span>
+        </div>
+        <div className="pnl__pair">
+          <span className="pnl__label">Invested</span>
+          <span className="pnl__stat">{usd(invested)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Open({
   held,
   ready,
+  denom,
 }: {
   held: [string, { qty: number; costBasis: number }][];
   ready: boolean;
+  denom: Denom;
 }) {
   const mints = held.map(([mint]) => mint);
   /*
@@ -161,77 +264,19 @@ function Open({
   }
 
   return (
-    <div className="flex flex-col">
-      {held.map(([mint, p]) => {
-        const mark = marks[mint]?.usd ?? null;
-        const listed = marketByMint(mint);
-        const symbol = meta[mint]?.symbol ?? mint;
-
-        /*
-         * A MISSING MARK IS NOT A ZERO. The price poll has not answered yet,
-         * or Jupiter has no route for this token today; either way the
-         * position is worth an unknown amount, and writing that down as
-         * nothing shows someone their money vanishing because a request was
-         * slow. `equity()` skips the same case for the same reason.
-         */
-        const value = mark === null ? null : p.qty * mark;
-        const invested = p.qty * p.costBasis;
-        const pnl = value === null ? null : value - invested;
-        const pnlPct = pnl === null || invested <= 0 ? null : (pnl / invested) * 100;
-
-        return (
-          <Row key={mint}>
-            <div className="flex items-center gap-2">
-              <CoinMark
-                symbol={symbol}
-                icon={meta[mint]?.icon ?? null}
-                hue={listed?.hue}
-                glyph={listed?.glyph}
-                size={24}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate font-sans text-[13.5px] font-bold text-champagne">
-                    {symbol}
-                  </span>
-                  <span className="shrink-0 font-sans text-[13.5px] font-bold tabular-nums text-champagne">
-                    {value === null ? "—" : usd(value)}
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate font-sans text-[11.5px] tabular-nums text-mute">
-                    {units(p.qty)} {symbol}
-                  </span>
-                  <span
-                    className={`shrink-0 font-sans text-[11.5px] font-semibold tabular-nums ${
-                      pnl === null ? "text-mute" : pnl >= 0 ? "text-up" : "text-down"
-                    }`}
-                  >
-                    {pnl === null
-                      ? "—"
-                      : `${pnl >= 0 ? "+" : "−"}${usd(Math.abs(pnl))} · ${pct(pnlPct, false)}`}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/*
-              * AVERAGE ENTRY IS A PRICE HERE, where fomo shows a market cap.
-              *
-              * The ledger records what you paid per unit, fee included — it
-              * has never recorded the token's cap at the moment you bought,
-              * and reconstructing one from today's supply would be a number
-              * that looks like history and is not. The price is also the
-              * figure the P&L above is computed from, so it is the one that
-              * explains the row.
-              */}
-            <div className="mt-1 flex items-baseline justify-between gap-2 font-sans text-[10.5px] text-mute">
-              <span className="tabular-nums">Avg. entry {usd(p.costBasis)}</span>
-              <span className="tabular-nums">Invested {usd(invested)}</span>
-            </div>
-          </Row>
-        );
-      })}
+    <div className="flex flex-col gap-2">
+      {held.map(([mint, p]) => (
+        <PositionCard
+          key={mint}
+          symbol={meta[mint]?.symbol ?? mint}
+          icon={meta[mint]?.icon ?? null}
+          qty={p.qty}
+          costBasis={p.costBasis}
+          mark={marks[mint]?.usd ?? null}
+          supply={meta[mint]?.supply ?? null}
+          denom={denom}
+        />
+      ))}
     </div>
   );
 }

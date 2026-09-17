@@ -23,6 +23,7 @@ import { TokenTabs } from "./token-tabs";
 import { Ticket } from "./ticket";
 import { AboutToken } from "./about-token";
 import { Positions } from "./positions";
+import { factor, scaleCandles, supplyOf, type Denom } from "@/lib/chain/denom";
 import { Sana, SanaMark } from "./sana";
 
 /**
@@ -98,6 +99,8 @@ function TerminalBody({
   const [panelOpen, setPanelOpen] = useState(true);
   /* Bumped to reframe the chart from outside it — see PriceChart.resetSignal. */
   const [chartReset, setChartReset] = useState(0);
+  /* Price or market cap. One constant multiplies the series; see denom.ts. */
+  const [denom, setDenom] = useState<Denom>("price");
   /*
    * Sana, folded.
    *
@@ -122,6 +125,23 @@ function TerminalBody({
   const onChain = looksLikeMint(symbol);
   const majors = useMajors();
   const token = useTokenInfo(onChain ? symbol : null);
+
+  /*
+   * THE SERIES IN WHATEVER UNIT IS SELECTED.
+   *
+   * Scaled here rather than inside PriceChart because the chart is a renderer:
+   * it is handed bars and draws them, and teaching it about supply would make
+   * it the second place that knows what a market cap is. Its axis formatter
+   * already abbreviates millions and billions — that comment predates this
+   * toggle and was written for exactly this case.
+   *
+   * `useMemo` on the array: PriceChart rebuilds its series whenever `candles`
+   * changes identity, so mapping on every render would redraw a thousand bars
+   * every time the price ticked.
+   */
+  const supply = supplyOf(token);
+  const mult = factor(denom, supply);
+  const shownCandles = useMemo(() => scaleCandles(candles, mult), [candles, mult]);
 
   /* Display identity. For a mint it comes from the token itself; the listed
      Solana markets carry a nicer name, so they win where they exist. */
@@ -674,6 +694,9 @@ function TerminalBody({
             interval={interval}
             onInterval={setInterval}
             pending={pending}
+            denom={denom}
+            onDenom={setDenom}
+            canMcap={supply !== null}
           />
 
           {/*
@@ -688,8 +711,8 @@ function TerminalBody({
           <div data-wheel-lock className="h-[55vh] min-h-[320px]">
             <PriceChart
               resetSignal={chartReset}
-              candles={candles}
-              livePrice={live}
+              candles={shownCandles}
+              livePrice={live === undefined ? live : live * mult}
               barSeconds={intervalSeconds(interval)}
               /* The token's NAME, not its ticker — "Solana" reads as a market
                  and "SOL" reads as the thing beside it in the header. */
@@ -889,7 +912,7 @@ function TerminalBody({
             * not make the position disappear, and a Binance major having no
             * mint behind it says nothing about what is in the account.
             */}
-          <Positions />
+          <Positions denom={denom} />
         </aside>
           </div>
         </Scroller>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CoinMark } from "./coin-mark";
+import type { Denom } from "@/lib/chain/denom";
 import type { Interval, MarketDef } from "@/lib/market";
 import { INTERVAL_ORDER } from "@/lib/market";
 import { usd, compactUsd, pct } from "@/lib/format";
@@ -40,6 +41,9 @@ export function ChartHeader({
   interval,
   onInterval,
   pending,
+  denom,
+  onDenom,
+  canMcap,
 }: {
   market: MarketDef;
   /** The token's own icon, for a market that is a mint rather than a pair. */
@@ -50,6 +54,10 @@ export function ChartHeader({
   volumeUsd: number | null;
   depthUsd: number | null;
   interval: Interval;
+  denom: Denom;
+  onDenom: (d: Denom) => void;
+  /** False when nothing behind the chart has a supply to multiply by. */
+  canMcap: boolean;
   onInterval: (i: Interval) => void;
   pending: boolean;
 }) {
@@ -140,14 +148,39 @@ export function ChartHeader({
         <span className="h-4 w-px bg-hairline" />
 
         {/*
-          * Price only.
+          * PRICE / MARKET CAP, and it is a real toggle now.
           *
-          * fomo has a Price / MCap toggle here. Ours would set a label and
-          * change nothing — the series is drawn in price either way — so the
-          * option is not offered. MCap arrives with the pool index, when
-          * supply is a field rather than the hardcoded table in markets.ts.
+          * This was a single static "Price" label, with a comment explaining
+          * that fomo's version of it "would set a label and change nothing"
+          * here — true at the time, because there was no supply figure to
+          * multiply by. Jupiter reports `fdv` and `priceUsd` on every token
+          * and their ratio is the supply, so the second option now redraws
+          * the axis against a real number. See lib/chain/denom.ts.
+          *
+          * MCap disappears rather than greys out when there is nothing behind
+          * the chart. A Binance major has no token and therefore no cap; a
+          * disabled control invites a click and then explains itself, and one
+          * tab is not a choice — the same rule that removed this control's
+          * first version.
           */}
-        <span className="font-sans text-[10.5px] font-bold text-action">Price</span>
+        {canMcap ? (
+          <div className="flex items-center gap-0.5 rounded-md bg-slate p-0.5">
+            {(["price", "mcap"] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => onDenom(d)}
+                aria-pressed={denom === d}
+                className={`rounded px-1.5 py-0.5 font-sans text-[10.5px] font-bold transition-colors ${
+                  denom === d ? "bg-raised text-champagne" : "text-mute hover:text-ash"
+                }`}
+              >
+                {d === "price" ? "Price" : "MCap"}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span className="font-sans text-[10.5px] font-bold text-action">Price</span>
+        )}
 
         {pending && <span className="font-mono text-[10.5px] text-mute">loading…</span>}
 

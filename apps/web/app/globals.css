@@ -459,3 +459,124 @@ body {
 .landing-sub {
   text-shadow: 0 1px 18px rgba(8, 13, 24, 0.95);
 }
+
+/* ───────────────────────── the position P&L card ────────────────────────
+ *
+ * Lifted from the reference the user supplied, geometry intact: every length
+ * is in `em` off one knob, so the whole card scales by changing --size and
+ * nothing drifts out of proportion.
+ *
+ * TWO CHANGES, both so it can live in a column rather than on a demo page.
+ * `width` is 100% — the aside decides how wide a card is, not the card — and
+ * --size therefore only drives the TYPE scale. And --accent is wired to
+ * cipher's own up/down tokens rather than the reference's #4ade80/#ff5a3c, so
+ * a gain here is the same green as a gain on the chart. Those hexes exist in
+ * exactly one place (the @theme block above) and a second copy is the drift
+ * CLAUDE.md warns about.
+ *
+ * It is plain CSS rather than Tailwind because the ratios ARE the design:
+ * 0.58em of sub-line under a 1em numeral survives a font change and a
+ * text-[9px] does not.
+ */
+.pnl {
+  --size: 340px;
+  --accent: var(--color-up);
+  --ink: var(--color-champagne);
+  --ink-2: #dcdbe3;
+  --muted: var(--color-ash);
+  --rule: rgba(255, 255, 255, 0.07);
+
+  width: 100%;
+  font-size: calc(var(--size) / 22);
+
+  box-sizing: border-box;
+  padding: 0.78em 0.86em 0.72em;
+  border-radius: 1.45em;
+  background: linear-gradient(158deg, #1e1d26 0%, #14131b 44%, #050409 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 1.2em 3em rgba(0, 0, 0, 0.45);
+
+  color: var(--ink);
+  /* Digits keep the same advance width, so the numbers do not jitter
+     sideways when they tick. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+.pnl.is-down { --accent: var(--color-down); }
+
+.pnl__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6em;
+}
+.pnl__col--right { text-align: right; }
+
+.pnl__value {
+  font-size: 1em;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.022em;
+}
+.pnl__value--gain { color: var(--accent); }
+
+.pnl__sub {
+  margin-top: 0.12em;
+  font-size: 0.58em;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  color: var(--muted);
+}
+.pnl__sub--gain {
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34em;
+}
+/* The caret is an SVG, not a ▲ glyph, so it is identical in every browser
+   and scales with the text. */
+.pnl__caret {
+  width: 0.62em;
+  height: 0.62em;
+  flex: none;
+}
+.pnl.is-down .pnl__caret { transform: rotate(180deg); }
+
+.pnl__rule {
+  height: 0;
+  margin: 0.72em 0 0;
+  border-top: 1px dashed var(--rule);
+}
+
+.pnl__foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8em;
+  margin-top: 0.62em;
+}
+.pnl__pair {
+  display: flex;
+  align-items: baseline;
+  gap: 0.42em;
+  min-width: 0;
+}
+.pnl__label {
+  font-size: 0.52em;
+  font-weight: 500;
+  letter-spacing: 0.002em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.pnl__stat {
+  font-size: 0.63em;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--ink-2);
+  white-space: nowrap;
+}

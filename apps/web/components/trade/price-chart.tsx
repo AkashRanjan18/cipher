@@ -180,10 +180,28 @@ function Legend({
     return Math.min(12, Math.max(4, 4 - Math.floor(Math.log10(v))));
   };
   const scale = places(Math.abs(bar.close) || 1);
-  const fmt = (v: number) =>
-    Math.abs(v) >= 1000
-      ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-      : v.toFixed(scale);
+  /*
+   * ABBREVIATED PAST A MILLION, for the same reason the axis is.
+   *
+   * The two-decimal branch below was written when the series was always a
+   * price, where "1,430.72" is exactly right. Switching the chart to market
+   * cap made every bar nine digits wide and the legend printed
+   * "O64,024,394,253.86 H64,024,394,253.86 L63,607,593,626.38" — four numbers
+   * that fill the panel and that nobody can tell apart at a glance, which is
+   * the only way a legend is ever read.
+   *
+   * The thresholds match the axis formatter's deliberately: a legend that
+   * says 63.61B under an axis tick reading 63.61B is one reading, and the
+   * same number written two ways is two.
+   */
+  const fmt = (v: number) => {
+    const a = Math.abs(v);
+    if (a >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(2)}B`;
+    if (a >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
+    if (a >= 1000)
+      return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return v.toFixed(scale);
+  };
 
   /* Against the bar's OWN open — this describes one candle, not the day. */
   const delta = bar.close - bar.open;

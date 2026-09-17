@@ -27,6 +27,19 @@ import type { TokenInfo } from "@/lib/chain/tokens";
 export interface TokenMeta {
   symbol: string;
   icon: string | null;
+  /**
+   * Units in existence, so a price can be read as a market cap.
+   *
+   * Derived as fdv / price rather than fetched: Jupiter reports both, and
+   * their ratio IS the total supply. Null when either is missing — a listed
+   * major has no token payload — and the caller shows a price instead of
+   * inventing a cap from a supply it had to guess.
+   *
+   * TOTAL supply, not circulating, because `fdv` is the number the panel
+   * already shows as market cap. Mixing the two would put an entry cap and a
+   * current cap on different bases and make the comparison meaningless.
+   */
+  supply: number | null;
 }
 
 /**
@@ -61,33 +74,43 @@ export function useTokenMeta(mints: string[]): Record<string, TokenMeta> {
       let found = false;
       for (const mint of missing) {
         /*
-         * The listed table first, and it never touches the network.
+         * The listed table decides the NAME; Jupiter is still asked for the
+         * supply.
          *
-         * SOL, USDC and the rest of the majors have a verified symbol and a
-         * self-hosted logo already — going to Jupiter for those is a request
-         * that can only return something worse, since its search answers
-         * "DOGE" with a 2,028-holder impostor. See coin-mark.tsx.
+         * This used to short-circuit entirely for SOL, USDC and the rest, on
+         * the reasoning that a verified symbol and a self-hosted logo beat
+         * anything a search can return — which is true, and why the symbol
+         * and icon below still come from the table. But it also meant those
+         * coins never learned their supply, so switching the chart to market
+         * cap left "Avg. entry $100.91" sitting under an axis in billions.
+         *
+         * So: listed wins on identity, Jupiter answers for the numbers, and a
+         * failed lookup leaves a listed coin correctly named with no cap
+         * rather than unnamed. See coin-mark.tsx for why the icon is local.
          */
         const listed = marketByMint(mint);
-        if (listed) {
-          CACHE.set(mint, { symbol: listed.symbol, icon: null });
-          found = true;
-          continue;
-        }
+        let t: TokenInfo | null = null;
         try {
           const res = await fetch(`/api/token?q=${encodeURIComponent(mint)}`);
-          if (!res.ok) continue;
-          const body = (await res.json()) as {
-            resolution?: { kind: string; token?: TokenInfo };
-          };
-          const t = body.resolution?.kind === "resolved" ? body.resolution.token : null;
-          if (!t) continue;
-          CACHE.set(mint, { symbol: t.symbol || shortMint(mint), icon: t.icon ?? null });
-          found = true;
+          if (res.ok) {
+            const body = (await res.json()) as {
+              resolution?: { kind: string; token?: TokenInfo };
+            };
+            t = body.resolution?.kind === "resolved" ? (body.resolution.token ?? null) : null;
+          }
         } catch {
-          /* Left out of the cache so it is tried again. A row reading as its
-             own address is ugly and true; a row reading as the wrong coin is
-             the thing this whole file exists to avoid. */
+          /* Left out of the cache below only when there is nothing at all to
+             store. A row reading as its own address is ugly and true; a row
+             reading as the wrong coin is what this file exists to avoid. */
+        }
+
+        if (listed || t) {
+          CACHE.set(mint, {
+            symbol: listed?.symbol ?? t?.symbol ?? shortMint(mint),
+            icon: listed ? null : (t?.icon ?? null),
+            supply: t?.fdv && t.priceUsd > 0 ? t.fdv / t.priceUsd : null,
+          });
+          found = true;
         }
       }
       if (alive && found) bump((n) => n + 1);
@@ -100,7 +123,7 @@ export function useTokenMeta(mints: string[]): Record<string, TokenMeta> {
 
   const out: Record<string, TokenMeta> = {};
   for (const mint of key ? key.split(",") : []) {
-    out[mint] = CACHE.get(mint) ?? { symbol: shortMint(mint), icon: null };
+    out[mint] = CACHE.get(mint) ?? { symbol: shortMint(mint), icon: null, supply: null };
   }
   return out;
 }
