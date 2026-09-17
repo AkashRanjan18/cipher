@@ -597,3 +597,14 @@ body {
   margin-top: 0.02em;
   padding-left: calc(14px + 0.42em);
 }
+
+/* The entry cap, beside the entry price. Dimmer, because the price is the
+   number the P&L is computed from and the cap is context for it. */
+.pnl__stat--cap {
+  color: var(--muted);
+  font-weight: 600;
+}
+/* The footer wraps rather than overflowing: a memecoin entry in cap terms
+   next to a six-figure invested does not fit a 340px card on one line, and
+   the reference's single row is what it should be whenever it does fit. */
+.pnl__foot { flex-wrap: wrap; row-gap: 0.18em; }

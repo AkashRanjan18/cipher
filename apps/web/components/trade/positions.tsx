@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { usePaperAccount } from "@/lib/account/store";
 import { roundTrips, type RoundTrip } from "@/lib/account/roundtrips";
 import { baseSymbol, marketByMint } from "@/lib/chain/markets";
-import type { Denom } from "@/lib/chain/denom";
 import { useTriggers } from "@/lib/triggers/store";
 import { compactUsd, pct, since, units, usd } from "@/lib/format";
 import type { Amount, Rule } from "@cipher/shared";
@@ -41,7 +40,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "closed", label: "Closed" },
 ];
 
-export function Positions({ denom }: { denom: Denom }) {
+export function Positions() {
   const [tab, setTab] = useState<Tab>("open");
   const { account, hydrated } = usePaperAccount();
   const { armed, waiting, hydrated: rulesReady } = useTriggers();
@@ -125,7 +124,7 @@ export function Positions({ denom }: { denom: Denom }) {
         * trigger store. Gating the whole card on both would leave Open saying
         * "reading…" because the rules were slow.
         */}
-      {tab === "open" && <Open held={open} ready={hydrated} denom={denom} />}
+      {tab === "open" && <Open held={open} ready={hydrated} />}
       {tab === "pending" && <Pending armed={armed} waiting={waiting} ready={rulesReady} />}
       {tab === "closed" && <Closed trips={closed} ready={hydrated} />}
     </section>
@@ -148,23 +147,19 @@ export function Positions({ denom }: { denom: Denom }) {
  */
 function PositionCard({
   symbol,
-  name,
   icon,
   qty,
   costBasis,
   mark,
   supply,
-  denom,
 }: {
   symbol: string;
-  name: string;
   icon: string | null;
   qty: number;
   costBasis: number;
   /** Null while the price poll has not answered for this mint. */
   mark: number | null;
   supply: number | null;
-  denom: Denom;
 }) {
   /*
    * A MISSING MARK IS NOT A ZERO. The poll has not answered yet, or Jupiter
@@ -181,18 +176,20 @@ function PositionCard({
   const cap = mark !== null && supply !== null ? supply * mark : null;
 
   /*
-   * AVERAGE ENTRY IN WHATEVER THE CHART IS SPEAKING.
+   * AVERAGE ENTRY, BOTH WAYS AT ONCE.
    *
-   * fomo writes "$1.4M MC" here and that is the more useful number on a
-   * memecoin — "I got in at $1.4M" places a position against where the token
-   * is now, and "$0.0000041" does not. It is the same fact multiplied by
-   * supply, so it is a unit change rather than a second source, and it falls
-   * back to the price when no supply is known.
+   * This followed the chart's Price/MCap toggle and showed one or the other.
+   * Showing both is simply better here and the toggle was the wrong master
+   * for it: the price is what the P&L is arithmetically computed from, and
+   * the cap is what places the entry against where the coin is now — "I got
+   * in at $1.4M" against a $4M coin says the whole story, and "$0.0000041"
+   * says none of it. They are the same fact times supply, so there is no risk
+   * of them disagreeing.
+   *
+   * The cap is dropped rather than guessed when no supply is known, which is
+   * every Binance major and any token whose lookup failed.
    */
-  const entry =
-    denom === "mcap" && supply !== null
-      ? `${compactUsd(costBasis * supply)} MC`
-      : usd(costBasis);
+  const entryCap = supply !== null ? `${compactUsd(costBasis * supply)} MC` : null;
 
   return (
     <div className={`pnl ${down ? "is-down" : ""}`}>
@@ -205,18 +202,21 @@ function PositionCard({
             * The reference puts one line here. Two, because they answer
             * different questions: the first is your position, the second is
             * the coin's own size, and a memecoin's cap is the number people
-            * actually quote it by — "I'm in 19M WIFOUT" means nothing without
-            * "and it's a $4M coin".
+            * quote it by — "I'm in 19M WIFOUT" means nothing without "and
+            * it's a $4M coin".
             *
-            * The name rather than the ticker: "4.9745 Solana" reads as a
-            * sentence, "4.9745 SOL" reads as a tape, and this card has the
-            * width for it. The mark is here because the column lists several
-            * positions and an unnamed card stops working at two.
+            * THE TICKER, not the full name. This briefly read "4.9745 Solana"
+            * on the theory that the card had the width for a sentence; the
+            * ticker is what the position is called everywhere else on the
+            * screen — the ticket, the chart header, the swaps table — and a
+            * card that renames the coin is a card you have to translate. The
+            * mark is here because the column lists several positions and an
+            * unnamed card stops working at two.
             */}
           <div className="pnl__sub flex items-center gap-1.5">
             <CoinMark symbol={symbol} icon={icon} size={14} />
             <span className="truncate">
-              {units(qty)} {name}
+              {units(qty)} {symbol}
             </span>
           </div>
           {/*
@@ -249,7 +249,8 @@ function PositionCard({
       <div className="pnl__foot">
         <div className="pnl__pair">
           <span className="pnl__label">Avg. entry</span>
-          <span className="pnl__stat">{entry}</span>
+          <span className="pnl__stat">{usd(costBasis)}</span>
+          {entryCap && <span className="pnl__stat pnl__stat--cap">{entryCap}</span>}
         </div>
         <div className="pnl__pair">
           <span className="pnl__label">Invested</span>
@@ -263,11 +264,9 @@ function PositionCard({
 function Open({
   held,
   ready,
-  denom,
 }: {
   held: [string, { qty: number; costBasis: number }][];
   ready: boolean;
-  denom: Denom;
 }) {
   const mints = held.map(([mint]) => mint);
   /*
@@ -295,13 +294,11 @@ function Open({
         <PositionCard
           key={mint}
           symbol={meta[mint]?.symbol ?? mint}
-          name={meta[mint]?.name ?? meta[mint]?.symbol ?? mint}
           icon={meta[mint]?.icon ?? null}
           qty={p.qty}
           costBasis={p.costBasis}
           mark={marks[mint]?.usd ?? null}
           supply={meta[mint]?.supply ?? null}
-          denom={denom}
         />
       ))}
     </div>

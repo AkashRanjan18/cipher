@@ -912,7 +912,7 @@ function TerminalBody({
             * not make the position disappear, and a Binance major having no
             * mint behind it says nothing about what is in the account.
             */}
-          <Positions denom={denom} />
+          <Positions />
         </aside>
           </div>
         </Scroller>
