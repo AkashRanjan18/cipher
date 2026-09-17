@@ -589,3 +589,11 @@ body {
   color: var(--ink-2);
   white-space: nowrap;
 }
+
+/* The second sub-line: the coin's own market cap, under your holding.
+   Indented to the width of the mark above it so the two read as a stack
+   rather than as two unrelated lines. */
+.pnl__sub--cap {
+  margin-top: 0.02em;
+  padding-left: calc(14px + 0.42em);
+}

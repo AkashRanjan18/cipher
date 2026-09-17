@@ -148,6 +148,7 @@ export function Positions({ denom }: { denom: Denom }) {
  */
 function PositionCard({
   symbol,
+  name,
   icon,
   qty,
   costBasis,
@@ -156,6 +157,7 @@ function PositionCard({
   denom,
 }: {
   symbol: string;
+  name: string;
   icon: string | null;
   qty: number;
   costBasis: number;
@@ -175,6 +177,8 @@ function PositionCard({
   const pnl = value === null ? null : value - invested;
   const pnlPct = pnl === null || invested <= 0 ? null : (pnl / invested) * 100;
   const down = pnl !== null && pnl < 0;
+  /* The coin's whole market cap, at the price this card is marked at. */
+  const cap = mark !== null && supply !== null ? supply * mark : null;
 
   /*
    * AVERAGE ENTRY IN WHATEVER THE CHART IS SPEAKING.
@@ -195,13 +199,35 @@ function PositionCard({
       <div className="pnl__top">
         <div className="pnl__col min-w-0">
           <div className="pnl__value">{value === null ? "—" : usd(value)}</div>
-          {/* The reference puts the holding under the value. The coin's mark
-              goes here too, because the column lists several and a card with
-              no name on it is unreadable the moment there are two. */}
+          {/*
+            * WHAT YOU HOLD, THEN WHAT IT IS WORTH AS A WHOLE.
+            *
+            * The reference puts one line here. Two, because they answer
+            * different questions: the first is your position, the second is
+            * the coin's own size, and a memecoin's cap is the number people
+            * actually quote it by — "I'm in 19M WIFOUT" means nothing without
+            * "and it's a $4M coin".
+            *
+            * The name rather than the ticker: "4.9745 Solana" reads as a
+            * sentence, "4.9745 SOL" reads as a tape, and this card has the
+            * width for it. The mark is here because the column lists several
+            * positions and an unnamed card stops working at two.
+            */}
           <div className="pnl__sub flex items-center gap-1.5">
             <CoinMark symbol={symbol} icon={icon} size={14} />
-            {units(qty)} {symbol}
+            <span className="truncate">
+              {units(qty)} {name}
+            </span>
           </div>
+          {/*
+            * LIVE, not the `fdv` the token payload was fetched with.
+            *
+            * supply × the same mark the value above is computed from, so the
+            * two numbers on this card can never be minutes apart — and a cap
+            * that updates while the position does not would be the more
+            * confusing of the two failures.
+            */}
+          {cap !== null && <div className="pnl__sub pnl__sub--cap">{compactUsd(cap)} MC</div>}
         </div>
         <div className="pnl__col pnl__col--right">
           <div className="pnl__value pnl__value--gain">
@@ -269,6 +295,7 @@ function Open({
         <PositionCard
           key={mint}
           symbol={meta[mint]?.symbol ?? mint}
+          name={meta[mint]?.name ?? meta[mint]?.symbol ?? mint}
           icon={meta[mint]?.icon ?? null}
           qty={p.qty}
           costBasis={p.costBasis}

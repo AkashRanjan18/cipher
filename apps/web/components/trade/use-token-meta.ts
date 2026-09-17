@@ -26,6 +26,14 @@ import type { TokenInfo } from "@/lib/chain/tokens";
  */
 export interface TokenMeta {
   symbol: string;
+  /**
+   * The coin's full name — "Solana", not "SOL".
+   *
+   * A holdings card has room for it and reads better with it: "4.9745 Solana"
+   * is a sentence and "4.9745 SOL" is a ticker tape. Falls back to the symbol
+   * when a token has no name worth printing, which is most of the chain.
+   */
+  name: string;
   icon: string | null;
   /**
    * Units in existence, so a price can be read as a market cap.
@@ -107,6 +115,11 @@ export function useTokenMeta(mints: string[]): Record<string, TokenMeta> {
         if (listed || t) {
           CACHE.set(mint, {
             symbol: listed?.symbol ?? t?.symbol ?? shortMint(mint),
+            /* Jupiter's `name` is often just the ticker again; only take it
+               when it actually says something different. */
+            name:
+              listed?.name ??
+              (t?.name && t.name !== t.symbol ? t.name : (t?.symbol ?? shortMint(mint))),
             icon: listed ? null : (t?.icon ?? null),
             supply: t?.fdv && t.priceUsd > 0 ? t.fdv / t.priceUsd : null,
           });
@@ -123,7 +136,8 @@ export function useTokenMeta(mints: string[]): Record<string, TokenMeta> {
 
   const out: Record<string, TokenMeta> = {};
   for (const mint of key ? key.split(",") : []) {
-    out[mint] = CACHE.get(mint) ?? { symbol: shortMint(mint), icon: null, supply: null };
+    out[mint] =
+      CACHE.get(mint) ?? { symbol: shortMint(mint), name: shortMint(mint), icon: null, supply: null };
   }
   return out;
 }
