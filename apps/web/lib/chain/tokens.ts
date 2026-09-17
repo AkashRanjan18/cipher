@@ -159,11 +159,6 @@ export interface TokenInfo {
   /** Jupiter's hosted icon. Null rather than a placeholder we invented. */
   icon: string | null;
   /**
-   * Tokens in existence. The denominator behind `fdv`, shown beside it so
-   * a reader can see what the valuation is a valuation OF.
-   */
-  totalSupply: number | null;
-  /**
    * The same measurements over four periods, for the activity panel.
    *
    * Null for a window Jupiter did not report — a token minted four minutes ago
@@ -460,7 +455,6 @@ export function fromJupiter(raw: Record<string, unknown>): TokenInfo {
     graduatedAt: raw.graduatedAt ? String(raw.graduatedAt) : null,
     dev: raw.dev ? String(raw.dev) : null,
     createdAt: raw.createdAt ? String(raw.createdAt) : null,
-    totalSupply: typeof raw.totalSupply === "number" ? raw.totalSupply : null,
     windows: {
       "5m": windowOf(raw.stats5m),
       "1h": windowOf(raw.stats1h),

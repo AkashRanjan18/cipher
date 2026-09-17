@@ -40,20 +40,6 @@ const LABEL: Record<WindowKey, string> = {
 const count = new Intl.NumberFormat("en-US");
 
 /**
- * Supply, in the shorthand people quote it in.
- *
- * Not `compactUsd` — this is a token count and a dollar sign on it would read
- * as a valuation, which is the number directly above it.
- */
-function supply(n: number): string {
-  if (n >= 1e12) return `${(n / 1e12).toFixed(2)}T`;
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
-  return count.format(Math.round(n));
-}
-
-/**
  * One two-sided bar: a green share and an orange share of the same row.
  *
  * The bar is the point rather than decoration. Two numbers side by side make
@@ -109,16 +95,6 @@ function Split({
         <i className="block rounded-full bg-up" style={{ flexGrow: leftValue || 1 }} />
         <i className="block rounded-full bg-down" style={{ flexGrow: rightValue || 1 }} />
       </div>
-    </div>
-  );
-}
-
-/** A plain key/value line for the facts that have no second side. */
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-2">
-      <dt className="text-[14px] text-ash">{label}</dt>
-      <dd className="text-[14px] font-semibold tabular-nums text-champagne">{value}</dd>
     </div>
   );
 }
@@ -265,14 +241,6 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
           Search on X
         </LinkChip>
       </div>
-
-      {/* ---- the facts with only one side ---- */}
-      <dl className="divide-y divide-hairline border-t border-hairline">
-        {w && <Fact label="Traders" value={count.format(w.traders)} />}
-        <Fact label="Holders" value={count.format(token.holderCount)} />
-        <Fact label="Liquidity" value={compactUsd(token.liquidityUsd)} />
-        <Fact label="Supply" value={token.totalSupply === null ? "—" : supply(token.totalSupply)} />
-      </dl>
     </section>
   );
 }

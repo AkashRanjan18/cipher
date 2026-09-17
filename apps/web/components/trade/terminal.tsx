@@ -23,7 +23,6 @@ import { MyTrades } from "./my-trades";
 import { Ticket } from "./ticket";
 import { AboutToken } from "./about-token";
 import { Sana, SanaMark } from "./sana";
-import { Flow } from "./flow";
 
 /**
  * The terminal shell.
@@ -807,8 +806,9 @@ function TerminalBody({
         {/*
           * ONE SCROLLER FOR THE WHOLE COLUMN, with its bar at the far right.
           *
-          * The ticket used to scroll inside itself while Flow sat pinned below
-          * it — two independent scroll regions stacked, and the bar appeared in
+          * The ticket used to scroll inside itself while a second panel sat
+          * pinned below it — two independent scroll regions stacked, and the
+          * bar appeared in
           * the middle of the page against the ticket's inner edge rather than
           * at the edge of the screen. fomo scrolls the entire right column as
           * one: ticket, then panels, then positions, one bar at the rightmost
@@ -830,7 +830,6 @@ function TerminalBody({
             * token behind it, so there is nothing to be about.
             */}
           {onChain && <AboutToken token={token} symbol={market.base} />}
-          <Flow candles={candles} last={last} />
         </aside>
           </div>
         </Scroller>

@@ -31,7 +31,6 @@ const BLANK = {
   /* Every window absent, which is what a token with no history looks like —
      null rather than zeroes, because "nothing traded" and "we do not know
      yet" are different claims and the panel renders them differently. */
-  totalSupply: null,
   windows: { "5m": null, "1h": null, "4h": null, "24h": null },
 };
 
