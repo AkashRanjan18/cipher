@@ -23,7 +23,7 @@ import type { Amount } from "@cipher/shared";
  */
 
 /** Below this many SOL the position is flat. Floating point never lands on 0. */
-const DUST = 1e-9;
+export const DUST = 1e-9;
 
 /**
  * A remainder worth less than this is a crumb, not a position.
@@ -38,7 +38,7 @@ const DUST = 1e-9;
  * and far below anything a person would call a position, so this can never
  * swallow size someone meant to keep.
  */
-const CRUMB_USD = 0.01;
+export const CRUMB_USD = 0.01;
 
 export interface Fill {
   id: string;

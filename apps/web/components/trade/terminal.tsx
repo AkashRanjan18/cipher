@@ -22,6 +22,7 @@ import { AccountMenu } from "@/components/auth/account-menu";
 import { MyTrades } from "./my-trades";
 import { Ticket } from "./ticket";
 import { AboutToken } from "./about-token";
+import { Positions } from "./positions";
 import { Sana, SanaMark } from "./sana";
 
 /**
@@ -863,6 +864,20 @@ function TerminalBody({
           */}
         <aside className="flex flex-col gap-2 self-start [&>*]:shrink-0">
           <Ticket price={last} symbol={symbol} market={market.base} depthUsd={depth} />
+          {/*
+            * DIRECTLY UNDER THE TICKET, and not gated on the open market.
+            *
+            * It is the only card in the column that is about YOUR money
+            * rather than about the coin on screen, which is why it sits
+            * closest to the thing that spends it — you press buy and the
+            * result appears immediately below the button.
+            *
+            * Unconditional, unlike About: holdings do not belong to the open
+            * market. Navigating from a coin you hold to one you do not must
+            * not make the position disappear, and a Binance major having no
+            * mint behind it says nothing about what is in the account.
+            */}
+          <Positions />
           {/*
             * Under the ticket, where fomo puts it: what the coin IS and who has
             * been trading it, read after deciding to look and before deciding
