@@ -526,7 +526,16 @@ body {
 
 .pnl__sub {
   margin-top: 0.12em;
-  font-size: 0.58em;
+  /*
+   * RAISED FROM THE REFERENCE'S 0.58/0.52/0.63.
+   *
+   * The reference is a 420px card; this one is 340px in the aside, and the
+   * secondary type came out genuinely small at that width. Everything is
+   * still a ratio of the 1em numeral, so the hierarchy is intact — the value
+   * leads, the sub-line follows, the footer sits under both — it is just less
+   * far apart.
+   */
+  font-size: 0.7em;
   font-weight: 500;
   line-height: 1.3;
   letter-spacing: -0.005em;
@@ -567,14 +576,14 @@ body {
   min-width: 0;
 }
 .pnl__label {
-  font-size: 0.52em;
+  font-size: 0.62em;
   font-weight: 500;
   letter-spacing: 0.002em;
   color: var(--muted);
   white-space: nowrap;
 }
 .pnl__stat {
-  font-size: 0.63em;
+  font-size: 0.75em;
   font-weight: 700;
   letter-spacing: -0.012em;
   color: var(--ink-2);
