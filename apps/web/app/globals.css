@@ -604,7 +604,12 @@ body {
   color: var(--muted);
   font-weight: 600;
 }
-/* The footer wraps rather than overflowing: a memecoin entry in cap terms
-   next to a six-figure invested does not fit a 340px card on one line, and
-   the reference's single row is what it should be whenever it does fit. */
-.pnl__foot { flex-wrap: wrap; row-gap: 0.18em; }
+/* The entry's two numbers stack, which is what keeps the footer to the
+   reference's single row: Invested stays in the bottom-right corner and the
+   cap goes under the price instead of pushing it out of the way. */
+.pnl__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}

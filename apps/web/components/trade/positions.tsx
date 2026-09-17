@@ -247,10 +247,16 @@ function PositionCard({
       <div className="pnl__rule" />
 
       <div className="pnl__foot">
+        {/* The cap stacks UNDER the entry price rather than beside it, so
+            "Invested" keeps the bottom-right corner the reference gives it.
+            Baseline alignment on the row means Invested lines up with the
+            price, not with the cap below it. */}
         <div className="pnl__pair">
           <span className="pnl__label">Avg. entry</span>
-          <span className="pnl__stat">{usd(costBasis)}</span>
-          {entryCap && <span className="pnl__stat pnl__stat--cap">{entryCap}</span>}
+          <span className="pnl__stack">
+            <span className="pnl__stat">{usd(costBasis)}</span>
+            {entryCap && <span className="pnl__stat pnl__stat--cap">{entryCap}</span>}
+          </span>
         </div>
         <div className="pnl__pair">
           <span className="pnl__label">Invested</span>
