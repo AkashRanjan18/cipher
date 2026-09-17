@@ -19,7 +19,7 @@ import { StatusBar } from "./status-bar";
 import { useMajors } from "./use-majors";
 import { Scroller } from "@/components/ui/scroller";
 import { AccountMenu } from "@/components/auth/account-menu";
-import { MyTrades } from "./my-trades";
+import { TokenTabs } from "./token-tabs";
 import { Ticket } from "./ticket";
 import { AboutToken } from "./about-token";
 import { Positions } from "./positions";
@@ -88,7 +88,7 @@ function TerminalBody({
   /*
    * Height of the fills panel, dragged by the divider above it.
    *
-   * Held here rather than inside MyTrades because the chart is its sibling —
+   * Held here rather than inside TokenTabs because the chart is its sibling —
    * the pixels the panel gains are pixels the chart loses, and a child cannot
    * resize its sibling. The chart is flex-1 and simply takes what is left.
    */
@@ -815,14 +815,18 @@ function TerminalBody({
               onDoubleClick={() => setLowerH(150)}
               role="separator"
               aria-orientation="horizontal"
-              aria-label="Resize trade history"
+              aria-label="Resize the holders and swaps panel"
               title="Drag to resize · double-click to reset"
               className="group flex h-2 shrink-0 cursor-row-resize touch-none items-center justify-center transition-colors hover:bg-raised"
             >
               <span className="h-[3px] w-8 rounded-full bg-line transition-colors group-hover:bg-ash" />
             </div>
             <div style={{ height: lowerH }} className="shrink-0 overflow-hidden">
-              <MyTrades />
+              {/* `symbol` IS the mint whenever a real token is open — that is
+                  what looksLikeMint() above decides — so a Binance major
+                  passes null and the tabs say there is nothing behind the
+                  chart rather than showing an empty table. */}
+              <TokenTabs token={token} symbol={market.base} mint={onChain ? symbol : null} />
             </div>
           </section>
         )}
@@ -865,12 +869,20 @@ function TerminalBody({
         <aside className="flex flex-col gap-2 self-start [&>*]:shrink-0">
           <Ticket price={last} symbol={symbol} market={market.base} depthUsd={depth} />
           {/*
-            * DIRECTLY UNDER THE TICKET, and not gated on the open market.
+            * Under the ticket, where fomo puts it: what the coin IS and who has
+            * been trading it, read after deciding to look and before deciding
+            * to buy. Only for a real mint — a Binance major has a chart and no
+            * token behind it, so there is nothing to be about.
+            */}
+          {onChain && <AboutToken token={token} symbol={market.base} />}
+          {/*
+            * LAST IN THE COLUMN, below About and its links.
             *
-            * It is the only card in the column that is about YOUR money
-            * rather than about the coin on screen, which is why it sits
-            * closest to the thing that spends it — you press buy and the
-            * result appears immediately below the button.
+            * The two cards above are both about the coin on screen — what it
+            * is, then where to go and read about it. This one is about YOUR
+            * money, and it is the only thing here that survives navigating to
+            * a different market, so it reads as the floor of the column
+            * rather than as another fact about the token.
             *
             * Unconditional, unlike About: holdings do not belong to the open
             * market. Navigating from a coin you hold to one you do not must
@@ -878,13 +890,6 @@ function TerminalBody({
             * mint behind it says nothing about what is in the account.
             */}
           <Positions />
-          {/*
-            * Under the ticket, where fomo puts it: what the coin IS and who has
-            * been trading it, read after deciding to look and before deciding
-            * to buy. Only for a real mint — a Binance major has a chart and no
-            * token behind it, so there is nothing to be about.
-            */}
-          {onChain && <AboutToken token={token} symbol={market.base} />}
         </aside>
           </div>
         </Scroller>

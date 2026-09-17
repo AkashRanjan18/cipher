@@ -65,7 +65,12 @@ export function ChartHeader({
 
         <div className="mr-1">
           <div className="flex items-center gap-1.5">
-            <h1 className="font-display text-[17px] font-bold leading-none tracking-tight">
+            {/* THE SANS, because the ticker is uppercase and Caacupe One draws its
+                capital A as a single-storey lowercase form: PAID renders "PaID"
+                and SANA renders "SaNa". Same reason the About heading uses it.
+                font-bold also went: the face is single-weight, so bold was
+                synthesised, which smeared the glyphs further. */}
+            <h1 className="font-sans text-[17px] font-bold leading-none tracking-tight">
               {market.base}
             </h1>
             <button

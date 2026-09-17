@@ -58,6 +58,30 @@ export function compact(n: number | null): string {
   return n.toFixed(2);
 }
 
+/**
+ * A QUANTITY OF TOKENS, which is not a quantity of dollars.
+ *
+ * `compact` was used for this and rounded 2.5064 SOL to "3 SOL" — it floors at
+ * `toFixed(0)` above 1, because it was written for market caps and chart axes
+ * where a decimal place on a billion is noise. On a holding it is a lie about
+ * how much you own, printed next to the price you paid for it.
+ *
+ * The split is at ten thousand. Below that the exact number fits and matters:
+ * five SOL is 5.0128 and the four decimals are real money. Above it nobody
+ * reads nineteen million to the unit, and "19.19M" is both shorter and just
+ * as true.
+ *
+ * `maximumFractionDigits` rather than toFixed, so trailing zeros never show —
+ * a round 5 prints "5", not "5.0000".
+ */
+export function units(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  if (n >= 10_000) return compact(n);
+  /* Six decimals under a dollar's worth for the same reason `price` uses
+     significant digits down there: 0.000003 and 0.000030 are a 10x apart. */
+  return n.toLocaleString("en-US", { maximumFractionDigits: n >= 1 ? 4 : 6 });
+}
+
 /** compact(), with a dollar sign. */
 export function compactUsd(n: number | null): string {
   if (n === null) return "—";

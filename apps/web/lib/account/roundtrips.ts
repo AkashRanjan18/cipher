@@ -68,7 +68,7 @@ interface Draft {
  * Every position that has been opened and closed, oldest first.
  *
  * Oldest first because that is the order the ledger wrote them in; the panel
- * reverses it, the way MyTrades does. A list that is already reversed cannot
+ * reverses it, the way the swaps table does. A list that is already reversed cannot
  * be usefully sorted any other way without being reversed back.
  */
 export function roundTrips(fills: Fill[]): RoundTrip[] {

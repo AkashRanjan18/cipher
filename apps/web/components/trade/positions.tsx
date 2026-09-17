@@ -5,7 +5,7 @@ import { usePaperAccount } from "@/lib/account/store";
 import { roundTrips, type RoundTrip } from "@/lib/account/roundtrips";
 import { baseSymbol, marketByMint } from "@/lib/chain/markets";
 import { useTriggers } from "@/lib/triggers/store";
-import { compact, pct, since, usd } from "@/lib/format";
+import { pct, since, units, usd } from "@/lib/format";
 import type { Amount, Rule } from "@cipher/shared";
 import { CoinMark } from "./coin-mark";
 import { useSolPrices } from "./sol-prices";
@@ -58,7 +58,7 @@ export function Positions() {
 
   const closed = useMemo(
     /* Newest first. The ledger is written forwards; a human reads it
-       backwards — the same inversion MyTrades makes. */
+       backwards — the same inversion the swaps table makes. */
     () => roundTrips(account.fills).reverse(),
     [account.fills],
   );
@@ -200,7 +200,7 @@ function Open({
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="truncate font-sans text-[11.5px] tabular-nums text-mute">
-                    {compact(p.qty)} {symbol}
+                    {units(p.qty)} {symbol}
                   </span>
                   <span
                     className={`shrink-0 font-sans text-[11.5px] font-semibold tabular-nums ${
@@ -244,7 +244,7 @@ function amountLabel(amount: Amount, base: string): string {
     case "usd":
       return `${usd(amount.value)} of ${base}`;
     case "tokens":
-      return `${compact(amount.value)} ${base}`;
+      return `${units(amount.value)} ${base}`;
     case "percentOfPosition":
       return amount.value === 100 ? `all of your ${base}` : `${amount.value}% of your ${base}`;
   }

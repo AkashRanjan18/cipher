@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { price, usd, compact, compactUsd, pct, since } from "../format.ts";
+import { compact, compactUsd, pct, price, since, units, usd } from "../format.ts";
 
 test("prices never render in scientific notation", () => {
   /*
@@ -70,4 +70,30 @@ test("a sub-dollar PRICE is never abbreviated", () => {
    */
   assert.equal(usd(0.0000032), "$0.0000032");
   assert.equal(compactUsd(0.0000032), "$0.00");
+});
+
+/*
+ * `units` exists because `compact` was doing this job and rounding it away:
+ * a sell of 2.5064 SOL rendered as "3 SOL" in the swaps table, next to the
+ * price it was sold at. These pin the boundary it must not cross again.
+ */
+test("units keeps the decimals that are money", () => {
+  assert.equal(units(5.012819623), "5.0128");
+  assert.equal(units(2.5064), "2.5064");
+  // A round number does not grow a tail.
+  assert.equal(units(5), "5");
+  // Dust under a dollar's worth keeps enough digits to tell a 10x apart.
+  assert.equal(units(0.000003), "0.000003");
+});
+
+test("units abbreviates only where the units stop mattering", () => {
+  assert.equal(units(19_188.44), "19.2K");
+  assert.equal(units(19_700_000), "19.70M");
+  // Just under the boundary is still exact.
+  assert.equal(units(9_999.5), "9,999.5");
+});
+
+test("units refuses to print a quantity it does not have", () => {
+  assert.equal(units(0), "0");
+  assert.equal(units(NaN), "0");
 });

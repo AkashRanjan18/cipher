@@ -20,10 +20,17 @@ export type Interval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 /**
  * What a paper account opens with.
  *
- * ZERO as of 17 Sep 2026, on the user's instruction. The consequence is real
- * and deliberate: with no balance every buy refuses with "that needs $X and
- * you have $0.00" until money is put in, so the terminal opens as an empty
- * account rather than a funded demo.
+ * $10,000 as of 17 Sep 2026, on the user's instruction. It was briefly zero
+ * earlier the same day — the terminal opened as an empty account and every
+ * buy refused with "that needs $X and you have $0.00", which is honest and
+ * makes the product impossible to look at. A funded paper account is the
+ * demo; the money being fake is the only fiction in it.
+ *
+ * TYPED `number`, NOT ITS OWN VALUE. As a bare literal TypeScript narrows the
+ * constant to `10000`, and the header's own `OPENING_DEPOSIT === 0` check —
+ * which decides between "Wipe to $0?" and "Wipe to $10k?" — became a
+ * comparison between two literals with no overlap and failed to compile. A
+ * tunable constant whose type changes when you tune it is not tunable.
  *
  * IT LIVES HERE BECAUSE IT WAS DEFINED TWICE. `lib/db/accounts.ts` had its own
  * copy carrying the comment "mirrored from the client store", which is the
@@ -33,4 +40,4 @@ export type Interval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
  * client component and a server route can import from without one of them
  * dragging in the other's dependencies.
  */
-export const OPENING_DEPOSIT = 0;
+export const OPENING_DEPOSIT: number = 10_000;

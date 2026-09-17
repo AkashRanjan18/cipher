@@ -540,7 +540,10 @@ export function Ticket({
          * dead end. Disabled it reads as the surface it sits on, which is what
          * the reference does and what makes the live state mean something.
          */
-        className={`h-12 rounded-xl font-display text-[17px] transition-transform active:scale-[0.985] disabled:cursor-not-allowed ${
+        /* font-sans: this button prints the ticker, and the display face
+           renders a capital A as a lowercase one — "Buy PAID" came out as
+           "Buy PaID". See chart-header.tsx. */
+        className={`h-12 rounded-xl font-sans text-[17px] font-semibold transition-transform active:scale-[0.985] disabled:cursor-not-allowed ${
           !tradable || !price || !!blocked || value <= 0 || (limiting && limitPrice <= 0)
             ? "border border-line bg-slate text-ash"
             : buying
