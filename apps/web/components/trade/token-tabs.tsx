@@ -1,35 +1,36 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import { usePaperAccount } from "@/lib/account/store";
-import { allInPrice, positionOf, type Fill } from "@/lib/account/paper";
+import { positionOf } from "@/lib/account/paper";
 import type { TokenInfo } from "@/lib/chain/tokens";
 import { compact, compactUsd, since, units, usd } from "@/lib/format";
 import { useMark } from "./sol-prices";
 import { useNow } from "./use-now";
 
 /**
- * THE PANEL UNDER THE CHART: who else holds this, and what you did with it.
+ * THE PANEL UNDER THE CHART: who holds this coin.
  *
- * Built to the table the user supplied — its tab strip, its column rhythm and
- * its two-line numeric stack, where a cell is a bold figure with a quieter one
+ * Built to the table the user supplied — its bar, its column rhythm and its
+ * two-line numeric stack, where a cell is a bold figure with a quieter one
  * beneath it. The CSS lives in globals.css under `.holders`.
  *
+ * ONE TABLE, NO TABS. It briefly carried Holders, Swaps and a disabled Thesis
+ * alongside the reference's; the user removed the last two. Which means the
+ * fills that used to live under this chart now appear nowhere — the Positions
+ * card's Closed tab has the round trips and the alerts panel has the rules,
+ * but a single fill has no home on screen. Worth knowing; not a bug.
+ *
  * THE COLUMNS THAT ARE NOT HERE. The reference's Trader column carries an
- * avatar, a handle and an average hold time; its last column carries a written
- * thesis and a like count, and the strip has "Thesis only" and "Friends only"
- * filters. All of that is fomo's social layer — real people with real
- * positions on a product that has users. cipher has none, so those rows would
- * be invented people with invented P&L, which is the rule that deleted the
- * feed, the flocks and the fabricated leaderboard.
+ * avatar and a handle; its last column carries a written thesis and a like
+ * count, and its bar has "Thesis only" and "Friends only" filters. All of
+ * that is fomo's social layer — real people with real positions on a product
+ * that has users. cipher has none, so those rows would be invented people
+ * with invented P&L, which is the rule that deleted the feed, the flocks and
+ * the fabricated leaderboard.
  *
- * What survives is the shape, filled with what is true:
- *
- *   HOLDERS   the token's real concentration, and one Trader row — yours —
- *             when you hold it. The schema is the reference's exactly, so the
- *             day other wallets can be priced they are more rows in this
- *             table and nothing here has to change.
- *   SWAPS     your fills in THIS token, in the same grammar.
+ * So the schema is the reference's exactly and holds the one row that is
+ * true: yours. The day other wallets can be priced they are more rows in this
+ * table and nothing here has to change.
  *
  * WHY THERE IS NO WALLET LIST YET. `getTokenLargestAccounts` would give the
  * top twenty addresses, and Solana's public RPC answers that specific method
@@ -41,9 +42,6 @@ import { useNow } from "./use-now";
  * P&L and entry columns stay empty until an indexer can derive them, because
  * a holder's cost basis cannot be inferred from a balance.
  */
-
-type Tab = "holders" | "swaps";
-
 export function TokenTabs({
   token,
   symbol,
@@ -55,94 +53,38 @@ export function TokenTabs({
   /** Null when a Binance major is open: a chart with no token behind it. */
   mint: string | null;
 }) {
-  const [tab, setTab] = useState<Tab>("holders");
-  const { account } = usePaperAccount();
-
-  /* This token's fills, not the account's. The panel sits under this chart. */
-  const swaps = useMemo(
-    () => (mint ? account.fills.filter((f) => f.mint === mint) : []),
-    [account.fills, mint],
-  );
-
-  const name = token?.symbol || symbol;
-
   return (
     <section className="holders">
       <div className="holders__bar">
-        <div
-          className="holders__tabs"
-          role="tablist"
-          aria-label="Token activity"
-        >
-          <TabButton
-            on={tab === "holders"}
-            onClick={() => setTab("holders")}
-            label="Holders"
-          >
-            {token && token.holderCount > 0
-              ? `(${compact(token.holderCount)})`
-              : null}
-          </TabButton>
-          <TabButton
-            on={tab === "swaps"}
-            onClick={() => setTab("swaps")}
-            label="Swaps"
-          >
-            {swaps.length > 0 ? `(${swaps.length})` : null}
-          </TabButton>
-          {/*
-           * THESIS IS DISABLED, NOT DELETED, and the reference is why: it
-           * greys the tab out too. A thesis is something a user writes about
-           * a coin, so the tab is real and its contents are not yet — which
-           * is exactly what a disabled control says. A tab that is simply
-           * absent says the feature was never considered.
-           */}
-          <button
-            className="tab"
-            role="tab"
-            aria-selected={false}
-            disabled
-            title="Arrives with profiles"
-          >
-            Thesis
-          </button>
-        </div>
+        {/*
+         * A HEADING, NOT A TABLIST.
+         *
+         * Swaps and Thesis are gone on the user's instruction, and one tab is
+         * not a choice — the rule in CLAUDE.md that removed the single-item
+         * tab row from the panel this replaced, and that removed the
+         * Price/MCap control's first version. A tablist with one item is a
+         * control that cannot be operated; a label is honest about being a
+         * label.
+         *
+         * The count stays on it, because "Holders 3.82M" is the one fact
+         * about this table that is true before you have read a row of it.
+         */}
+        <h2 className="tab" aria-current="true">
+          Holders{" "}
+          {token && token.holderCount > 0 && (
+            <span className="count">({compact(token.holderCount)})</span>
+          )}
+        </h2>
         {/* Where the reference puts its social filters. Those would be two
-            controls that do nothing, so this says where the numbers come
+            controls that do nothing, so this says where the number comes
             from instead. */}
-        <div className="holders__aside">
-          {tab === "holders"
-            ? "Concentration from Jupiter"
-            : `Your fills in ${name}`}
-        </div>
+        <div className="holders__aside">Concentration from Jupiter</div>
       </div>
 
       <div className="holders__scroll">
-        {tab === "holders" ? (
-          <Holders token={token} symbol={symbol} mint={mint} />
-        ) : (
-          <Swaps fills={swaps} symbol={name} mint={mint} />
-        )}
+        <Holders token={token} symbol={symbol} mint={mint} />
       </div>
     </section>
-  );
-}
-
-function TabButton({
-  on,
-  onClick,
-  label,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button className="tab" role="tab" aria-selected={on} onClick={onClick}>
-      {label} {children && <span className="count">{children}</span>}
-    </button>
   );
 }
 
@@ -329,150 +271,6 @@ function Holders({
             </td>
           </tr>
         )}
-      </tbody>
-    </table>
-  );
-}
-
-function Swaps({
-  fills,
-  symbol,
-  mint,
-}: {
-  fills: Fill[];
-  symbol: string;
-  mint: string | null;
-}) {
-  const { account, hydrated } = usePaperAccount();
-  const nowMs = useNow(1000);
-
-  if (!hydrated) return <p className="empty">Reading your account…</p>;
-  if (!mint)
-    return (
-      <p className="empty">
-        {symbol} is chart-only — there is nothing here to swap.
-      </p>
-    );
-  if (fills.length === 0) {
-    return (
-      <p className="empty">
-        You have not traded {symbol} yet. You have {usd(account.usdc)} of paper
-        money — buy some on the right, or just tell Sana what you want.
-      </p>
-    );
-  }
-
-  /* Newest first. The ledger appends because it is written forwards; a human
-     reads it backwards. */
-  const rows = [...fills].reverse();
-
-  return (
-    <table>
-      <colgroup>
-        <col style={{ width: "28%" }} />
-        <col style={{ width: "18%" }} />
-        <col style={{ width: "18%" }} />
-        <col style={{ width: "18%" }} />
-        <col style={{ width: "18%" }} />
-      </colgroup>
-      <thead>
-        <tr>
-          <th scope="col">Trade</th>
-          <th scope="col" className="num">
-            Value
-          </th>
-          <th scope="col" className="num">
-            Size
-          </th>
-          <th scope="col" className="num">
-            Price
-          </th>
-          <th scope="col" className="num">
-            Booked
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((f) => {
-          const buy = f.side === "buy";
-          /* All-in, so size × price is the cash that actually moved. */
-          const px = allInPrice(f);
-          const cash = f.qty * px;
-          const won = f.realisedUsd >= 0;
-          return (
-            <tr key={f.id}>
-              <td>
-                <div className="trader">
-                  {/*
-                   * The side IS the identity of a swap, so it takes the slot
-                   * the reference gives a trader's avatar. The same two
-                   * colours the candles use — there is nothing to learn.
-                   */}
-                  <span
-                    className="avatar"
-                    style={{
-                      background: buy
-                        ? "var(--color-up-soft)"
-                        : "var(--color-down-soft)",
-                      color: buy ? "var(--color-up)" : "var(--color-down)",
-                      fontSize: "12px",
-                    }}
-                  >
-                    {buy ? "Buy" : "Sell"}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="trader__name">
-                      {buy ? "Bought" : "Sold"} {symbol}
-                      {/* Placed by Sana rather than by the ticket. */}
-                      {f.source === "sana" && (
-                        <span style={{ color: "var(--h-th)" }}> ✦</span>
-                      )}
-                    </span>
-                    <span className="trader__hold">
-                      <Clock />
-                      {nowMs === null ? "—" : `${since(f.ts, nowMs)} ago`}
-                    </span>
-                  </span>
-                </div>
-              </td>
-              <td className="num">
-                <div className="v">{usd(cash)}</div>
-                {f.squawk && <div className="s truncate">{f.squawk}</div>}
-              </td>
-              <td className="num">
-                <div className="v">{units(f.qty)}</div>
-                <div className="s">{symbol}</div>
-              </td>
-              <td className="num">
-                <div className="v">{usd(px)}</div>
-                <div className="s">fee {usd(f.feeUsd)}</div>
-              </td>
-              <td className="num">
-                {/* Only a sell books anything. A buy shows a dash rather than
-                    "$0.00", which reads as a trade that made no money. */}
-                {buy ? (
-                  <div className="v" style={{ color: "var(--h-th)" }}>
-                    —
-                  </div>
-                ) : (
-                  <>
-                    <div className={`v ${won ? "up" : "down"}`}>
-                      {won ? "+" : "−"}
-                      {usd(Math.abs(f.realisedUsd))}
-                    </div>
-                    <div className={`s ${won ? "up" : "down"}`}>
-                      <Caret />
-                      {Math.abs(
-                        cash > 0 ? (f.realisedUsd / cash) * 100 : 0,
-                      ).toFixed(2)}
-                      %
-                    </div>
-                  </>
-                )}
-              </td>
-            </tr>
-          );
-        })}
       </tbody>
     </table>
   );
