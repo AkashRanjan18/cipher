@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { usePaperAccount } from "@/lib/account/store";
 import { allInPrice, positionOf, type Fill } from "@/lib/account/paper";
-import { risks, type TokenInfo } from "@/lib/chain/tokens";
+import type { TokenInfo } from "@/lib/chain/tokens";
 import { compact, compactUsd, since, units, usd } from "@/lib/format";
 import { useMark } from "./sol-prices";
 import { useNow } from "./use-now";
@@ -69,20 +69,34 @@ export function TokenTabs({
   return (
     <section className="holders">
       <div className="holders__bar">
-        <div className="holders__tabs" role="tablist" aria-label="Token activity">
-          <TabButton on={tab === "holders"} onClick={() => setTab("holders")} label="Holders">
-            {token && token.holderCount > 0 ? `(${compact(token.holderCount)})` : null}
+        <div
+          className="holders__tabs"
+          role="tablist"
+          aria-label="Token activity"
+        >
+          <TabButton
+            on={tab === "holders"}
+            onClick={() => setTab("holders")}
+            label="Holders"
+          >
+            {token && token.holderCount > 0
+              ? `(${compact(token.holderCount)})`
+              : null}
           </TabButton>
-          <TabButton on={tab === "swaps"} onClick={() => setTab("swaps")} label="Swaps">
+          <TabButton
+            on={tab === "swaps"}
+            onClick={() => setTab("swaps")}
+            label="Swaps"
+          >
             {swaps.length > 0 ? `(${swaps.length})` : null}
           </TabButton>
           {/*
-            * THESIS IS DISABLED, NOT DELETED, and the reference is why: it
-            * greys the tab out too. A thesis is something a user writes about
-            * a coin, so the tab is real and its contents are not yet — which
-            * is exactly what a disabled control says. A tab that is simply
-            * absent says the feature was never considered.
-            */}
+           * THESIS IS DISABLED, NOT DELETED, and the reference is why: it
+           * greys the tab out too. A thesis is something a user writes about
+           * a coin, so the tab is real and its contents are not yet — which
+           * is exactly what a disabled control says. A tab that is simply
+           * absent says the feature was never considered.
+           */}
           <button
             className="tab"
             role="tab"
@@ -97,7 +111,9 @@ export function TokenTabs({
             controls that do nothing, so this says where the numbers come
             from instead. */}
         <div className="holders__aside">
-          {tab === "holders" ? "Concentration from Jupiter" : `Your fills in ${name}`}
+          {tab === "holders"
+            ? "Concentration from Jupiter"
+            : `Your fills in ${name}`}
         </div>
       </div>
 
@@ -133,7 +149,12 @@ function TabButton({
 /** The reference's caret: one shape, rotated by CSS for the down case. */
 function Caret() {
   return (
-    <svg className="caret" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+    <svg
+      className="caret"
+      viewBox="0 0 10 10"
+      fill="currentColor"
+      aria-hidden="true"
+    >
       <path d="M5 1.2 9.2 8.4H.8z" />
     </svg>
   );
@@ -173,7 +194,8 @@ function Holders({
   if (!mint) {
     return (
       <p className="empty">
-        {symbol} is a chart, not a token — there is no mint behind it and so nobody holds it.
+        {symbol} is a chart, not a token — there is no mint behind it and so
+        nobody holds it.
       </p>
     );
   }
@@ -187,9 +209,8 @@ function Holders({
    */
   if (!hydrated) return <p className="empty">Reading your account…</p>;
 
-  const top = token.audit?.topHoldersPercentage ?? null;
-  const warnings = risks(token);
-  const supply = token.fdv && token.priceUsd > 0 ? token.fdv / token.priceUsd : null;
+  const supply =
+    token.fdv && token.priceUsd > 0 ? token.fdv / token.priceUsd : null;
 
   /* Your own row. Real, and the only one that can be priced today. */
   const pos = positionOf(account, mint);
@@ -206,169 +227,137 @@ function Holders({
   /* The first buy of the position still open — "how long have you been in
      this", which is what the reference's hold time says. */
   const openedAt = held
-    ? (account.fills.find((f) => f.mint === mint && f.side === "buy")?.ts ?? null)
+    ? (account.fills.find((f) => f.mint === mint && f.side === "buy")?.ts ??
+      null)
     : null;
 
   return (
-    <>
-      <table>
-        <colgroup>
-          <col style={{ width: "28%" }} />
-          <col style={{ width: "18%" }} />
-          <col style={{ width: "18%" }} />
-          <col style={{ width: "18%" }} />
-          <col style={{ width: "18%" }} />
-        </colgroup>
-        <thead>
+    <table>
+      <colgroup>
+        <col style={{ width: "28%" }} />
+        <col style={{ width: "18%" }} />
+        <col style={{ width: "18%" }} />
+        <col style={{ width: "18%" }} />
+        <col style={{ width: "18%" }} />
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Trader</th>
+          <th scope="col" className="num">
+            Invested
+          </th>
+          <th scope="col" className="num">
+            Position
+          </th>
+          <th scope="col" className="num">
+            PnL
+          </th>
+          <th scope="col" className="num">
+            Avg. entry
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {held ? (
           <tr>
-            <th scope="col">Trader</th>
-            <th scope="col" className="num">
-              Invested
-            </th>
-            <th scope="col" className="num">
-              Position
-            </th>
-            <th scope="col" className="num">
-              PnL
-            </th>
-            <th scope="col" className="num">
-              Avg. entry
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {held ? (
-            <tr>
-              <td>
-                <div className="trader">
-                  {/*
-                    * The accent, because accent means "yours" — the one token
-                    * in the palette about ownership rather than direction.
-                    * The reference hashes a gradient per handle; there is one
-                    * trader in this table and it is you.
-                    */}
-                  <span
-                    className="avatar"
-                    style={{ background: "var(--color-accent)", color: "var(--color-ink)", fontSize: "12px" }}
-                  >
-                    You
+            <td>
+              <div className="trader">
+                {/*
+                 * The accent, because accent means "yours" — the one token
+                 * in the palette about ownership rather than direction.
+                 * The reference hashes a gradient per handle; there is one
+                 * trader in this table and it is you.
+                 */}
+                <span
+                  className="avatar"
+                  style={{
+                    background: "var(--color-accent)",
+                    color: "var(--color-ink)",
+                    fontSize: "12px",
+                  }}
+                >
+                  You
+                </span>
+                <span>
+                  <span className="trader__name">Your position</span>
+                  <span className="trader__hold">
+                    <Clock />
+                    {openedAt && now
+                      ? `${since(openedAt, now)} held`
+                      : "just opened"}
                   </span>
-                  <span>
-                    <span className="trader__name">Your position</span>
-                    <span className="trader__hold">
-                      <Clock />
-                      {openedAt && now ? `${since(openedAt, now)} held` : "just opened"}
-                    </span>
-                  </span>
-                </div>
-              </td>
-              <td className="num">
-                <div className="v">{usd(invested)}</div>
-              </td>
-              <td className="num">
-                <div className="v">{usd(value)}</div>
+                </span>
+              </div>
+            </td>
+            <td className="num">
+              <div className="v">{usd(invested)}</div>
+            </td>
+            <td className="num">
+              <div className="v">{usd(value)}</div>
+              <div className="s">
+                {units(pos.qty)} {token.symbol || symbol}
+              </div>
+            </td>
+            <td className="num">
+              <div className={`v ${down ? "down" : "up"}`}>
+                {down ? "−" : "+"}
+                {usd(Math.abs(pnl))}
+              </div>
+              <div className={`s ${down ? "down" : "up"}`}>
+                <Caret />
+                {Math.abs(pnlPct).toFixed(2)}%
+              </div>
+            </td>
+            <td className="num">
+              <div className="v">{usd(pos.costBasis)}</div>
+              {supply !== null && (
                 <div className="s">
-                  {units(pos.qty)} {token.symbol || symbol}
+                  {compactUsd(pos.costBasis * supply)}{" "}
+                  <span className="unit">MC</span>
                 </div>
-              </td>
-              <td className="num">
-                <div className={`v ${down ? "down" : "up"}`}>
-                  {down ? "−" : "+"}
-                  {usd(Math.abs(pnl))}
-                </div>
-                <div className={`s ${down ? "down" : "up"}`}>
-                  <Caret />
-                  {Math.abs(pnlPct).toFixed(2)}%
-                </div>
-              </td>
-              <td className="num">
-                <div className="v">{usd(pos.costBasis)}</div>
-                {supply !== null && (
-                  <div className="s">
-                    {compactUsd(pos.costBasis * supply)} <span className="unit">MC</span>
-                  </div>
-                )}
-              </td>
-            </tr>
-          ) : (
-            <tr>
-              <td colSpan={5}>
-                <p className="empty">
-                  You do not hold {token.symbol || symbol}. Buy some and your position appears
-                  here, in the same columns everyone else&rsquo;s will.
-                </p>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-      {top !== null && (
-        <div className="flex flex-col gap-1 px-[18px] pb-3">
-          <div className="flex items-baseline justify-between text-[13px]">
-            <span style={{ color: "var(--h-ink-2)" }}>
-              <b className="font-semibold" style={{ color: "var(--h-ink)" }}>
-                {top.toFixed(1)}%
-              </b>{" "}
-              held by the top wallets
-            </span>
-            <span style={{ color: "var(--h-th)" }}>{(100 - top).toFixed(1)}% everyone else</span>
-          </div>
-          <div className="flex h-[7px] gap-[5px]">
-            <i
-              className={`block rounded-full ${top > 50 ? "bg-down" : "bg-accent"}`}
-              style={{ flexGrow: top || 1 }}
-            />
-            <i className="block rounded-full bg-raised" style={{ flexGrow: 100 - top || 1 }} />
-          </div>
-        </div>
-      )}
-
-      {warnings.length > 0 && (
-        <ul className="flex flex-col gap-1 px-[18px] pb-3">
-          {warnings.map((w) => (
-            <li
-              key={w}
-              className="flex gap-1.5 text-[13px] leading-snug"
-              style={{ color: "var(--h-ink-2)" }}
-            >
-              <span aria-hidden className="shrink-0 text-down">
-                !
-              </span>
-              {w}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/*
-        * The missing rows, named rather than left as a blank space. An empty
-        * state that explains itself beats a filled one that lies — and this
-        * one doubles as the to-do list.
-        */}
-      <p className="px-[18px] pb-[18px] text-[12px] leading-snug" style={{ color: "var(--h-th)" }}>
-        Other wallets need a Solana RPC key — the public endpoint refuses{" "}
-        <code className="font-mono text-[11px]">getTokenLargestAccounts</code> for keyless
-        callers. Their P&amp;L and entry need an indexer on top of that, and stay out until they
-        can be derived rather than guessed.
-      </p>
-    </>
+              )}
+            </td>
+          </tr>
+        ) : (
+          <tr>
+            <td colSpan={5}>
+              <p className="empty">
+                You do not hold {token.symbol || symbol}. Buy some and your
+                position appears here, in the same columns everyone else&rsquo;s
+                will.
+              </p>
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
   );
 }
 
-/* ---------------------------------------------------------------- swaps --- */
-
-function Swaps({ fills, symbol, mint }: { fills: Fill[]; symbol: string; mint: string | null }) {
+function Swaps({
+  fills,
+  symbol,
+  mint,
+}: {
+  fills: Fill[];
+  symbol: string;
+  mint: string | null;
+}) {
   const { account, hydrated } = usePaperAccount();
   const nowMs = useNow(1000);
 
   if (!hydrated) return <p className="empty">Reading your account…</p>;
-  if (!mint) return <p className="empty">{symbol} is chart-only — there is nothing here to swap.</p>;
+  if (!mint)
+    return (
+      <p className="empty">
+        {symbol} is chart-only — there is nothing here to swap.
+      </p>
+    );
   if (fills.length === 0) {
     return (
       <p className="empty">
-        You have not traded {symbol} yet. You have {usd(account.usdc)} of paper money — buy some
-        on the right, or just tell Sana what you want.
+        You have not traded {symbol} yet. You have {usd(account.usdc)} of paper
+        money — buy some on the right, or just tell Sana what you want.
       </p>
     );
   }
@@ -415,14 +404,16 @@ function Swaps({ fills, symbol, mint }: { fills: Fill[]; symbol: string; mint: s
               <td>
                 <div className="trader">
                   {/*
-                    * The side IS the identity of a swap, so it takes the slot
-                    * the reference gives a trader's avatar. The same two
-                    * colours the candles use — there is nothing to learn.
-                    */}
+                   * The side IS the identity of a swap, so it takes the slot
+                   * the reference gives a trader's avatar. The same two
+                   * colours the candles use — there is nothing to learn.
+                   */}
                   <span
                     className="avatar"
                     style={{
-                      background: buy ? "var(--color-up-soft)" : "var(--color-down-soft)",
+                      background: buy
+                        ? "var(--color-up-soft)"
+                        : "var(--color-down-soft)",
                       color: buy ? "var(--color-up)" : "var(--color-down)",
                       fontSize: "12px",
                     }}
@@ -433,7 +424,9 @@ function Swaps({ fills, symbol, mint }: { fills: Fill[]; symbol: string; mint: s
                     <span className="trader__name">
                       {buy ? "Bought" : "Sold"} {symbol}
                       {/* Placed by Sana rather than by the ticket. */}
-                      {f.source === "sana" && <span style={{ color: "var(--h-th)" }}> ✦</span>}
+                      {f.source === "sana" && (
+                        <span style={{ color: "var(--h-th)" }}> ✦</span>
+                      )}
                     </span>
                     <span className="trader__hold">
                       <Clock />
@@ -469,7 +462,10 @@ function Swaps({ fills, symbol, mint }: { fills: Fill[]; symbol: string; mint: s
                     </div>
                     <div className={`s ${won ? "up" : "down"}`}>
                       <Caret />
-                      {Math.abs(cash > 0 ? (f.realisedUsd / cash) * 100 : 0).toFixed(2)}%
+                      {Math.abs(
+                        cash > 0 ? (f.realisedUsd / cash) * 100 : 0,
+                      ).toFixed(2)}
+                      %
                     </div>
                   </>
                 )}
