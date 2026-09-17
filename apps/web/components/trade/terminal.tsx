@@ -822,22 +822,22 @@ function TerminalBody({
           */}
         {/* No scroller of its own any more — it moves with the region. */}
         {/*
-          * PINNED, AND NO LONGER STRETCHED.
+          * NOT STRETCHED, AND NOT PINNED EITHER.
           *
-          * The column reads as needing a scroll to see all of it, and it never
-          * did: measured, the ticket and the About card come to 619px inside a
-          * 614px region. The 761px the aside reported was the CHART COLUMN's
-          * height — chart 500, Sana 85, fills 160 — arriving through
-          * `align-items: stretch`, which sizes a flex child to its tallest
-          * sibling whatever its own content wants.
+          * `self-start` is doing the work. Without it the aside inherits the
+          * CHART COLUMN's height through `align-items: stretch` — 761px of
+          * chart, Sana and fills — and reads as needing a scroll when its own
+          * content is 609px and fits the 614px region with room to spare. The
+          * empty 150px underneath was the whole of the problem.
           *
-          * `self-start` stops the stretching, so the aside is its content and
-          * nothing more. `sticky top-0` keeps it there while the chart column
-          * scrolls past it — which is the ask exactly: the scrollbar stays and
-          * belongs to the chart side, and the panel is whole without touching
-          * it.
+          * It was briefly `sticky top-0` as well, which held it still while
+          * the chart column scrolled past. That is not how fomo behaves:
+          * scrolling there moves the right column with the page until it runs
+          * out and leaves space, while the market list on the far left — its
+          * own scroll region, a sibling of this one — does not move at all.
+          * cipher already had the second half right; this is the first.
           */}
-        <aside className="no-scrollbar sticky top-0 flex max-h-[calc(100dvh-7.25rem)] flex-col gap-2 self-start overflow-y-auto [&>*]:shrink-0">
+        <aside className="flex flex-col gap-2 self-start [&>*]:shrink-0">
           <Ticket price={last} symbol={symbol} market={market.base} depthUsd={depth} />
           {/*
             * Under the ticket, where fomo puts it: what the coin IS and who has

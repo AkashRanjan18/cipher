@@ -30,51 +30,64 @@ export default async function Home({
   if (q.privy_oauth_code && !q.privy_oauth_error) return <SignInHandoff />;
 
   return (
-    <section className="relative flex min-h-dvh flex-col overflow-hidden">
-      <video
-        className="hero-video absolute inset-0 h-full w-full object-cover"
-        autoPlay
-        muted
-        loop
-        playsInline
-        poster="/hero-poster.jpg"
-      >
-        <source src="/hero.mp4" type="video/mp4" />
-      </video>
+    <section className="landing relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-32 text-center">
+      {/*
+        * React 19 hoists these into <head>, so the landing carries its own
+        * typeface without the root layout — and therefore the terminal —
+        * paying for a request it never uses.
+        */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..800&display=swap"
+      />
 
-      {/* Fallback ground, visible until the video lands. */}
-      <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[#171334] via-ink to-black" />
+      {/*
+        * THE STREET, as one file rather than as markup.
+        *
+        * It is 155KB of SVG — a hundred and fifty buildings, lamps and leaves —
+        * and inlining that into the component would put every coordinate into
+        * the HTML of a page whose job is to load fast. As an <img> it is a
+        * separate, cacheable, gzip-friendly request that the browser can paint
+        * independently, and the file stays readable as a file.
+        *
+        * `alt=""` because it is decoration: the page says what cipher is in
+        * words directly underneath, and a screen reader narrating a streetscape
+        * would only get in the way of that.
+        */}
+      <img src="/hero.svg" alt="" className="landing-scene" />
+      <div className="landing-scrim" />
 
-      {/* Scrim — video brightness swings frame to frame, and without this the
-          wordmark vanishes whenever something bright crosses centre. */}
-      <div className="absolute inset-0 bg-gradient-to-b from-ink/60 via-ink/35 to-ink" />
-
-      <header className="relative z-10 flex items-center justify-between p-6 sm:p-8">
-        <span className="font-display text-2xl lowercase">cipher</span>
-        <AuthButton variant="ghost" label="Log in" />
-      </header>
-
-      <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 pb-24 text-center">
-        {/* Caacupé One has one weight — never add font-light or font-bold
-            here, the browser will fake it and it looks wrong. */}
-        <h1 className="font-display text-[clamp(4.5rem,17vw,12rem)] leading-none text-champagne">
+      <nav className="absolute inset-x-0 top-[clamp(18px,3vh,30px)] z-10 flex items-center justify-between px-[clamp(18px,3.2vw,46px)]">
+        <span className="landing-serif text-[30px] font-bold leading-none tracking-[-0.02em] text-white">
           cipher
-        </h1>
+        </span>
+        {/* The real Privy button, not a link. Sizing only, so the header's own
+            copy of this button is untouched. */}
+        <AuthButton variant="ghost" label="Log in" className="h-11 px-[26px] text-[15px]" />
+      </nav>
 
-        <p className="mt-6 font-display text-3xl leading-tight sm:text-5xl">
+      <main className="relative z-10 flex flex-col items-center">
+        <h1 className="landing-serif landing-wordmark font-bold text-white">cipher</h1>
+
+        <p className="landing-serif landing-tagline mt-[clamp(24px,4vh,46px)] font-medium text-[#fbf6ec]">
           From thoughts to trade.
         </p>
 
-        <p className="mt-5 max-w-lg font-sans text-base text-ash sm:text-lg">
-          Type what you want. We&rsquo;ll handle the rest — and so will your
-          friends.
+        <p className="landing-sub mt-5 max-w-[540px] font-sans text-[clamp(1rem,2.2vw,19px)] leading-[1.55] text-[#dde5f0]">
+          Type what you want. We&rsquo;ll handle the rest — and so will your friends.
         </p>
 
-        <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
-          <AuthButton variant="primary" label="Start trading" />
+        <div className="mt-[38px] flex flex-col items-center gap-3.5 sm:flex-row">
+          <AuthButton
+            variant="primary"
+            label="Start trading"
+            className="h-[52px] px-[34px] text-base font-semibold shadow-[0_18px_44px_rgba(0,0,0,0.5)]"
+          />
           <DownloadButton />
         </div>
-      </div>
+      </main>
     </section>
   );
 }

@@ -20,9 +20,19 @@ type Variant = "ghost" | "primary";
 export function AuthButton({
   variant = "ghost",
   label,
+  className = "",
 }: {
   variant?: Variant;
   label: string;
+  /**
+   * Extra classes, appended last so they win.
+   *
+   * The variants above are the shape this button takes everywhere; the landing
+   * hero needs specific heights to sit right against the scene behind it, and
+   * widening the variants for one page would resize the button in the header
+   * too.
+   */
+  className?: string;
 }) {
   const { ready, authenticated } = usePrivy();
   const { open } = useLoginModal();
@@ -62,7 +72,7 @@ export function AuthButton({
        * they were already signed into, with no way through except the X.
        */
       onClick={() => (authenticated ? router.push(AFTER_LOGIN) : open())}
-      className={`${styles[variant]} font-sans transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne`}
+      className={`${styles[variant]} font-sans transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne ${className}`}
     >
       {/*
         * THE LABEL NEVER CHANGES.

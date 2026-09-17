@@ -115,7 +115,18 @@ export async function discover(feed: Feed, options: DiscoverOptions = {}): Promi
    * when it is merely selective. The cap is Jupiter's own.
    */
   const ask = Math.min(lifecycle ? limit * 4 : limit, 100);
-  const paths = FEEDS[feed];
+
+  /*
+   * ONE WINDOW UNLESS MORE IS ASKED FOR.
+   *
+   * A single call returns up to 100 rows, so anything at or under that is
+   * already served by the 24h window alone — and since deduplication keeps the
+   * first sighting, the extra windows would contribute nothing but three more
+   * requests against an allowance measured per deployment. They exist for the
+   * case where the caller genuinely wants a longer list than Jupiter will
+   * return in one response.
+   */
+  const paths = ask > 100 ? FEEDS[feed] : FEEDS[feed].slice(0, 1);
   const query = feed === "new" ? "" : `?limit=${ask}`;
 
   /*
