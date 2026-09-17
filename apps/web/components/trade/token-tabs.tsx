@@ -188,7 +188,6 @@ function Holders({
   if (!hydrated) return <p className="empty">Reading your account…</p>;
 
   const top = token.audit?.topHoldersPercentage ?? null;
-  const dev = token.audit?.devBalancePercentage ?? null;
   const warnings = risks(token);
   const supply = token.fdv && token.priceUsd > 0 ? token.fdv / token.priceUsd : null;
 
@@ -304,33 +303,6 @@ function Holders({
         </tbody>
       </table>
 
-      {/*
-        * The concentration facts, under the table rather than instead of it.
-        * They answer the question the wallet list is usually opened to answer
-        * — is this held by a handful of people — and they are real and
-        * keyless, which the list is not.
-        */}
-      <div className="grid grid-cols-2 gap-2 p-[18px] pb-3 sm:grid-cols-4">
-        <Stat label="Holders" value={token.holderCount > 0 ? compact(token.holderCount) : "—"} />
-        <Stat
-          label="Top holders"
-          value={top === null ? "—" : `${top.toFixed(1)}%`}
-          /* Concentration is the one figure here that is a warning rather
-             than a fact, so it is allowed to be red. Half the supply in a few
-             wallets is the setup for every exit-liquidity story there is. */
-          tone={top === null ? "flat" : top > 50 ? "bad" : top > 25 ? "warn" : "good"}
-        />
-        <Stat
-          label="Dev holds"
-          value={dev === null ? "—" : `${dev.toFixed(1)}%`}
-          tone={dev === null ? "flat" : dev > 20 ? "bad" : dev > 5 ? "warn" : "good"}
-        />
-        <Stat
-          label="Traders 24h"
-          value={token.traders24h === null ? "—" : compact(token.traders24h)}
-        />
-      </div>
-
       {top !== null && (
         <div className="flex flex-col gap-1 px-[18px] pb-3">
           <div className="flex items-baseline justify-between text-[13px]">
@@ -381,33 +353,6 @@ function Holders({
         can be derived rather than guessed.
       </p>
     </>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  tone = "flat",
-}: {
-  label: string;
-  value: string;
-  tone?: "flat" | "good" | "warn" | "bad";
-}) {
-  const colour =
-    tone === "bad"
-      ? "text-down"
-      : tone === "warn"
-        ? "text-accent"
-        : tone === "good"
-          ? "text-up"
-          : "text-champagne";
-  return (
-    <div className="rounded-lg border border-line bg-slate px-2.5 py-1.5">
-      <div className="text-[11px] font-medium" style={{ color: "var(--h-th)" }}>
-        {label}
-      </div>
-      <div className={`text-[15px] font-semibold tabular-nums ${colour}`}>{value}</div>
-    </div>
   );
 }
 
