@@ -613,3 +613,189 @@ body {
   align-items: flex-start;
   min-width: 0;
 }
+
+/* ───────────────────────── the holders / swaps table ────────────────────
+ *
+ * The user's stylesheet, with its geometry, type scale and two-line numeric
+ * grammar intact. Colours are re-pointed at the @theme tokens so a green here
+ * is the same green as a green candle — the reference's #21c943/#ff4016 are
+ * within a hair of cipher's own up/down anyway, and a second copy of a hex is
+ * the drift CLAUDE.md warns about.
+ *
+ * WHAT IS NOT PORTED, and it is not a styling decision: the Trader column's
+ * avatars and names, the Thesis column, and the "Thesis only" / "Friends
+ * only" filters. Those are fomo's social layer — real people with real
+ * positions on their product. cipher has no users, so every one of those rows
+ * would be a fabricated person with a fabricated P&L, which is the rule that
+ * deleted the feed, the flocks and the invented leaderboard. The classes are
+ * here and unused rather than absent: the day profiles exist, this file does
+ * not need to change.
+ */
+.holders {
+  --h-bg: var(--color-ink);
+  --h-bar: var(--color-slate);
+  --h-tab: var(--color-raised);
+  --h-row-hover: #0e0d1a;
+  --h-rule: rgba(255, 255, 255, 0.055);
+  --h-rule-head: rgba(255, 255, 255, 0.09);
+  --h-ink: #f7f7f7;
+  --h-ink-2: #9899a3;
+  --h-th: #7a7f8c;
+  --h-tab-idle: #8a8d99;
+  --h-tab-off: #3f424c;
+
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--h-bg);
+  color: var(--h-ink);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+.holders__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex: none;
+  padding: 9px 18px;
+  background: var(--h-bar);
+  border-bottom: 1px solid var(--h-rule-head);
+}
+.holders__tabs { display: flex; align-items: center; gap: 4px; }
+
+.holders .tab {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.006em;
+  color: var(--h-tab-idle);
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.holders .tab:hover:not(:disabled):not([aria-selected="true"]) { color: #c7c9d2; }
+.holders .tab[aria-selected="true"] { background: var(--h-tab); color: var(--h-ink); }
+.holders .tab:disabled { color: var(--h-tab-off); cursor: not-allowed; }
+.holders .tab .count { font-weight: 500; opacity: 0.72; }
+.holders .tab:focus-visible { outline: 2px solid var(--color-action); outline-offset: 1px; }
+
+/* The strip's right-hand side. The reference's filters are social; this is
+   where the honest equivalent goes — a note about the feed behind the tab. */
+.holders__aside {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--h-th);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.holders__scroll { overflow: auto; min-height: 0; flex: 1; }
+
+.holders table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.holders th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.004em;
+  color: var(--h-th);
+  background: var(--h-bg);
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--h-rule);
+  white-space: nowrap;
+}
+.holders td {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--h-rule);
+  vertical-align: top;
+}
+.holders tbody tr:last-child td { border-bottom: 0; }
+.holders tbody tr:hover td { background: var(--h-row-hover); }
+.holders th:first-child, .holders td:first-child { padding-left: 18px; }
+.holders th:last-child, .holders td:last-child { padding-right: 18px; }
+.holders .num { text-align: right; }
+
+/* The two-line numeric stack every cell is built from. */
+.holders .v {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.holders .num .v, .holders .num .s { justify-content: flex-end; }
+.holders .s {
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--h-ink-2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.holders .v.up, .holders .s.up { color: var(--color-up); }
+.holders .v.down, .holders .s.down { color: var(--color-down); }
+.holders .s .unit { font-size: 11px; color: #63656f; }
+
+/* Carets are SVG, not ▲/▼ glyphs: identical in every browser, and one shape
+   rotated for the down case. */
+.holders .caret { width: 9px; height: 9px; flex: none; }
+.holders .s.down .caret { transform: rotate(180deg); }
+.holders .clock { width: 13px; height: 13px; flex: none; color: #6d6f7a; }
+
+.holders .trader { display: flex; align-items: center; gap: 12px; }
+.holders .avatar {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+.holders .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.holders .trader__name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  line-height: 1.3;
+}
+.holders .trader__hold {
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--h-ink-2);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.holders .empty {
+  padding: 26px 18px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--h-ink-2);
+}

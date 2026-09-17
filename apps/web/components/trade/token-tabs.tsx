@@ -2,53 +2,53 @@
 
 import { useMemo, useState } from "react";
 import { usePaperAccount } from "@/lib/account/store";
-import { allInPrice } from "@/lib/account/paper";
+import { allInPrice, positionOf, type Fill } from "@/lib/account/paper";
 import { risks, type TokenInfo } from "@/lib/chain/tokens";
-import { compact, since, units, usd } from "@/lib/format";
+import { compact, compactUsd, since, units, usd } from "@/lib/format";
+import { useMark } from "./sol-prices";
 import { useNow } from "./use-now";
 
 /**
  * THE PANEL UNDER THE CHART: who else holds this, and what you did with it.
  *
- * Was "My trades" — one unlabelled list of every fill in the account, on a
- * panel sitting under a chart of one particular token. The two did not agree:
- * you looked at PAID and read your SOL trades.
+ * Built to the table the user supplied — its tab strip, its column rhythm and
+ * its two-line numeric stack, where a cell is a bold figure with a quieter one
+ * beneath it. The CSS lives in globals.css under `.holders`.
  *
- * Both tabs are now about the coin on screen, which is what the panel's
- * position already promised.
+ * THE COLUMNS THAT ARE NOT HERE. The reference's Trader column carries an
+ * avatar, a handle and an average hold time; its last column carries a written
+ * thesis and a like count, and the strip has "Thesis only" and "Friends only"
+ * filters. All of that is fomo's social layer — real people with real
+ * positions on a product that has users. cipher has none, so those rows would
+ * be invented people with invented P&L, which is the rule that deleted the
+ * feed, the flocks and the fabricated leaderboard.
  *
- *   HOLDERS   how the supply is spread, from Jupiter's token payload
- *   SWAPS     your own fills in THIS token, priced all-in
+ * What survives is the shape, filled with what is true:
  *
- * WHAT IS NOT HERE, AND WHY IT IS NOT FAKED. fomo's holders tab is a table of
- * named traders with a position, a P&L, an average entry and a written thesis.
- * Two separate things stand in the way, and neither is a styling problem:
+ *   HOLDERS   the token's real concentration, and one Trader row — yours —
+ *             when you hold it. The schema is the reference's exactly, so the
+ *             day other wallets can be priced they are more rows in this
+ *             table and nothing here has to change.
+ *   SWAPS     your fills in THIS token, in the same grammar.
  *
- *   THE NAMES. Those are fomo's own users. cipher has no social layer yet, so
- *   a table of traders here would be invented people — the exact thing the
- *   design rule in CLAUDE.md forbids, and the reason the feed, the flocks and
- *   the fabricated leaderboard were all deleted.
+ * WHY THERE IS NO WALLET LIST YET. `getTokenLargestAccounts` would give the
+ * top twenty addresses, and Solana's public RPC answers that specific method
+ * with 429 every time — it is deny-listed for keyless callers, verified
+ * against mainnet-beta rather than assumed. Solscan's open endpoint is gone
+ * and solana.fm returns 502. Per-wallet P&L needs an indexer on top of that.
  *
- *   THE NUMBERS. A wallet's P&L and average entry come from replaying its
- *   whole trade history, which needs an indexer. `getTokenLargestAccounts`
- *   would at least give the top twenty ADDRESSES, but Solana's public RPC
- *   answers that specific method with 429 every time — it is on the
- *   deny-list for keyless callers, verified against mainnet-beta rather than
- *   assumed. Solscan's open endpoint is gone and solana.fm returns 502.
- *
- * So this shows the concentration facts that ARE real and keyless, and says
- * plainly what is missing. A token where the top holders own 71% is the
- * question that table is usually being read to answer anyway.
- *
- * cipher: the per-wallet list lands the day an RPC key exists. Helius's free
- * tier covers getTokenLargestAccounts plus a getMultipleAccounts to turn
- * token accounts into owners — two cached calls per token. P&L per wallet
- * stays out until there is an indexer to derive it honestly.
+ * cipher: a Helius free key covers the address list in two cached calls. The
+ * P&L and entry columns stay empty until an indexer can derive them, because
+ * a holder's cost basis cannot be inferred from a balance.
  */
 
 type Tab = "holders" | "swaps";
 
-export function TokenTabs({ token, symbol, mint }: {
+export function TokenTabs({
+  token,
+  symbol,
+  mint,
+}: {
   token: TokenInfo | null;
   /** What to call the coin while the lookup is in flight. */
   symbol: string;
@@ -64,54 +64,94 @@ export function TokenTabs({ token, symbol, mint }: {
     [account.fills, mint],
   );
 
+  const name = token?.symbol || symbol;
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 border-b border-hairline px-2.5 py-1.5">
-        <TabButton on={tab === "holders"} onClick={() => setTab("holders")}>
-          Holders
-          {token && token.holderCount > 0 && (
-            <span className="ml-1.5 font-normal text-mute">{compact(token.holderCount)}</span>
-          )}
-        </TabButton>
-        <TabButton on={tab === "swaps"} onClick={() => setTab("swaps")}>
-          Swaps
-          {swaps.length > 0 && (
-            <span className="ml-1.5 font-normal text-mute">{swaps.length}</span>
-          )}
-        </TabButton>
+    <section className="holders">
+      <div className="holders__bar">
+        <div className="holders__tabs" role="tablist" aria-label="Token activity">
+          <TabButton on={tab === "holders"} onClick={() => setTab("holders")} label="Holders">
+            {token && token.holderCount > 0 ? `(${compact(token.holderCount)})` : null}
+          </TabButton>
+          <TabButton on={tab === "swaps"} onClick={() => setTab("swaps")} label="Swaps">
+            {swaps.length > 0 ? `(${swaps.length})` : null}
+          </TabButton>
+          {/*
+            * THESIS IS DISABLED, NOT DELETED, and the reference is why: it
+            * greys the tab out too. A thesis is something a user writes about
+            * a coin, so the tab is real and its contents are not yet — which
+            * is exactly what a disabled control says. A tab that is simply
+            * absent says the feature was never considered.
+            */}
+          <button
+            className="tab"
+            role="tab"
+            aria-selected={false}
+            disabled
+            title="Arrives with profiles"
+          >
+            Thesis
+          </button>
+        </div>
+        {/* Where the reference puts its social filters. Those would be two
+            controls that do nothing, so this says where the numbers come
+            from instead. */}
+        <div className="holders__aside">
+          {tab === "holders" ? "Concentration from Jupiter" : `Your fills in ${name}`}
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="holders__scroll">
         {tab === "holders" ? (
           <Holders token={token} symbol={symbol} mint={mint} />
         ) : (
-          <Swaps fills={swaps} symbol={token?.symbol || symbol} mint={mint} />
+          <Swaps fills={swaps} symbol={name} mint={mint} />
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
 function TabButton({
   on,
   onClick,
+  label,
   children,
 }: {
   on: boolean;
   onClick: () => void;
+  label: string;
   children: React.ReactNode;
 }) {
   return (
-    <button
-      role="tab"
-      aria-selected={on}
-      onClick={onClick}
-      className={`rounded-lg px-2.5 py-1 font-sans text-[12px] font-bold transition-colors ${
-        on ? "bg-raised text-champagne" : "text-mute hover:text-ash"
-      }`}
-    >
-      {children}
+    <button className="tab" role="tab" aria-selected={on} onClick={onClick}>
+      {label} {children && <span className="count">{children}</span>}
     </button>
+  );
+}
+
+/** The reference's caret: one shape, rotated by CSS for the down case. */
+function Caret() {
+  return (
+    <svg className="caret" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+      <path d="M5 1.2 9.2 8.4H.8z" />
+    </svg>
+  );
+}
+
+function Clock() {
+  return (
+    <svg
+      className="clock"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
   );
 }
 
@@ -126,29 +166,158 @@ function Holders({
   symbol: string;
   mint: string | null;
 }) {
+  const { account, hydrated } = usePaperAccount();
+  const mark = useMark(mint);
+  const now = useNow(30_000);
+
   if (!mint) {
     return (
-      <Quiet>
+      <p className="empty">
         {symbol} is a chart, not a token — there is no mint behind it and so nobody holds it.
-      </Quiet>
+      </p>
     );
   }
-  if (!token) return <Quiet>Looking {symbol} up…</Quiet>;
+  if (!token) return <p className="empty">Looking {symbol} up…</p>;
+  /*
+   * "You do not hold this" is a CLAIM ABOUT YOUR MONEY, so it waits for the
+   * account to arrive. Before hydration the ledger is empty by construction —
+   * localStorage has not been read, or Postgres has not answered — and the
+   * row rendered a confident denial for anyone holding the coin they were
+   * looking at. The same reason the header shows "—" rather than a balance.
+   */
+  if (!hydrated) return <p className="empty">Reading your account…</p>;
 
   const top = token.audit?.topHoldersPercentage ?? null;
   const dev = token.audit?.devBalancePercentage ?? null;
   const warnings = risks(token);
+  const supply = token.fdv && token.priceUsd > 0 ? token.fdv / token.priceUsd : null;
+
+  /* Your own row. Real, and the only one that can be priced today. */
+  const pos = positionOf(account, mint);
+  const held = pos.qty > 0;
+  /* The shared poll first, the token payload as a fallback: the payload is
+     cached for a minute and the poll is five seconds old at worst. */
+  const price = mark?.usd ?? token.priceUsd;
+  const value = held ? pos.qty * price : 0;
+  const invested = held ? pos.qty * pos.costBasis : 0;
+  const pnl = value - invested;
+  const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+  const down = pnl < 0;
+
+  /* The first buy of the position still open — "how long have you been in
+     this", which is what the reference's hold time says. */
+  const openedAt = held
+    ? (account.fills.find((f) => f.mint === mint && f.side === "buy")?.ts ?? null)
+    : null;
 
   return (
-    <div className="flex flex-col gap-2.5 p-2.5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <>
+      <table>
+        <colgroup>
+          <col style={{ width: "28%" }} />
+          <col style={{ width: "18%" }} />
+          <col style={{ width: "18%" }} />
+          <col style={{ width: "18%" }} />
+          <col style={{ width: "18%" }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">Trader</th>
+            <th scope="col" className="num">
+              Invested
+            </th>
+            <th scope="col" className="num">
+              Position
+            </th>
+            <th scope="col" className="num">
+              PnL
+            </th>
+            <th scope="col" className="num">
+              Avg. entry
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {held ? (
+            <tr>
+              <td>
+                <div className="trader">
+                  {/*
+                    * The accent, because accent means "yours" — the one token
+                    * in the palette about ownership rather than direction.
+                    * The reference hashes a gradient per handle; there is one
+                    * trader in this table and it is you.
+                    */}
+                  <span
+                    className="avatar"
+                    style={{ background: "var(--color-accent)", color: "var(--color-ink)", fontSize: "12px" }}
+                  >
+                    You
+                  </span>
+                  <span>
+                    <span className="trader__name">Your position</span>
+                    <span className="trader__hold">
+                      <Clock />
+                      {openedAt && now ? `${since(openedAt, now)} held` : "just opened"}
+                    </span>
+                  </span>
+                </div>
+              </td>
+              <td className="num">
+                <div className="v">{usd(invested)}</div>
+              </td>
+              <td className="num">
+                <div className="v">{usd(value)}</div>
+                <div className="s">
+                  {units(pos.qty)} {token.symbol || symbol}
+                </div>
+              </td>
+              <td className="num">
+                <div className={`v ${down ? "down" : "up"}`}>
+                  {down ? "−" : "+"}
+                  {usd(Math.abs(pnl))}
+                </div>
+                <div className={`s ${down ? "down" : "up"}`}>
+                  <Caret />
+                  {Math.abs(pnlPct).toFixed(2)}%
+                </div>
+              </td>
+              <td className="num">
+                <div className="v">{usd(pos.costBasis)}</div>
+                {supply !== null && (
+                  <div className="s">
+                    {compactUsd(pos.costBasis * supply)} <span className="unit">MC</span>
+                  </div>
+                )}
+              </td>
+            </tr>
+          ) : (
+            <tr>
+              <td colSpan={5}>
+                <p className="empty">
+                  You do not hold {token.symbol || symbol}. Buy some and your position appears
+                  here, in the same columns everyone else&rsquo;s will.
+                </p>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/*
+        * The concentration facts, under the table rather than instead of it.
+        * They answer the question the wallet list is usually opened to answer
+        * — is this held by a handful of people — and they are real and
+        * keyless, which the list is not.
+        */}
+      <div className="grid grid-cols-2 gap-2 p-[18px] pb-3 sm:grid-cols-4">
         <Stat label="Holders" value={token.holderCount > 0 ? compact(token.holderCount) : "—"} />
         <Stat
           label="Top holders"
           value={top === null ? "—" : `${top.toFixed(1)}%`}
-          /* Concentration is the one number here that is a warning rather than
-             a fact, so it is allowed to be red. Half the supply in a handful
-             of wallets is the setup for every exit-liquidity story there is. */
+          /* Concentration is the one figure here that is a warning rather
+             than a fact, so it is allowed to be red. Half the supply in a few
+             wallets is the setup for every exit-liquidity story there is. */
           tone={top === null ? "flat" : top > 50 ? "bad" : top > 25 ? "warn" : "good"}
         />
         <Stat
@@ -162,21 +331,16 @@ function Holders({
         />
       </div>
 
-      {/*
-        * ONE BAR: what the top holders own against what everyone else does.
-        *
-        * The percentage above is the same information, and the bar is still
-        * worth the eight pixels — "71%" has to be compared against a number
-        * you are carrying in your head, and a bar that is two-thirds full has
-        * already made the comparison.
-        */}
       {top !== null && (
-        <div className="flex flex-col gap-1">
-          <div className="flex items-baseline justify-between font-sans text-[11px]">
-            <span className="text-ash">
-              <b className="font-bold text-champagne">{top.toFixed(1)}%</b> held by the top wallets
+        <div className="flex flex-col gap-1 px-[18px] pb-3">
+          <div className="flex items-baseline justify-between text-[13px]">
+            <span style={{ color: "var(--h-ink-2)" }}>
+              <b className="font-semibold" style={{ color: "var(--h-ink)" }}>
+                {top.toFixed(1)}%
+              </b>{" "}
+              held by the top wallets
             </span>
-            <span className="text-mute">{(100 - top).toFixed(1)}% everyone else</span>
+            <span style={{ color: "var(--h-th)" }}>{(100 - top).toFixed(1)}% everyone else</span>
           </div>
           <div className="flex h-[7px] gap-[5px]">
             <i
@@ -189,9 +353,13 @@ function Holders({
       )}
 
       {warnings.length > 0 && (
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col gap-1 px-[18px] pb-3">
           {warnings.map((w) => (
-            <li key={w} className="flex gap-1.5 font-sans text-[11.5px] leading-snug text-ash">
+            <li
+              key={w}
+              className="flex gap-1.5 text-[13px] leading-snug"
+              style={{ color: "var(--h-ink-2)" }}
+            >
               <span aria-hidden className="shrink-0 text-down">
                 !
               </span>
@@ -202,19 +370,17 @@ function Holders({
       )}
 
       {/*
-        * The missing table, named rather than left as a blank space.
-        *
-        * An empty state that explains itself beats a filled one that lies —
-        * and this one is also the to-do list: it says exactly what has to
-        * exist before the row of traders can appear.
+        * The missing rows, named rather than left as a blank space. An empty
+        * state that explains itself beats a filled one that lies — and this
+        * one doubles as the to-do list.
         */}
-      <p className="border-t border-hairline pt-2 font-sans text-[10.5px] leading-snug text-mute">
-        Wallet-by-wallet holdings need a Solana RPC key — the public endpoint refuses
-        <code className="mx-1 font-mono text-[10px] text-ash">getTokenLargestAccounts</code>
-        for keyless callers. Per-wallet P&amp;L needs an indexer on top of that, and it is not
-        shown until it can be derived rather than guessed.
+      <p className="px-[18px] pb-[18px] text-[12px] leading-snug" style={{ color: "var(--h-th)" }}>
+        Other wallets need a Solana RPC key — the public endpoint refuses{" "}
+        <code className="font-mono text-[11px]">getTokenLargestAccounts</code> for keyless
+        callers. Their P&amp;L and entry need an indexer on top of that, and stay out until they
+        can be derived rather than guessed.
       </p>
-    </div>
+    </>
   );
 }
 
@@ -237,36 +403,28 @@ function Stat({
           : "text-champagne";
   return (
     <div className="rounded-lg border border-line bg-slate px-2.5 py-1.5">
-      <div className="font-sans text-[9.5px] font-bold uppercase tracking-[0.1em] text-ash">
+      <div className="text-[11px] font-medium" style={{ color: "var(--h-th)" }}>
         {label}
       </div>
-      <div className={`font-sans text-[15px] font-bold tabular-nums ${colour}`}>{value}</div>
+      <div className={`text-[15px] font-semibold tabular-nums ${colour}`}>{value}</div>
     </div>
   );
 }
 
 /* ---------------------------------------------------------------- swaps --- */
 
-function Swaps({
-  fills,
-  symbol,
-  mint,
-}: {
-  fills: import("@/lib/account/paper").Fill[];
-  symbol: string;
-  mint: string | null;
-}) {
+function Swaps({ fills, symbol, mint }: { fills: Fill[]; symbol: string; mint: string | null }) {
   const { account, hydrated } = usePaperAccount();
   const nowMs = useNow(1000);
 
-  if (!hydrated) return <Quiet>Reading your account…</Quiet>;
-  if (!mint) return <Quiet>{symbol} is chart-only — there is nothing here to swap.</Quiet>;
+  if (!hydrated) return <p className="empty">Reading your account…</p>;
+  if (!mint) return <p className="empty">{symbol} is chart-only — there is nothing here to swap.</p>;
   if (fills.length === 0) {
     return (
-      <Quiet>
+      <p className="empty">
         You have not traded {symbol} yet. You have {usd(account.usdc)} of paper money — buy some
         on the right, or just tell Sana what you want.
-      </Quiet>
+      </p>
     );
   }
 
@@ -275,73 +433,106 @@ function Swaps({
   const rows = [...fills].reverse();
 
   return (
-    <table className="w-full border-collapse font-sans text-[11.5px]">
+    <table>
+      <colgroup>
+        <col style={{ width: "28%" }} />
+        <col style={{ width: "18%" }} />
+        <col style={{ width: "18%" }} />
+        <col style={{ width: "18%" }} />
+        <col style={{ width: "18%" }} />
+      </colgroup>
       <thead>
         <tr>
-          {["When", "Side", "Size", "Price", "Your squawk", "Booked"].map((h, i) => (
-            <th
-              key={h}
-              className={`sticky top-0 bg-panel px-2.5 py-1.5 font-sans text-[9px] font-bold uppercase tracking-[0.1em] text-ash ${
-                i >= 2 && i !== 4 ? "text-right" : "text-left"
-              }`}
-            >
-              {h}
-            </th>
-          ))}
+          <th scope="col">Trade</th>
+          <th scope="col" className="num">
+            Value
+          </th>
+          <th scope="col" className="num">
+            Size
+          </th>
+          <th scope="col" className="num">
+            Price
+          </th>
+          <th scope="col" className="num">
+            Booked
+          </th>
         </tr>
       </thead>
       <tbody>
-        {rows.map((f) => (
-          <tr key={f.id}>
-            <td className="whitespace-nowrap border-t border-hairline px-2.5 py-1.5 text-ash">
-              {nowMs === null ? "—" : `${since(f.ts, nowMs)} ago`}
-            </td>
-            <td
-              className={`border-t border-hairline px-2.5 py-1.5 ${
-                f.side === "buy" ? "text-up" : "text-down"
-              }`}
-            >
-              {f.side === "buy" ? "Buy" : "Sell"}
-              {f.source === "sana" && <span className="ml-1 text-ash">✦</span>}
-            </td>
-            {/*
-              * THE TOKEN'S OWN SYMBOL, not "SOL".
-              *
-              * This column was hardcoded to SOL from when the ledger held one
-              * asset, so every row of every coin claimed to be Solana. Four
-              * decimals also went: a memecoin position is millions of units
-              * and "19188444.5217 PAID" is not a number anyone reads.
-              */}
-            <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums">
-              {units(f.qty)} {symbol}
-            </td>
-            {/* All-in, so size × price is the cash that actually moved. */}
-            <td className="border-t border-hairline px-2.5 py-1.5 text-right font-mono tabular-nums">
-              {usd(allInPrice(f))}
-            </td>
-            <td className="border-t border-hairline px-2.5 py-1.5 text-ash">
-              {f.squawk || <span className="opacity-50">—</span>}
-            </td>
-            {/* Only a sell books anything. A buy shows nothing rather than
-                "$0.00", which would read as a trade that made no money. */}
-            <td
-              className={`whitespace-nowrap border-t border-hairline px-2.5 py-1.5 text-right font-mono font-bold tabular-nums ${
-                f.side === "buy" ? "text-ash" : f.realisedUsd >= 0 ? "text-up" : "text-down"
-              }`}
-            >
-              {f.side === "buy"
-                ? "—"
-                : `${f.realisedUsd >= 0 ? "+" : "−"}${usd(Math.abs(f.realisedUsd))}`}
-            </td>
-          </tr>
-        ))}
+        {rows.map((f) => {
+          const buy = f.side === "buy";
+          /* All-in, so size × price is the cash that actually moved. */
+          const px = allInPrice(f);
+          const cash = f.qty * px;
+          const won = f.realisedUsd >= 0;
+          return (
+            <tr key={f.id}>
+              <td>
+                <div className="trader">
+                  {/*
+                    * The side IS the identity of a swap, so it takes the slot
+                    * the reference gives a trader's avatar. The same two
+                    * colours the candles use — there is nothing to learn.
+                    */}
+                  <span
+                    className="avatar"
+                    style={{
+                      background: buy ? "var(--color-up-soft)" : "var(--color-down-soft)",
+                      color: buy ? "var(--color-up)" : "var(--color-down)",
+                      fontSize: "12px",
+                    }}
+                  >
+                    {buy ? "Buy" : "Sell"}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="trader__name">
+                      {buy ? "Bought" : "Sold"} {symbol}
+                      {/* Placed by Sana rather than by the ticket. */}
+                      {f.source === "sana" && <span style={{ color: "var(--h-th)" }}> ✦</span>}
+                    </span>
+                    <span className="trader__hold">
+                      <Clock />
+                      {nowMs === null ? "—" : `${since(f.ts, nowMs)} ago`}
+                    </span>
+                  </span>
+                </div>
+              </td>
+              <td className="num">
+                <div className="v">{usd(cash)}</div>
+                {f.squawk && <div className="s truncate">{f.squawk}</div>}
+              </td>
+              <td className="num">
+                <div className="v">{units(f.qty)}</div>
+                <div className="s">{symbol}</div>
+              </td>
+              <td className="num">
+                <div className="v">{usd(px)}</div>
+                <div className="s">fee {usd(f.feeUsd)}</div>
+              </td>
+              <td className="num">
+                {/* Only a sell books anything. A buy shows a dash rather than
+                    "$0.00", which reads as a trade that made no money. */}
+                {buy ? (
+                  <div className="v" style={{ color: "var(--h-th)" }}>
+                    —
+                  </div>
+                ) : (
+                  <>
+                    <div className={`v ${won ? "up" : "down"}`}>
+                      {won ? "+" : "−"}
+                      {usd(Math.abs(f.realisedUsd))}
+                    </div>
+                    <div className={`s ${won ? "up" : "down"}`}>
+                      <Caret />
+                      {Math.abs(cash > 0 ? (f.realisedUsd / cash) * 100 : 0).toFixed(2)}%
+                    </div>
+                  </>
+                )}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
-  );
-}
-
-function Quiet({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="p-4 text-center font-sans text-[12px] leading-relaxed text-mute">{children}</p>
   );
 }

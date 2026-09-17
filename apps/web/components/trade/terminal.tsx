@@ -93,7 +93,11 @@ function TerminalBody({
    * the pixels the panel gains are pixels the chart loses, and a child cannot
    * resize its sibling. The chart is flex-1 and simply takes what is left.
    */
-  const [lowerH, setLowerH] = useState(150);
+  /* 150 was right for the old five-line fill table. A holders row is a
+     38px avatar with a two-line stack beside it, so at 150 the first row
+     was cut through the middle — a table whose first row is clipped reads
+     as broken rather than as scrollable. */
+  const [lowerH, setLowerH] = useState(232);
   const dragging = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -835,7 +839,7 @@ function TerminalBody({
               */}
             <div
               onPointerDown={startDrag}
-              onDoubleClick={() => setLowerH(150)}
+              onDoubleClick={() => setLowerH(232)}
               role="separator"
               aria-orientation="horizontal"
               aria-label="Resize the holders and swaps panel"
