@@ -61,25 +61,64 @@ export interface TokenAudit {
 }
 
 /**
- * The four windows Jupiter measures, and the labels they may honestly wear.
+ * The four windows the panel offers.
  *
- * fomo's panel shows 5M · 1H · 4H · 1D. Jupiter reports 5m, 1h, 6h and 24h —
- * there is no four-hour window anywhere in the payload. Printing "4H" over
- * six hours of data would be a label that is simply false, and the whole
- * point of the row is that a trader reads the number against the period, so
- * cipher shows 6H where it has six hours.
+ * 5M · 1H · 4H · 1D, as the reference lays them out. THREE OF THE FOUR COME
+ * STRAIGHT FROM JUPITER and the fourth does not: Jupiter reports 5m, 1h, 6h
+ * and 24h, and no free feed checked so far carries a four-hour window —
+ * DexScreener uses the identical m5/h1/h6/h24 set.
+ *
+ * So `4h` is a declared slot with no source behind it yet. Everything in it
+ * renders as "—", which is the honest reading of "we do not have this",
+ * against "0.00%", which would be a claim that the price did not move. The
+ * layout is built; the feed is the open piece of work.
  */
-export const WINDOWS = ["5m", "1h", "6h", "24h"] as const;
+export const WINDOWS = ["5m", "1h", "4h", "24h"] as const;
 export type WindowKey = (typeof WINDOWS)[number];
+
+/** Which Jupiter stats block backs each window. Null where nothing does yet. */
+export const JUPITER_WINDOW: Record<WindowKey, string | null> = {
+  "5m": "stats5m",
+  "1h": "stats1h",
+  "4h": null,
+  "24h": "stats24h",
+};
 
 export interface TokenWindow {
   /** Percent, over the window. Null when there is no history to measure. */
   priceChangePct: number | null;
   buyVolumeUsd: number;
   sellVolumeUsd: number;
-  /** Trade COUNTS, not people. Jupiter reports no split of traders by side. */
+  /**
+   * The same two with manufactured activity stripped out.
+   *
+   * Jupiter scores every trade for whether it looks like a real person or a
+   * wash loop, and reports the honest subset separately. On SOL over 24h it is
+   * $34M of $3.05B — about one percent — and on a token being pumped the gap
+   * is the whole story: a coin can show nine figures of "volume" and a few
+   * thousand dollars of anyone actually buying it.
+   */
+  buyOrganicUsd: number;
+  sellOrganicUsd: number;
+  /** Trade COUNTS, not people. */
   buys: number;
   sells: number;
+  /**
+   * WALLETS, split by side — and null until something reports them.
+   *
+   * Jupiter gives `numTraders`, one figure for both sides, plus `numNetBuyers`
+   * and `numOrganicBuyers`. Those cannot be solved back into buyers and
+   * sellers: a wallet that bought and then sold is in `numTraders` once and
+   * belongs to both halves, so the system is underdetermined. DexScreener's
+   * `txns` counts transactions, not wallets, so it is the same number as
+   * `buys` and `sells` above under a different name.
+   *
+   * The row exists and reads "—" rather than showing trade counts relabelled
+   * as people. "174 sells" and "100 sellers" are different claims about a
+   * market and only one of them is on the screen.
+   */
+  buyers: number | null;
+  sellers: number | null;
   /** Unique wallets that traded, both sides together. */
   traders: number;
 }
@@ -343,8 +382,14 @@ function windowOf(stats: unknown): TokenWindow | null {
     priceChangePct: typeof s.priceChange === "number" ? s.priceChange : null,
     buyVolumeUsd: n(s.buyVolume),
     sellVolumeUsd: n(s.sellVolume),
+    buyOrganicUsd: n(s.buyOrganicVolume),
+    sellOrganicUsd: n(s.sellOrganicVolume),
     buys: n(s.numBuys),
     sells: n(s.numSells),
+    /* No source yet. `numTraders` is one figure for both sides and cannot be
+       solved back into two — a wallet that bought then sold belongs to both. */
+    buyers: null,
+    sellers: null,
     traders: n(s.numTraders),
   };
 }
@@ -419,7 +464,8 @@ export function fromJupiter(raw: Record<string, unknown>): TokenInfo {
     windows: {
       "5m": windowOf(raw.stats5m),
       "1h": windowOf(raw.stats1h),
-      "6h": windowOf(raw.stats6h),
+      /* Declared, unsourced. Jupiter has 6h and no 4h; see WINDOWS. */
+      "4h": null,
       "24h": windowOf(raw.stats24h),
     },
     volume24hUsd: volume(raw.stats24h),

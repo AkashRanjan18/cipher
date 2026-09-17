@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { fromJupiter, looksLikeMint, resolveToken, risks } from "@/lib/chain/tokens";
+import { fromJupiter, looksLikeMint, resolveToken, risks, type WindowKey } from "@/lib/chain/tokens";
+import { walletsBySide, type WalletsBySide } from "@/lib/chain/wallets";
 
 /**
  * "What is BONK?" — answered against the real Solana token list.
@@ -43,6 +44,29 @@ export async function GET(request: Request) {
     const raw = (await res.json()) as Record<string, unknown>[];
     const tokens = Array.isArray(raw) ? raw.map(fromJupiter) : [];
     const resolution = resolveToken(query, tokens);
+
+    /*
+     * Wallets by side, from a second vendor, and only once the token is known.
+     *
+     * It hangs off the RESOLVED token rather than off every candidate: the
+     * search can return twenty results and nineteen of them are about to be
+     * thrown away, so asking GeckoTerminal about each would be nineteen
+     * requests to render one card.
+     *
+     * Merged rather than replacing — Jupiter still owns the price change, the
+     * volumes and the trade counts, and this fills the one field it has no
+     * answer for. Failure is silent: the row reads "—" and nothing else moves.
+     */
+    if (resolution.kind === "resolved") {
+      const wallets = await walletsBySide(resolution.token.mint);
+      for (const [key, w] of Object.entries(wallets) as [WindowKey, WalletsBySide][]) {
+        const window = resolution.token.windows[key];
+        if (window) {
+          window.buyers = w.buyers;
+          window.sellers = w.sellers;
+        }
+      }
+    }
 
     return NextResponse.json({
       resolution,

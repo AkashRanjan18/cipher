@@ -28,11 +28,11 @@ import { compactUsd, pct } from "@/lib/format";
  *   which is the exact thing the design rule in CLAUDE.md forbids.
  */
 
-/** The label each window may honestly wear. 24h is a day; 6h is not 4h. */
+/** What each window is called on the chip. */
 const LABEL: Record<WindowKey, string> = {
   "5m": "5M",
   "1h": "1H",
-  "6h": "6H",
+  "4h": "4H",
   "24h": "1D",
 };
 
@@ -68,6 +68,7 @@ function Split({
   rightUnit,
   leftValue,
   rightValue,
+  muted = false,
 }: {
   label: string;
   /** The number, set bold. "175" */
@@ -78,6 +79,8 @@ function Split({
   rightUnit: string;
   leftValue: number;
   rightValue: number;
+  /** No source behind this row yet: even bars, dimmed, nothing claimed. */
+  muted?: boolean;
 }) {
   /* `|| 1` below, not a share: with both sides at zero the two bars take
      half each, because 0 against 0 genuinely is even and a zero-width bar
@@ -102,7 +105,7 @@ function Split({
         * the widths are the ratio itself rather than a percentage computed
         * twice and rounded differently each time.
         */}
-      <div className="flex h-[7px] gap-[5px]">
+      <div className={`flex h-[7px] gap-[5px] ${muted ? "opacity-25" : ""}`}>
         <i className="block rounded-full bg-up" style={{ flexGrow: leftValue || 1 }} />
         <i className="block rounded-full bg-down" style={{ flexGrow: rightValue || 1 }} />
       </div>
@@ -231,6 +234,22 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
             rightUnit="vol."
             leftValue={w.buyVolumeUsd}
             rightValue={w.sellVolumeUsd}
+          />
+          {/*
+            * WALLETS, not trades. The row is here and the numbers are not:
+            * no free feed checked reports a token's traders split by side,
+            * and `buys`/`sells` above are transaction counts wearing a
+            * different noun. It reads "—" until a source lands.
+            */}
+          <Split
+            label="Traders by side"
+            leftLead={w.buyers === null ? "—" : count.format(w.buyers)}
+            leftUnit="buyers"
+            rightLead={w.sellers === null ? "—" : count.format(w.sellers)}
+            rightUnit="sellers"
+            leftValue={w.buyers ?? 0}
+            rightValue={w.sellers ?? 0}
+            muted={w.buyers === null}
           />
         </div>
       ) : (
