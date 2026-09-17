@@ -59,7 +59,7 @@ export function useUniverse(
 
     const load = async () => {
       try {
-        const q = new URLSearchParams({ feed, limit: "60" });
+        const q = new URLSearchParams({ feed, limit: "180" });
         if (stage) q.set("stage", stage);
         const res = await fetch(`/api/discover?${q}`);
         if (!alive) return;

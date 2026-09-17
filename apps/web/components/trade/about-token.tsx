@@ -73,8 +73,8 @@ function Split({
      reads as a rendering failure rather than as an absence of trading. */
 
   return (
-    <div className="flex flex-col gap-1.5" aria-label={label}>
-      <div className="flex items-baseline justify-between gap-2 text-[15px]">
+    <div className="flex flex-col gap-1" aria-label={label}>
+      <div className="flex items-baseline justify-between gap-2 text-[13.5px]">
         <span className="truncate text-ash">
           <b className="font-bold tabular-nums text-champagne">{leftLead}</b> {leftUnit}
         </span>
@@ -107,7 +107,7 @@ function LinkChip({ href, children }: { href: string; children: React.ReactNode 
       /* noreferrer as well as noopener: the target should not be told which
          terminal the click came from. */
       rel="noopener noreferrer"
-      className="flex h-8 items-center gap-1.5 rounded-lg border border-line bg-slate px-2.5 text-[14px] font-semibold text-champagne transition-colors hover:border-ash"
+      className="flex h-6 items-center gap-1.5 rounded-lg border border-line bg-slate px-2.5 text-[12.5px] font-semibold text-champagne transition-colors hover:border-ash"
     >
       {children}
     </a>
@@ -127,7 +127,7 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
   if (!token) {
     return (
       <section className="flex shrink-0 flex-col gap-2 rounded-2xl border border-line bg-panel p-3">
-        <h2 className="font-display text-[15px] tracking-tight text-champagne">About {symbol}</h2>
+        <h2 className="font-sans text-[16px] font-bold text-champagne">About {symbol}</h2>
         <p className="text-[14px] text-mute">Loading…</p>
       </section>
     );
@@ -136,16 +136,20 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
   const w = token.windows[window];
 
   return (
-    <section className="flex shrink-0 flex-col gap-4 rounded-2xl border border-line bg-panel p-3.5">
+    <section className="flex shrink-0 flex-col gap-2 rounded-2xl border border-line bg-panel p-2.5">
       <div>
         {/*
-          * NO `font-bold` ON THE DISPLAY FACE. Caacupé One ships one weight,
-          * so the browser synthesises a bold by smearing the glyphs sideways —
-          * which widened the "A" of "About" past its own box and clipped it
-          * against the card's padding. The trap is written down in CLAUDE.md;
-          * this is what it looks like when you walk into it.
+          * THE SANS, NOT THE DISPLAY FACE — and the reason is the glyphs.
+          *
+          * Caacupé One collides a lowercase "b" into a preceding capital "A",
+          * so "About SOL" rendered with the two letters overlapping into one
+          * shape. It is not the tracking: setting letter-spacing back to
+          * normal leaves the collision exactly where it was. The face is a
+          * display face, cut for the wordmark and the hero at size, and this
+          * is a 16px card heading in mixed case — which is what the sans is
+          * for. Every other card title in the terminal already uses it.
           */}
-        <h2 className="font-display text-[18px] tracking-tight text-champagne">
+        <h2 className="font-sans text-[16px] font-bold text-champagne">
           About {token.symbol || symbol}
         </h2>
         {/*
@@ -154,13 +158,13 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
           * "no description found" is a fact about the data, and inventing a
           * sentence about somebody's coin would be worse than a blank.
           */}
-        <p className="mt-1 text-[14px] text-mute">
+        <p className="mt-0.5 text-[13px] text-mute">
           {token.name && token.name !== token.symbol ? token.name : "No description found"}
         </p>
       </div>
 
       {/* ---- the window chips ---- */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-4 gap-1.5">
         {WINDOWS.map((k) => {
           const stat = token.windows[k];
           const change = stat?.priceChangePct ?? null;
@@ -170,13 +174,13 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
               key={k}
               onClick={() => setWindow(k)}
               aria-pressed={on}
-              className={`flex h-14 flex-col items-center justify-center gap-0.5 rounded-lg border transition-colors ${
+              className={`flex h-12 flex-col items-center justify-center rounded-lg border transition-colors ${
                 on ? "border-transparent bg-raised" : "border-line hover:border-ash"
               }`}
             >
-              <span className="text-[14px] text-ash">{LABEL[k]}</span>
+              <span className="text-[12.5px] text-ash">{LABEL[k]}</span>
               <span
-                className={`text-[14px] font-semibold tabular-nums ${
+                className={`text-[12.5px] font-semibold tabular-nums ${
                   change === null ? "text-mute" : change >= 0 ? "text-up" : "text-down"
                 }`}
               >
@@ -192,7 +196,7 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
 
       {/* ---- who is on each side, over the selected window ---- */}
       {w ? (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2.5">
           <Split
             label="Trades"
             leftLead={count.format(w.buys)}
@@ -235,7 +239,7 @@ export function AboutToken({ token, symbol }: { token: TokenInfo | null; symbol:
       )}
 
       {/* ---- where to go and look for yourself ---- */}
-      <div className="flex flex-wrap gap-2.5">
+      <div className="flex flex-wrap gap-2">
         <LinkChip href={`https://solscan.io/token/${token.mint}`}>Solscan</LinkChip>
         <LinkChip href={`https://x.com/search?q=${encodeURIComponent(token.mint)}`}>
           Search on X

@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const limit = Math.min(Math.max(Number(q.get("limit")) || 50, 1), 100);
+  const limit = Math.min(Math.max(Number(q.get("limit")) || 50, 1), 200);
 
   try {
     const tokens = await discover(feed as Feed, {

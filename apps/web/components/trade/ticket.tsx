@@ -290,7 +290,7 @@ export function Ticket({
      * card once collapsed to 2.65px tall: present in the DOM, correct in every
      * number, and invisible.
      */
-    <div className="flex shrink-0 flex-col gap-2.5 rounded-2xl border border-line bg-panel p-2.5 [&>*]:shrink-0">
+    <div className="flex shrink-0 flex-col gap-2 rounded-2xl border border-line bg-panel p-2 [&>*]:shrink-0">
       {/*
         * Order type sits ABOVE side, because it is the wider decision: it
         * changes what the ticket asks you for, while side only changes which
@@ -340,7 +340,7 @@ export function Ticket({
               setReceipt(null);
             }}
             aria-pressed={side === s}
-            className={`h-[50px] rounded-xl font-display text-[18px] capitalize transition-colors ${
+            className={`h-11 rounded-xl font-display text-[17px] capitalize transition-colors ${
               side === s
                 ? s === "buy"
                   ? "bg-up-soft text-up"
@@ -392,10 +392,10 @@ export function Ticket({
         </div>
       )}
 
-      <div className="flex h-[86px] items-center rounded-xl bg-slate px-5 ring-accent/40 focus-within:ring-1">
+      <div className="flex h-16 items-center rounded-xl bg-slate px-4 ring-accent/40 focus-within:ring-1">
         <div className="flex w-full items-baseline gap-1.5">
           <span
-            className={`font-display text-[36px] leading-none ${
+            className={`font-display text-[30px] leading-none ${
               value > 0 ? "text-champagne" : "text-mute"
             }`}
           >
@@ -408,20 +408,20 @@ export function Ticket({
             onChange={(e) => edit(e.target.value)}
             placeholder="0"
             aria-label={buying ? "Amount to spend in dollars" : "Amount to sell in dollars"}
-            className="min-w-0 flex-1 bg-transparent font-display text-[36px] leading-none tabular-nums text-champagne placeholder:text-mute focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent font-display text-[30px] leading-none tabular-nums text-champagne placeholder:text-mute focus:outline-none"
           />
-          <span className="shrink-0 text-[16px] tabular-nums text-mute">
+          <span className="shrink-0 text-[14px] tabular-nums text-mute">
             {price && qty > 0 ? `${qty.toFixed(4)} ${market}` : "Enter amount"}
           </span>
         </div>
       </div>
 
-      <div className="relative flex items-center gap-2.5">
+      <div className="relative flex items-center gap-2">
         {(buying ? BUY_PRESETS : SELL_PRESETS).map((n) => (
           <button
             key={n}
             onClick={() => preset(n)}
-            className="h-10 flex-1 rounded-lg bg-slate text-[16px] font-bold text-champagne transition-colors hover:bg-raised"
+            className="h-9 flex-1 rounded-lg bg-slate text-[15px] font-bold text-champagne transition-colors hover:bg-raised"
           >
             {buying ? `$${n}` : `${n}%`}
           </button>
@@ -441,7 +441,7 @@ export function Ticket({
           aria-expanded={settingsOpen}
           aria-label="Execution settings"
           title={`${(slippageBps / 100).toFixed(2)}% slippage · ${privateSubmission ? "private" : "public"}`}
-          className={`grid h-10 w-6 shrink-0 place-items-center rounded-lg font-mono text-[15px] transition-colors ${
+          className={`grid h-9 w-5 shrink-0 place-items-center rounded-lg font-mono text-[14px] transition-colors ${
             settingsOpen ? "text-accent" : "text-ash hover:text-champagne"
           }`}
         >
@@ -520,7 +520,7 @@ export function Ticket({
       <button
         onClick={useAvailable}
         disabled={available === null || available <= 0}
-        className="-mt-0.5 self-start pl-2.5 text-[16px] text-ash transition-colors hover:text-champagne disabled:text-mute"
+        className="-mt-1 self-start pl-2 text-[14px] text-ash transition-colors hover:text-champagne disabled:text-mute"
       >
         {available === null ? "—" : `${usd(available)} available`}
       </button>
@@ -540,7 +540,7 @@ export function Ticket({
          * dead end. Disabled it reads as the surface it sits on, which is what
          * the reference does and what makes the live state mean something.
          */
-        className={`h-[54px] rounded-xl font-display text-[18px] transition-transform active:scale-[0.985] disabled:cursor-not-allowed ${
+        className={`h-12 rounded-xl font-display text-[17px] transition-transform active:scale-[0.985] disabled:cursor-not-allowed ${
           !tradable || !price || !!blocked || value <= 0 || (limiting && limitPrice <= 0)
             ? "border border-line bg-slate text-ash"
             : buying
@@ -564,9 +564,9 @@ export function Ticket({
         * the screen where someone is spending money. The same reasoning is
         * already written against the fee strip in the left panel.
         */}
-      <div className="flex items-center gap-2 px-2">
+      <div className="-mt-0.5 flex items-center gap-2 px-1.5">
         <span className="text-[13px]">🏷</span>
-        <span className="text-[14px] font-semibold text-action">
+        <span className="text-[13px] font-semibold text-action">
           0.50% fee <span className="font-normal text-ash">with a referral code</span>
         </span>
         <span

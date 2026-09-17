@@ -42,10 +42,35 @@ function endpoint(): { url: string; headers: Record<string, string> } {
  *              trading. The closest thing to an honest trending list, and the
  *              reason it exists is that volume alone is trivially faked.
  */
+/*
+ * SEVERAL WINDOWS PER FEED, because one of them caps at a hundred.
+ *
+ * Jupiter returns at most 100 tokens however many are asked for — 200 and 300
+ * both come back with 100 — and it does not paginate: `offset`, `page` and
+ * `skip` all return the identical first row. So a longer list cannot be had
+ * from one call, and the ceiling was the list's real length rather than any
+ * number chosen here.
+ *
+ * The same feed over four windows is four different questions, and the answers
+ * only partly overlap: 24h, 6h, 1h and 5m together yield 162 unique tokens on
+ * traded and 167 on organic. Every one of them is genuinely top-traded or
+ * genuinely organic — just over a different period — so the list gets longer
+ * without any of it becoming untrue.
+ *
+ * ORDER IS 24h FIRST, AND THAT IS THE POINT. Deduplication keeps the first
+ * sighting, so the established daily ranking stays at the top exactly as it
+ * was and the shorter windows only ever extend the tail. Scrolling goes
+ * further; the first screen does not move.
+ */
 export const FEEDS = {
-  new: "recent",
-  traded: "toptraded/24h",
-  organic: "toporganicscore/24h",
+  new: ["recent"],
+  traded: ["toptraded/24h", "toptraded/6h", "toptraded/1h", "toptraded/5m"],
+  organic: [
+    "toporganicscore/24h",
+    "toporganicscore/6h",
+    "toporganicscore/1h",
+    "toporganicscore/5m",
+  ],
 } as const;
 
 export type Feed = keyof typeof FEEDS;
@@ -90,23 +115,65 @@ export async function discover(feed: Feed, options: DiscoverOptions = {}): Promi
    * when it is merely selective. The cap is Jupiter's own.
    */
   const ask = Math.min(lifecycle ? limit * 4 : limit, 100);
-  const path = FEEDS[feed];
+  const paths = FEEDS[feed];
   const query = feed === "new" ? "" : `?limit=${ask}`;
 
-  const res = await fetch(`${url}/${path}${query}`, {
-    headers,
-    signal,
-    next: { revalidate },
-  });
-  if (!res.ok) throw new DiscoverError(`Jupiter tokens returned ${res.status}`);
+  /*
+   * IN PARALLEL, AND ONE FAILURE IS NOT ALL OF THEM.
+   *
+   * Four sequential round trips would make the panel four times slower to
+   * fill for a list nobody reads past the first screen of. `allSettled`
+   * rather than `all` because these windows are independent: if the 5m call
+   * times out, the 24h ranking everyone actually looks at is already in hand
+   * and losing the tail is not worth losing the list.
+   */
+  const responses = await Promise.allSettled(
+    paths.map((path) =>
+      fetch(`${url}/${path}${query}`, { headers, signal, next: { revalidate } }),
+    ),
+  );
 
-  const body = (await res.json()) as unknown;
-  const rows = Array.isArray(body) ? body : [];
+  const ok = responses.filter(
+    (r): r is PromiseFulfilledResult<Response> => r.status === "fulfilled" && r.value.ok,
+  );
+  /*
+   * Every window failed — that is an outage, not a short list, and the caller
+   * renders the two differently.
+   *
+   * The STATUS travels with it. "Jupiter tokens unavailable" is true and
+   * useless; 429 means the allowance is spent and 503 means they are down,
+   * and those want different reactions from whoever reads the log.
+   */
+  if (ok.length === 0) {
+    const first = responses.find(
+      (r): r is PromiseFulfilledResult<Response> => r.status === "fulfilled",
+    );
+    throw new DiscoverError(
+      first ? `Jupiter tokens returned ${first.value.status}` : "Jupiter tokens unreachable",
+    );
+  }
 
-  const tokens = rows
-    .filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null)
-    .map(fromJupiter)
-    .filter((t) => t.mint);
+  const pages = await Promise.all(ok.map((r) => r.value.json().catch(() => [])));
+
+  /*
+   * Deduplicated by MINT, first sighting wins.
+   *
+   * The windows overlap heavily — 6h adds about 22 tokens to 24h's hundred —
+   * and the same token appearing twice in a market list is the kind of thing
+   * that makes a panel look broken. Keeping the first means keeping the
+   * position it held in the most established ranking.
+   */
+  const seen = new Set<string>();
+  const tokens: TokenInfo[] = [];
+  for (const page of pages) {
+    for (const row of Array.isArray(page) ? page : []) {
+      if (typeof row !== "object" || row === null) continue;
+      const t = fromJupiter(row as Record<string, unknown>);
+      if (!t.mint || seen.has(t.mint)) continue;
+      seen.add(t.mint);
+      tokens.push(t);
+    }
+  }
 
   const kept = lifecycle ? tokens.filter((t) => t.lifecycle === lifecycle) : tokens;
   return kept.slice(0, limit);

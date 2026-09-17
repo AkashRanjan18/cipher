@@ -152,10 +152,27 @@ test("an upstream failure throws rather than returning an empty universe", async
 });
 
 test("the limit is honoured after filtering, not before", async () => {
-  serve([BONDING, GRADUATED, BONDING, GRADUATED, BONDING]);
+  /* DISTINCT MINTS. The feed is deduplicated by mint now, so a fixture that
+     repeated one token would collapse to a single row and this would be
+     measuring the dedupe rather than the limit. */
+  const mint = (n: number) => ({ ...BONDING, id: `${BONDING.id.slice(0, -1)}${n}` });
+  serve([mint(1), GRADUATED, mint(2), { ...GRADUATED, id: "other" }, mint(3)]);
   const out = await discover("new", { lifecycle: "bonding", limit: 2 });
   assert.equal(out.length, 2);
   assert.ok(out.every((t) => t.lifecycle === "bonding"));
+});
+
+test("the same token in two windows appears once", async () => {
+  /*
+   * A feed is four windows now, because Jupiter caps a response at 100 rows
+   * and does not paginate. They overlap heavily — 6h adds about 22 tokens to
+   * 24h's hundred — and the same coin listed twice in a market list is the
+   * kind of thing that makes a panel look broken.
+   */
+  serve([BONDING, GRADUATED, BONDING]);
+  const out = await discover("new");
+  assert.equal(out.length, 2);
+  assert.deepEqual(new Set(out.map((t) => t.mint)).size, 2);
 });
 
 /* ─────────────────────────────── icons ─────────────────────────────────── */
