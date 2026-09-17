@@ -604,8 +604,32 @@ function TerminalBody({
           * column had when it was a top-level grid column.
           */}
         <Scroller className="min-h-0" barHeight={144}>
+          {/*
+            * A RUNWAY OF TWO SCREENS, deliberately empty below the cards.
+            *
+            * The region was 761px of content in a 614px window, so it moved
+            * about a hundred and fifty pixels and stopped — the right column
+            * barely shifted before hitting the end, which reads as a scroll
+            * that is broken rather than one that is short.
+            *
+            * `min-h-[200dvh]` makes the row two viewports tall whatever is in
+            * it, so both columns travel the full way up and out and the space
+            * underneath them is space rather than a wall. It is on the ROW so
+            * the two columns share one runway and cannot drift apart; putting
+            * it on either column alone would make that column the taller
+            * sibling and reintroduce the stretch that `self-start` exists to
+            * stop.
+            *
+            * `dvh` rather than `vh`: on mobile the URL bar collapses on scroll
+            * and `vh` keeps measuring the tall viewport, which leaves a gap
+            * that grows as you scroll.
+            *
+            * cipher: the emptiness is the point today and should not stay the
+            * point. fomo's equivalent run is filled with the holders table.
+            * This is where a holders or recent-trades panel goes.
+            */}
           <div
-            className="grid gap-2 pr-2.5"
+            className="grid min-h-[200dvh] gap-2 pr-2.5"
             style={{ gridTemplateColumns: "minmax(0,1fr) 32%" }}
           >
 
