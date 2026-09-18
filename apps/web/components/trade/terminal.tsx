@@ -24,6 +24,7 @@ import { Ticket } from "./ticket";
 import { AboutToken } from "./about-token";
 import { Positions } from "./positions";
 import { factor, scaleCandles, supplyOf, type Denom } from "@/lib/chain/denom";
+import { browserZone } from "@/lib/tz";
 import { Sana, SanaMark } from "./sana";
 
 /**
@@ -106,6 +107,16 @@ function TerminalBody({
   /* Price or market cap. One constant multiplies the series; see denom.ts. */
   const [denom, setDenom] = useState<Denom>("price");
   /*
+   * NULL UNTIL THE BROWSER SAYS.
+   *
+   * The server has no time zone worth reading — it has the deployment's —
+   * so picking one during SSR would render an axis in Virginia's clock and
+   * then move every bar on hydration. Null renders nothing and the effect
+   * below fills it on the first client frame.
+   */
+  const [zone, setZone] = useState<string | null>(null);
+  useEffect(() => setZone(browserZone()), []);
+  /*
    * Sana, folded.
    *
    * Held here rather than inside Sana because folding changes the layout
@@ -186,6 +197,15 @@ function TerminalBody({
    */
   const loaded = useRef(`${initialSymbol}|${initialInterval}`);
 
+  /*
+   * THE SAME KEY, IN STATE, BECAUSE THE LIVE PRICE HAS TO SEE IT.
+   *
+   * `loaded` is a ref — right for an idempotence check, useless for deciding
+   * what to render, because writing it does not re-render anything. The chart
+   * needs the answer during render, so it is kept twice.
+   */
+  const [drawnKey, setDrawnKey] = useState(`${initialSymbol}|${initialInterval}`);
+
   useEffect(() => {
     const key = `${symbol}|${interval}`;
     /* Already on screen. `initial.length` is the escape hatch: a failed server
@@ -221,6 +241,7 @@ function TerminalBody({
         }
         setCandles(next);
         loaded.current = key;
+        setDrawnKey(key);
       } catch {
         /* Keep whatever is drawn and try again. The upstreams here fail
            transiently — a 429 from GeckoTerminal's free tier, a DNS blip —
@@ -701,6 +722,8 @@ function TerminalBody({
             denom={denom}
             onDenom={setDenom}
             canMcap={supply !== null}
+            zone={zone}
+            onZone={setZone}
           />
 
           {/*
@@ -716,12 +739,33 @@ function TerminalBody({
             <PriceChart
               resetSignal={chartReset}
               candles={shownCandles}
-              livePrice={live === undefined ? live : live * mult}
+              /*
+                * NO LIVE PRICE WHILE THE DRAWN SERIES IS SOMEBODY ELSE'S.
+                *
+                * Candles are deliberately kept across a market change — an
+                * empty chart is indistinguishable from a broken app — so for
+                * the second before the new ones land, the series on screen
+                * belongs to the previous token while `live` is already the
+                * new one's. The chart folded one into the other and drew a
+                * single bar from $0.00253 to $0.02122: PAID opening at
+                * +738% on wifout's history, for about a second, every time
+                * you clicked a coin.
+                *
+                * Undefined simply stops the fold. The stale chart holds
+                * still, which is what it is there for, and the real series
+                * replaces it when it arrives.
+                */
+              livePrice={
+                drawnKey !== `${symbol}|${interval}` || live === undefined
+                  ? undefined
+                  : live * mult
+              }
               barSeconds={intervalSeconds(interval)}
               /* The token's NAME, not its ticker — "Solana" reads as a market
                  and "SOL" reads as the thing beside it in the header. */
               name={market.name || market.base}
               interval={interval}
+              zone={zone}
             />
           </div>
 

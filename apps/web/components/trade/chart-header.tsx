@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CoinMark } from "./coin-mark";
 import type { Denom } from "@/lib/chain/denom";
 import type { Interval, MarketDef } from "@/lib/market";
+import { offsetLabel, offsetMinutes } from "@/lib/tz";
 import { INTERVAL_ORDER } from "@/lib/market";
 import { usd, compactUsd, pct } from "@/lib/format";
 
@@ -44,6 +45,8 @@ export function ChartHeader({
   denom,
   onDenom,
   canMcap,
+  zone,
+  onZone,
 }: {
   market: MarketDef;
   /** The token's own icon, for a market that is a mint rather than a pair. */
@@ -58,6 +61,9 @@ export function ChartHeader({
   onDenom: (d: Denom) => void;
   /** False when nothing behind the chart has a supply to multiply by. */
   canMcap: boolean;
+  /** Which zone the axis is drawn in. Null until the browser reports one. */
+  zone: string | null;
+  onZone: (z: string) => void;
   onInterval: (i: Interval) => void;
   pending: boolean;
 }) {
@@ -194,7 +200,7 @@ export function ChartHeader({
           * ambiguous in the first place. fomo prints "10:39:04 UTC" here for
           * the same reason, having made the opposite choice.
           */}
-        <TimeZoneBadge />
+        <TimeZoneBadge zone={zone} onZone={onZone} />
 
         <div className="ml-auto flex items-center gap-2.5 font-mono text-[12px] text-mute">
           {/* fomo's tool cluster. Labelled for screen readers even though the
@@ -257,31 +263,149 @@ function Stat({
 }
 
 /**
- * "UTC+5:30", from the browser.
+ * THE ZONES ON OFFER, in TradingView's own order.
+ *
+ * Their picker leads with UTC and "Exchange", then walks the world west to
+ * east. "Exchange" is dropped: it means the venue's local time, and a Solana
+ * AMM has no venue and no floor that opens — offering it would be a control
+ * that either does nothing or quietly means UTC.
+ *
+ * The labels carry the offset because that is what a trader is actually
+ * choosing, and the offsets are RENDERED FROM THE ZONE rather than typed in.
+ * A hardcoded "(UTC-8) Los Angeles" is wrong for eight months of the year;
+ * Intl knows when the clocks change and this does not.
+ */
+const ZONES = [
+  "UTC",
+  "Pacific/Honolulu",
+  "America/Anchorage",
+  "America/Juneau",
+  "America/Los_Angeles",
+  "America/Phoenix",
+  "America/Vancouver",
+  "America/Denver",
+  "America/Mexico_City",
+  "America/El_Salvador",
+  "America/Bogota",
+  "America/Chicago",
+  "America/New_York",
+  "America/Toronto",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Berlin",
+  "Europe/Paris",
+  "Europe/Zurich",
+  "Europe/Athens",
+  "Europe/Moscow",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Bangkok",
+  "Asia/Shanghai",
+  "Asia/Hong_Kong",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Asia/Seoul",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+];
+
+/** The city, without the continent Intl insists on carrying around. */
+function cityOf(zone: string): string {
+  return zone === "UTC" ? "UTC" : (zone.split("/").pop() ?? zone).replace(/_/g, " ");
+}
+
+/**
+ * THE ZONE THE AXIS IS DRAWN IN, and the control that changes it.
+ *
+ * Bold, because it is a control rather than a caption — it was a dim grey
+ * label and read as a footnote nobody could act on.
  *
  * Mounted empty and filled in an effect: the server has no timezone to read,
- * so rendering it during SSR would print the deployment's offset and then
- * correct itself on hydration — a mismatch React throws the subtree away for,
- * and a wrong claim about the axis in the meantime.
+ * so rendering it during SSR would print the deployment's offset and correct
+ * itself on hydration — a mismatch React throws the subtree away for, and a
+ * wrong claim about the axis in the meantime.
  */
-function TimeZoneBadge() {
-  const [label, setLabel] = useState("");
+function TimeZoneBadge({ zone, onZone }: { zone: string | null; onZone: (z: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [now, setNow] = useState<string>("");
 
+  /* The clock in the button, so the zone is not an abstract label — you can
+     see whether it says what your wall clock says. */
   useEffect(() => {
-    const mins = -new Date().getTimezoneOffset();
-    const sign = mins < 0 ? "−" : "+";
-    const h = Math.floor(Math.abs(mins) / 60);
-    const m = Math.abs(mins) % 60;
-    setLabel(mins === 0 ? "UTC" : `UTC${sign}${h}${m ? `:${String(m).padStart(2, "0")}` : ""}`);
-  }, []);
+    if (!zone) return;
+    const tick = () =>
+      setNow(
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: zone === "UTC" ? "UTC" : zone,
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }).format(new Date()),
+      );
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [zone]);
 
-  if (!label) return null;
+  /* Click anywhere else to dismiss. A menu that can only be closed by
+     choosing something is a menu you cannot back out of. */
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [open]);
+
+  if (!zone) return null;
+  const mins = offsetMinutes(zone);
+
   return (
-    <span
-      className="font-mono text-[10.5px] text-mute"
-      title="The time axis is drawn in your local time"
-    >
-      {label}
-    </span>
+    <div className="relative" onPointerDown={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title="The time zone the chart's axis is drawn in"
+        className={`rounded-md px-1.5 py-0.5 font-mono text-[11px] font-bold transition-colors ${
+          open ? "bg-raised text-champagne" : "text-ash hover:text-champagne"
+        }`}
+      >
+        {now} UTC{offsetLabel(mins)}
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full z-50 mt-1 max-h-[320px] w-[230px] overflow-y-auto rounded-lg border border-line bg-panel py-1 shadow-xl shadow-black/50"
+        >
+          {ZONES.map((z) => {
+            const m = offsetMinutes(z);
+            const on = z === zone;
+            return (
+              <button
+                key={z}
+                role="option"
+                aria-selected={on}
+                onClick={() => {
+                  onZone(z);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-baseline gap-2 px-3 py-1.5 text-left font-sans text-[13px] transition-colors ${
+                  on ? "bg-raised text-champagne" : "text-ash hover:bg-slate hover:text-champagne"
+                }`}
+              >
+                {z !== "UTC" && (
+                  <span className="shrink-0 font-mono text-[11.5px] text-mute">
+                    (UTC{offsetLabel(m)})
+                  </span>
+                )}
+                <span className="truncate">{cityOf(z)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

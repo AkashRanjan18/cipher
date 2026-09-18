@@ -11,6 +11,7 @@ import {
   type ISeriesApi,
 } from "lightweight-charts";
 import { foldLivePrice, type Candle } from "@/lib/market";
+import { offsetMinutes } from "@/lib/tz";
 
 /**
  * Price chart.
@@ -91,11 +92,11 @@ const VOLUME_ALPHA = 0.5;
  * belongs to the forming bar or opens the next one; it is given a shifted
  * `now` so both sides of that comparison are in the same frame.
  *
- * getTimezoneOffset() is minutes BEHIND UTC, so IST reports -330 and the
- * shift to add is +330 minutes.
+ * The zone is CHOSEN, not read: the picker in the chart header owns it, so
+ * the axis can be put in any market's clock rather than only the reader's.
  */
-function tzOffsetSeconds(): number {
-  return -new Date().getTimezoneOffset() * 60;
+function tzOffsetSeconds(zone: string | null): number {
+  return zone ? offsetMinutes(zone) * 60 : 0;
 }
 
 /** Bars moved into local wall-clock time, for the axis only. */
@@ -283,6 +284,7 @@ export function PriceChart({
   name,
   interval,
   resetSignal = 0,
+  zone,
 }: {
   candles: Candle[];
   /** What the series is OF. "Solana", "Bonk" — the token, not the ticker. */
@@ -293,6 +295,8 @@ export function PriceChart({
   livePrice?: number;
   /** Seconds per bar, so "now" can be placed in the right bucket. */
   barSeconds: number;
+  /** IANA zone the time axis is drawn in. Null means UTC. */
+  zone?: string | null;
   /**
    * Bump to reframe the chart. Alt+R does it from the keyboard; this is the
    * same reset reachable from outside — "reset the chart" is a sentence
@@ -513,7 +517,7 @@ export function PriceChart({
       priceFormat: { type: "price", precision: p, minMove: 10 ** -p },
     });
 
-    const shown = toLocal(clean, tzOffsetSeconds());
+    const shown = toLocal(clean, tzOffsetSeconds(zone ?? null));
 
     price.setData(shown as never);
     volume.setData(
@@ -535,7 +539,7 @@ export function PriceChart({
        so update() lands on the bar setData actually drew. */
     forming.current = shown[shown.length - 1] ?? null;
     setLegend(forming.current);
-  }, [candles, generation, resetView]);
+  }, [candles, generation, resetView, zone]);
 
   /* The same reset, asked for from outside. Skips the first run so mounting
      does not count as a request. */
@@ -568,13 +572,13 @@ export function PriceChart({
       last,
       livePrice,
       barSeconds,
-      Date.now() + tzOffsetSeconds() * 1000,
+      Date.now() + tzOffsetSeconds(zone ?? null) * 1000,
     );
 
     forming.current = next;
     price.update(next as never);
     setLegend(next);
-  }, [livePrice, barSeconds]);
+  }, [livePrice, barSeconds, zone]);
 
   if (candles.length === 0) {
     return (
