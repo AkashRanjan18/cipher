@@ -840,12 +840,23 @@ body {
   background: var(--p-surface);
   border-bottom: 1px solid var(--p-rule);
 }
+/*
+ * 12.5px, NOT THE REFERENCE'S 14.5.
+ *
+ * The reference panel is 442px wide and this one is 336px, where four tabs at
+ * 14.5px need about 350px — so the row had to scroll and Feed could only be
+ * reached by dragging it. A tab row you have to pull sideways to read is a
+ * navigation bar that hides its own options.
+ *
+ * The chips below keep 13.5px: they overflow at any size because there are
+ * six of them, so dragging is the right answer there and a bad one here.
+ */
 .navtab {
-  font-size: 14.5px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: -0.008em;
   color: var(--p-ink-3);
-  padding: 8px 11px;
+  padding: 8px 8px;
   border-radius: 8px;
   white-space: nowrap;
   display: inline-flex;
