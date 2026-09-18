@@ -10,3 +10,6 @@ target/
 .turbo/
 
 apps/*/tsconfig.tsbuildinfo
+
+# Vercel's local project link. Machine-specific, not source.
+.vercel
