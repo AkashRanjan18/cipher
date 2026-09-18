@@ -3,14 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Candle, Interval } from "@/lib/market";
 import { SYMBOL, intervalSeconds, subscribeCandles, marketOf, type MarketDef } from "@/lib/market";
-import { usd, pct } from "@/lib/format";
+import { usd } from "@/lib/format";
 import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/account/store";
 import { TriggerProvider, useTriggers } from "@/lib/triggers/store";
 import { mintFor, marketByMint } from "@/lib/chain/markets";
 import { displayCap, looksLikeMint } from "@/lib/chain/tokens";
 import { useTokenInfo } from "./use-token-info";
 import { SolPriceProvider, useSolPrices } from "./sol-prices";
-import { equity, heldMints } from "@/lib/account/paper";
 import { PriceChart } from "./price-chart";
 import { SidePanel } from "./side-panel";
 import { ChartHeader } from "./chart-header";
@@ -575,27 +574,41 @@ function TerminalBody({
         * gap: a moving stripe of candles above a header that was supposed to
         * be covering them.
         */}
-      <header className="flex shrink-0 items-center gap-3 rounded-2xl border border-line bg-panel px-3 py-2">
-        <a href="/" className="shrink-0 font-display text-xl lowercase text-champagne">
-          cipher
-        </a>
-        <span className="shrink-0 rotate-[-6deg] rounded bg-accent px-1.5 py-0.5 font-sans text-[8.5px] font-extrabold uppercase tracking-[0.08em] text-ink">
-          beta
-        </span>
+      {/*
+        * THREE COLUMNS, 1fr / auto / 1fr, so the search sits on the page's
+        * centre line rather than in the gap between the logo and the balance.
+        *
+        * It was a flex row with the search on mx-auto, which centres it in the
+        * LEFTOVER space — and the right cluster is several times wider than the
+        * logo, so the "centred" search sat visibly left of middle. Equal outer
+        * columns put the middle one on the true centre whatever either side
+        * holds.
+        */}
+      <header className="grid shrink-0 grid-cols-[1fr_minmax(0,28rem)_1fr] items-center gap-3 rounded-2xl border border-line bg-panel px-3 py-2">
+        <div className="flex items-center gap-3">
+          <a href="/" className="shrink-0 font-display text-xl lowercase text-champagne">
+            cipher
+          </a>
+          <span className="shrink-0 rotate-[-6deg] rounded bg-accent px-1.5 py-0.5 font-sans text-[8.5px] font-extrabold uppercase tracking-[0.08em] text-ink">
+            beta
+          </span>
+        </div>
 
-        {/* Centred, and the widest thing in the row. On a platform with more
-            markets than fit a list, search is the primary navigation. */}
+        {/* On a platform with more markets than fit a list, search is the
+            primary navigation — so it takes the centre. */}
         <MarketSearch onSelect={setSymbol} />
 
-        <span className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 font-sans text-[9px] font-extrabold uppercase tracking-[0.1em] text-accent">
-          Paper money
-        </span>
+        <div className="flex items-center justify-end gap-3">
+          <span className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 font-sans text-[9px] font-extrabold uppercase tracking-[0.1em] text-accent">
+            Paper money
+          </span>
 
-        <Bag marks={triggerPrices} />
+          <Cash />
 
-        {/* Was a hardcoded "AR" — a placeholder indistinguishable from a
-            working account menu, which is the worst kind. */}
-        <AccountMenu />
+          {/* Was a hardcoded "AR" — a placeholder indistinguishable from a
+              working account menu, which is the worst kind. */}
+          <AccountMenu />
+        </div>
       </header>
 
       {/* ---------------- body ---------------- */}
@@ -1022,47 +1035,19 @@ function TerminalBody({
  * it is zero now, so the flash is harmless — but the guard stays, because the
  * bug it prevents comes back the moment anyone funds an account.
  */
-function Bag({ marks }: { marks: Record<string, number> }) {
+/**
+ * CASH AND RESET, and nothing else.
+ *
+ * This showed three figures — cash, the value of what is held, and a total
+ * with a percentage return. The holdings value and the total are gone on
+ * instruction: the Positions card below already prices every coin, its P&L
+ * and its entry, so the header was restating it less precisely. What stays is
+ * the one number that answers "can I afford this order".
+ */
+function Cash() {
   const { account, hydrated, reset } = usePaperAccount();
-  /*
-   * Resetting the account must also disarm everything.
-   *
-   * A rule references a position by percentage, and the reset it survives is a
-   * rule watching for a position that no longer exists. It would fire, find
-   * nothing, and cancel itself — harmless but bewildering, and the alerts
-   * panel would carry stops for a balance that had been wiped. The two pieces
-   * of state are one decision, so they clear together.
-   */
   const { clearAll } = useTriggers();
   const [confirming, setConfirming] = useState(false);
-
-  /*
-   * MARKED PER MINT, not against whatever chart is open.
-   *
-   * This took a single `price` — the price of the market being looked at —
-   * and multiplied the whole position by it. With one asset that was merely
-   * fragile; with many it is nonsense. The previous version of this exact bug
-   * valued four SOL at BTC's price and printed a bag of $312,708 and +75,295%.
-   *
-   * Holdings with no mark are skipped rather than counted as zero, so a slow
-   * price request does not look like the money vanishing.
-   */
-  const held = heldMints(account);
-  const priced = held.some((m) => marks[m] !== undefined);
-  const value = hydrated && (held.length === 0 || priced) ? equity(account, marks) : null;
-  /*
-   * A RETURN ON NOTHING IS NOT MINUS A HUNDRED PERCENT.
-   *
-   * The opening deposit went to zero and this divided by it, so the header
-   * read "BAG $0 −100.00%" on a fresh account — a screen telling someone they
-   * had lost everything before they had done anything. There is no percentage
-   * to state until money goes in: `null` renders as "—", which is the honest
-   * answer to "what is your return" when the denominator is zero.
-   */
-  const ret =
-    value === null || account.depositedUsd <= 0
-      ? null
-      : ((value - account.depositedUsd) / account.depositedUsd) * 100;
 
   return (
     <div className="flex items-center gap-3">
@@ -1072,37 +1057,6 @@ function Bag({ marks }: { marks: Record<string, number> }) {
         </div>
         <div className="font-mono text-[13px] font-bold tabular-nums">
           {hydrated ? usd(account.usdc) : "—"}
-        </div>
-      </div>
-
-      {/* Holdings, so the money that left cash is visibly somewhere rather
-          than just gone. Hidden when flat — an empty row is noise.
-
-          The VALUE of everything held rather than a quantity of one coin: a
-          quantity means nothing once there are several, and "4.9280" with no
-          unit beside it is worse than nothing. */}
-      {hydrated && held.length > 0 && (
-        <div className="hidden text-right md:block">
-          <div className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
-            {held.length === 1 ? "Holding" : `${held.length} coins`}
-          </div>
-          <div className="font-mono text-[13px] font-bold tabular-nums">
-            {value === null ? "—" : usd(value - account.usdc)}
-          </div>
-        </div>
-      )}
-
-      <div className="hidden border-l border-line pl-3 text-right sm:block">
-        <div className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
-          Bag
-        </div>
-        <div className="font-mono text-[13px] font-bold tabular-nums">
-          {value === null ? "—" : usd(value)}
-          {ret !== null && (
-            <span className={`ml-1.5 text-[11px] ${ret >= 0 ? "text-up" : "text-down"}`}>
-              {pct(ret, false)}
-            </span>
-          )}
         </div>
       </div>
 
