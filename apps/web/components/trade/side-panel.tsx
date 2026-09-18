@@ -96,11 +96,30 @@ export function SidePanel({
   const [filter, setFilter] = useState<Filter>("Trending");
 
   const chips = useDragScroll<HTMLDivElement>();
+  const tabs = useDragScroll<HTMLDivElement>();
 
   return (
     <section className="panel flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-ink">
       {/* ---- tabs ---- */}
       <div className="panel__nav">
+        {/*
+          * THE TABS SCROLL; THE CHEVRON DOES NOT.
+          *
+          * Four tabs at the reference's 14.5px need about 350px and the panel
+          * is 336px wide, so the row overran and pushed the collapse button
+          * past the clipped edge — visible in the markup, invisible on screen,
+          * which is the worst of both. flex:none kept its size and did nothing
+          * about its position.
+          *
+          * The tabs get their own scrolling box and the button sits outside
+          * it, so the button is always reachable and the tabs are pullable
+          * the same way the filter chips are.
+          */}
+        <div
+          ref={tabs.ref}
+          {...tabs.handlers}
+          className="no-scrollbar flex min-w-0 flex-1 cursor-grab items-center gap-0.5 overflow-x-auto active:cursor-grabbing"
+        >
         {TABS.map(([k, label]) => (
           <button
             key={k}
@@ -116,6 +135,8 @@ export function SidePanel({
                 buttons instead of a set of sections. */}
           </button>
         ))}
+        </div>
+
         <button
           onClick={onCollapse}
           aria-label="Collapse panel"
