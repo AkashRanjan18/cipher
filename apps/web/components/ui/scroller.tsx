@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
@@ -41,11 +42,14 @@ export function Scroller({
   className = "",
   /** Bar length in pixels. Fixed, which is the entire point. */
   barHeight = 48,
+  style,
 }: {
   children: ReactNode;
   /** Sizing for the outer box. This is the flex/grid child, not the scroller. */
   className?: string;
   barHeight?: number;
+  /** For sizes a class cannot express — a row-count cap, say. */
+  style?: CSSProperties;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [bar, setBar] = useState<{ top: number; show: boolean }>({
@@ -182,7 +186,7 @@ export function Scroller({
   }, [barHeight]);
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${className}`} style={style}>
       {/* no-scrollbar hides the native one; the element is otherwise an
           ordinary scroll container, so wheel, trackpad, keyboard and touch are
           all the browser's own. */}

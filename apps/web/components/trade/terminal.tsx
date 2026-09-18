@@ -154,6 +154,8 @@ function TerminalBody({
    * changes identity, so mapping on every render would redraw a thousand bars
    * every time the price ticked.
    */
+
+
   const supply = supplyOf(token);
   const mult = factor(denom, supply);
   const shownCandles = useMemo(() => scaleCandles(candles, mult), [candles, mult]);
@@ -205,6 +207,16 @@ function TerminalBody({
    * needs the answer during render, so it is kept twice.
    */
   const [drawnKey, setDrawnKey] = useState(`${initialSymbol}|${initialInterval}`);
+
+  /*
+   * THE CHART IS SHOWING SOMEBODY ELSE'S SERIES.
+   *
+   * `pending` is useTransition's, and it ends when React finishes the render
+   * — which is long before the candles land, so fading on it flickered back
+   * to full strength while the old coin was still drawn. This is the exact
+   * condition: the bars on screen belong to a market that is no longer open.
+   */
+  const staleSeries = drawnKey !== `${symbol}|${interval}`;
 
   useEffect(() => {
     const key = `${symbol}|${interval}`;
@@ -614,7 +626,10 @@ function TerminalBody({
          * The market list does not, because it is how you navigate: scrolling
          * it away to read a ticket is losing the thing you steer with.
          */
-        style={{ gridTemplateColumns: panelOpen ? "26% minmax(0,1fr)" : "minmax(0,1fr)" }}
+        /* 22.1% is 26% less fifteen percent, on the user's instruction. A
+           percentage rather than a pixel width so the split holds on a
+           laptop and on a 4K monitor. */
+        style={{ gridTemplateColumns: panelOpen ? "22.1% minmax(0,1fr)" : "minmax(0,1fr)" }}
       >
         {panelOpen && (
           <div className="hidden min-h-0 lg:flex lg:flex-col">
@@ -735,7 +750,30 @@ function TerminalBody({
             * a zoom also scrolled the region, so the candles came closer and
             * the whole column slid at the same time. See Scroller.
             */}
-          <div data-wheel-lock className="h-[55vh] min-h-[320px]">
+          {/*
+            * A CROSSFADE, NOT A SNAP.
+            *
+            * Switching coins reads as a blip because three things land on
+            * different frames: the header swaps instantly, the old candles sit
+            * frozen while the fetch is in flight, then setData plus resetView
+            * replaces a thousand bars in one paint. Nothing is broken and it
+            * still feels broken.
+            *
+            * Dimming while the fetch is pending turns that into one motion:
+            * the old series recedes, the new one arrives at full strength.
+            * 180ms out and 260ms back — leaving is quicker than arriving, so
+            * the chart never looks like it is hesitating.
+            *
+            * Opacity only. Moving or scaling the canvas would make the bars
+            * themselves appear to shift, which is the one thing a price chart
+            * must never do.
+            */}
+          <div
+            data-wheel-lock
+            className={`h-[55vh] min-h-[320px] transition-opacity ${
+              staleSeries ? "opacity-[0.45] duration-150" : "opacity-100 duration-300"
+            } ease-out`}
+          >
             <PriceChart
               resetSignal={chartReset}
               candles={shownCandles}
@@ -755,11 +793,7 @@ function TerminalBody({
                 * still, which is what it is there for, and the real series
                 * replaces it when it arrives.
                 */
-              livePrice={
-                drawnKey !== `${symbol}|${interval}` || live === undefined
-                  ? undefined
-                  : live * mult
-              }
+              livePrice={staleSeries || live === undefined ? undefined : live * mult}
               barSeconds={intervalSeconds(interval)}
               /* The token's NAME, not its ticker — "Solana" reads as a market
                  and "SOL" reads as the thing beside it in the header. */

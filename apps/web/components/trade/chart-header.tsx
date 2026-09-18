@@ -377,7 +377,18 @@ function TimeZoneBadge({ zone, onZone }: { zone: string | null; onZone: (z: stri
       {open && (
         <div
           role="listbox"
-          className="absolute left-0 top-full z-50 mt-1 max-h-[320px] w-[230px] overflow-y-auto rounded-lg border border-line bg-panel py-1 shadow-xl shadow-black/50"
+          /*
+           * data-wheel-lock: the menu owns the wheel over itself.
+           *
+           * Without it, scrolling to reach a zone scrolled the PAGE instead —
+           * the terminal's right-hand scroller saw the event and moved the
+           * whole column, so the only way down the list was to drag its bar.
+           * The chart canvas already claims the wheel the same way; see
+           * Scroller, which checks for this attribute before acting.
+           */
+          data-wheel-lock
+          onWheel={(e) => e.stopPropagation()}
+          className="absolute left-0 top-full z-50 mt-1 max-h-[320px] w-[230px] overflow-y-auto overscroll-contain rounded-lg border border-line bg-panel py-1 shadow-xl shadow-black/50"
         >
           {ZONES.map((z) => {
             const m = offsetMinutes(z);

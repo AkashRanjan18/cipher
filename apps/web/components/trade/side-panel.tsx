@@ -348,7 +348,21 @@ function TokenRow({
     <button
       onClick={onSelect}
       aria-current={selected}
-      className={`flex w-full items-center gap-2 border-l-2 px-2.5 py-2 text-left transition-colors ${
+      /*
+       * py-[13px], NOT py-2, AND THE PANEL IS THE SAME HEIGHT.
+       *
+       * Eleven rows fitted the column and the user wants nine. The first
+       * attempt capped the list's height instead, which shortened the panel
+       * and left a gap under it — the wrong lever. The column keeps its full
+       * length; the rows grow into it.
+       *
+       * The list is 459px. 50px a row (28px mark inside py-[11px]) is 9.18 of
+       * them, so nine are whole and the tenth is a sliver that says "there is
+       * more" without pretending to be readable. Both row components take
+       * it, or Majors and Trending would be different heights and switching
+       * tabs would move every row under the cursor.
+       */
+      className={`flex w-full items-center gap-2 border-l-2 px-2.5 py-[11px] text-left transition-colors ${
         selected ? "border-accent bg-raised" : "border-transparent hover:bg-slate"
       }`}
     >
@@ -448,7 +462,7 @@ function MajorList({
             key={m.symbol}
             onClick={() => onSelect(m.symbol)}
             aria-current={selected}
-            className={`flex w-full items-center gap-2 border-l-2 px-2.5 py-2 text-left transition-colors ${
+            className={`flex w-full items-center gap-2 border-l-2 px-2.5 py-[11px] text-left transition-colors ${
               selected ? "border-accent bg-raised" : "border-transparent hover:bg-slate"
             }`}
           >
