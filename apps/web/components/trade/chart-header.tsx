@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CoinMark } from "./coin-mark";
 import type { Denom } from "@/lib/chain/denom";
 import type { Interval, MarketDef } from "@/lib/market";
@@ -70,35 +70,35 @@ export function ChartHeader({
   const [starred, setStarred] = useState(false);
 
   return (
-    <div className="shrink-0">
+    <div className="chead shrink-0">
       {/* ---------------- row 1: identity and readings ---------------- */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline px-3 py-2">
         {/* The same mark the list rows use, so clicking a row does not change
             what the coin looks like. */}
-        <CoinMark symbol={market.base} icon={icon} hue={market.hue} glyph={market.glyph} size={32} />
+        <CoinMark symbol={market.base} icon={icon} hue={market.hue} glyph={market.glyph} size={48} />
 
         <div className="mr-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-[10px]">
             {/* THE SANS, because the ticker is uppercase and Caacupe One draws its
                 capital A as a single-storey lowercase form: PAID renders "PaID"
                 and SANA renders "SaNa". Same reason the About heading uses it.
                 font-bold also went: the face is single-weight, so bold was
                 synthesised, which smeared the glyphs further. */}
-            <h1 className="font-sans text-[17px] font-bold leading-none tracking-tight">
+            <h1 className="chead__symbol font-sans leading-none">
               {market.base}
             </h1>
             <button
               onClick={() => setStarred((s) => !s)}
               aria-pressed={starred}
               aria-label="Watchlist"
-              className={`text-[12px] leading-none transition-colors ${
+              className={`text-[15px] leading-none transition-colors ${
                 starred ? "text-accent" : "text-mute hover:text-champagne"
               }`}
             >
               {starred ? "★" : "☆"}
             </button>
           </div>
-          <p className="mt-1 font-sans text-[10px] leading-none text-ash">
+          <p className="chead__meta mt-1 font-sans leading-none">
             {/* A token whose name IS its ticker read "NTDA · NTDA · live".
                 Saying it twice is not more informative than saying it once. */}
             {market.name && market.name !== market.base ? `${market.name} · live` : "live"}
@@ -115,13 +115,13 @@ export function ChartHeader({
           */}
         <div className="ml-auto flex items-center gap-3">
           <div className="px-1 text-center">
-            <div className="font-sans text-[11px] text-ash">Price</div>
-            <div className="font-mono text-[19px] font-bold leading-tight tabular-nums">
+            <div className="chead__price-label font-sans">Price</div>
+            <div className="chead__price-value font-mono tabular-nums">
               {price ? usd(price) : "—"}
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-[10px]">
             <Stat label="Market cap" value={compactUsd(marketCap)} />
             <Stat
               label="24H change"
@@ -242,22 +242,24 @@ export function ChartHeader({
 function Stat({
   label,
   value,
-  dir,
+  dir = null,
 }: {
   label: string;
   value: string;
   dir?: "up" | "down" | null;
 }) {
+  /* 110x60 on the surface colour, label over value, both centred — the
+     reference's card exactly. See .chead__stat in globals.css. */
   return (
-    <div className="min-w-[86px] rounded-[10px] border border-line bg-slate px-3 py-1 text-center">
-      <div className="whitespace-nowrap font-sans text-[11px] text-ash">{label}</div>
-      <div
-        className={`font-mono text-[14px] font-bold leading-tight tabular-nums ${
-          dir === "up" ? "text-up" : dir === "down" ? "text-down" : "text-champagne"
+    <div className="chead__stat">
+      <span className="label font-sans">{label}</span>
+      <span
+        className={`value font-mono tabular-nums ${
+          dir === "up" ? "text-up" : dir === "down" ? "text-down" : ""
         }`}
       >
         {value}
-      </div>
+      </span>
     </div>
   );
 }
@@ -328,6 +330,8 @@ function cityOf(zone: string): string {
 function TimeZoneBadge({ zone, onZone }: { zone: string | null; onZone: (z: string) => void }) {
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState<string>("");
+  const menu = useRef<HTMLDivElement>(null);
+  const anchor = useRef<HTMLButtonElement>(null);
 
   /* The clock in the button, so the zone is not an abstract label — you can
      see whether it says what your wall clock says. */
@@ -348,11 +352,26 @@ function TimeZoneBadge({ zone, onZone }: { zone: string | null; onZone: (z: stri
     return () => clearInterval(id);
   }, [zone]);
 
-  /* Click anywhere else to dismiss. A menu that can only be closed by
-     choosing something is a menu you cannot back out of. */
+  /*
+   * Click anywhere else to dismiss — measured against the menu's box, not by
+   * stopping propagation inside it.
+   *
+   * THE SCROLLBAR IS WHY. Dragging a native scrollbar does not dispatch a
+   * pointerdown to the element it belongs to, so the "was it inside?" test
+   * has to be geometric. With a propagation guard the drag closed the menu on
+   * contact and the only way down the list was the keyboard. `contains` alone
+   * has the same hole; comparing coordinates to the rect does not.
+   */
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
+    const close = (e: PointerEvent) => {
+      const box = menu.current?.getBoundingClientRect();
+      const btn = anchor.current?.getBoundingClientRect();
+      const inside = (r: DOMRect | undefined) =>
+        r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      if (inside(box) || inside(btn)) return;
+      setOpen(false);
+    };
     window.addEventListener("pointerdown", close);
     return () => window.removeEventListener("pointerdown", close);
   }, [open]);
@@ -361,8 +380,9 @@ function TimeZoneBadge({ zone, onZone }: { zone: string | null; onZone: (z: stri
   const mins = offsetMinutes(zone);
 
   return (
-    <div className="relative" onPointerDown={(e) => e.stopPropagation()}>
+    <div className="relative">
       <button
+        ref={anchor}
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -376,6 +396,7 @@ function TimeZoneBadge({ zone, onZone }: { zone: string | null; onZone: (z: stri
 
       {open && (
         <div
+          ref={menu}
           role="listbox"
           /*
            * data-wheel-lock: the menu owns the wheel over itself.

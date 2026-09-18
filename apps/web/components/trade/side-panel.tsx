@@ -95,33 +95,28 @@ export function SidePanel({
   const [filter, setFilter] = useState<Filter>("Trending");
 
   return (
-    <section className="flex min-h-0 flex-col rounded-2xl border border-line bg-panel">
+    <section className="panel flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-ink">
       {/* ---- tabs ---- */}
-      <div className="flex items-center gap-0.5 border-b border-hairline px-1.5">
+      <div className="panel__nav">
         {TABS.map(([k, label]) => (
           <button
             key={k}
             onClick={() => setTab(k)}
             aria-selected={tab === k}
             role="tab"
-            className={`relative px-2 py-2.5 font-sans text-[11.5px] font-bold transition-colors ${
-              tab === k ? "text-champagne" : "text-ash hover:text-champagne"
-            }`}
+            className="navtab"
           >
-            {k === "alerts" && <span className="mr-1 opacity-70">🔔</span>}
+            {k === "alerts" && <span className="opacity-70">🔔</span>}
             {label}
             {/* An underline rather than a pill: four tabs in 248px cannot each
                 carry a filled background without the row reading as a stack of
                 buttons instead of a set of sections. */}
-            {tab === k && (
-              <span className="absolute inset-x-1.5 -bottom-px h-[2px] rounded-full bg-champagne" />
-            )}
           </button>
         ))}
         <button
           onClick={onCollapse}
           aria-label="Collapse panel"
-          className="ml-auto px-1.5 py-2 font-mono text-[13px] text-mute transition-colors hover:text-champagne"
+          className="panel__collapse font-mono text-[15px]"
         >
           «
         </button>
@@ -130,17 +125,13 @@ export function SidePanel({
       {tab === "tokens" && (
         <>
           {/* ---- filters ---- */}
-          <div className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto px-2 py-2">
+          <div className="panel__chips no-scrollbar shrink-0 overflow-x-auto">
             {FILTERS.map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
                 aria-pressed={filter === f}
-                className={`shrink-0 rounded-lg px-2 py-1 font-sans text-[10.5px] font-bold transition-colors ${
-                  filter === f
-                    ? "bg-raised text-champagne"
-                    : "text-ash hover:text-champagne"
-                }`}
+                className="chip"
               >
                 {f}
               </button>
@@ -151,10 +142,10 @@ export function SidePanel({
               fomo runs a promo in this slot. Ours states the actual rate
               rather than claiming "lowest", which is a claim we would have to
               keep true against every competitor, forever. */}
-          <div className="mx-2 mb-1.5 flex shrink-0 items-center gap-1.5 rounded-lg border border-hairline bg-slate px-2 py-1.5">
-            <span className="text-[10px]">🏷</span>
-            <span className="font-sans text-[10.5px] text-ash">
-              <b className="font-bold text-action">0.50% fees</b> with a referral code
+          <div className="promo shrink-0">
+            <span className="text-[13px]">🏷</span>
+            <span>
+              <b>0.50% fees</b> with a referral code
             </span>
           </div>
         </>
@@ -185,7 +176,7 @@ export function SidePanel({
           fomo's split buttons, wired to the one split cipher actually has:
           whether the tape sits under the chart or the chart takes the height.
           A control that does nothing is worse than no control. */}
-      <div className="flex shrink-0 gap-1 border-t border-hairline p-1.5">
+      <div className="panel__foot shrink-0">
         {(
           [
             ["bottom", "▤", "Split bottom"],
@@ -196,11 +187,7 @@ export function SidePanel({
             key={k}
             onClick={() => onSplit(k)}
             aria-pressed={split === k}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 font-sans text-[10.5px] font-bold transition-colors ${
-              split === k
-                ? "bg-raised text-champagne"
-                : "text-mute hover:text-champagne"
-            }`}
+            className="split"
           >
             <span className="font-mono">{glyph}</span>
             {label}
@@ -348,47 +335,30 @@ function TokenRow({
     <button
       onClick={onSelect}
       aria-current={selected}
-      /*
-       * py-[13px], NOT py-2, AND THE PANEL IS THE SAME HEIGHT.
-       *
-       * Eleven rows fitted the column and the user wants nine. The first
-       * attempt capped the list's height instead, which shortened the panel
-       * and left a gap under it — the wrong lever. The column keeps its full
-       * length; the rows grow into it.
-       *
-       * The list is 459px. 50px a row (28px mark inside py-[11px]) is 9.18 of
-       * them, so nine are whole and the tenth is a sliver that says "there is
-       * more" without pretending to be readable. Both row components take
-       * it, or Majors and Trending would be different heights and switching
-       * tabs would move every row under the cursor.
-       */
-      className={`flex w-full items-center gap-2 border-l-2 px-2.5 py-[11px] text-left transition-colors ${
-        selected ? "border-accent bg-raised" : "border-transparent hover:bg-slate"
-      }`}
+      /* Geometry from the reference: a 36px mark, a 12px gap, the symbol over
+         the cap on the left and the price over the change on the right, with a
+         rule under every row. Height is the one divergence — see --p-row. */
+      className="token-row"
     >
-      <CoinMark symbol={token.symbol} icon={token.icon} />
+      <CoinMark symbol={token.symbol} icon={token.icon} size={36} />
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1">
-          <span className="truncate font-sans text-[12.5px] font-bold leading-tight">
-            {token.symbol || "?"}
-          </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex items-center gap-1.5">
+          <span className="token__sym truncate">{token.symbol || "?"}</span>
           {/* The badge is the point of the list. A token still on its curve
               and a token with a real pool behind it are different
               instruments, and nothing else on the row says which. */}
           <Stage token={token} />
         </div>
-        <div className="truncate font-sans text-[10px] leading-tight text-mute">
+        <div className="token__mc truncate">
           {displayCap(token) ? `${compactUsd(displayCap(token))} MC` : token.name || "—"}
         </div>
       </div>
 
-      <div className="shrink-0 text-right">
-        <div className="font-mono text-[12px] font-bold leading-tight tabular-nums">
-          {price ? usd(price) : "—"}
-        </div>
+      <div className="ml-auto flex shrink-0 flex-col items-end gap-0.5 text-right">
+        <div className="token__price tabular-nums">{price ? usd(price) : "—"}</div>
         <div
-          className={`font-mono text-[10px] leading-tight tabular-nums ${
+          className={`token__chg tabular-nums ${
             change === null ? "text-mute" : up ? "text-up" : "text-down"
           }`}
         >
@@ -462,30 +432,26 @@ function MajorList({
             key={m.symbol}
             onClick={() => onSelect(m.symbol)}
             aria-current={selected}
-            className={`flex w-full items-center gap-2 border-l-2 px-2.5 py-[11px] text-left transition-colors ${
-              selected ? "border-accent bg-raised" : "border-transparent hover:bg-slate"
-            }`}
+            className="token-row"
           >
             {/* The SAME component the Solana rows use, so SOL is the same
                 Solana logo in Majors as it is in Trending — the same file,
                 not a matching one. */}
-            <CoinMark symbol={m.base} hue={m.hue} glyph={m.glyph} />
+            <CoinMark symbol={m.base} hue={m.hue} glyph={m.glyph} size={36} />
 
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-sans text-[12.5px] font-bold leading-tight">
-                {m.base}
-              </div>
-              <div className="font-sans text-[10px] leading-tight text-mute">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div className="token__sym truncate">{m.base}</div>
+              <div className="token__mc truncate">
                 {live ? `${compactUsd(live.marketCap)} MC` : m.name}
               </div>
             </div>
 
-            <div className="shrink-0 text-right">
-              <div className="font-mono text-[12px] font-bold leading-tight tabular-nums">
+            <div className="ml-auto flex shrink-0 flex-col items-end gap-0.5 text-right">
+              <div className="token__price tabular-nums">
                 {live ? usd(live.priceUsd) : "—"}
               </div>
               <div
-                className={`font-mono text-[10px] leading-tight tabular-nums ${
+                className={`token__chg tabular-nums ${
                   !live ? "text-mute" : up ? "text-up" : "text-down"
                 }`}
               >

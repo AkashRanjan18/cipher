@@ -799,3 +799,197 @@ body {
   line-height: 1.5;
   color: var(--h-ink-2);
 }
+
+/* ───────────────── the token panel and the chart header ─────────────────
+ *
+ * The user's two stylesheets, geometry and type scale intact. Their colour
+ * variables are re-pointed at the @theme tokens rather than copied: the
+ * references' #21c95e is cipher's up EXACTLY, #516af6 is cipher's action
+ * exactly, and #ff4d2a is within a hair of cipher's down. A second copy of a
+ * hex is the drift CLAUDE.md warns about, and the one thing worse than two
+ * greens is two greens that are nearly the same.
+ */
+.panel {
+  --p-surface: var(--color-slate);
+  --p-raised: var(--color-raised);
+  --p-rule: rgba(255, 255, 255, 0.07);
+  --p-ink: #f7f7f7;
+  --p-ink-2: #9899a3;
+  --p-ink-3: #8a8d99;
+  /*
+   * THE REFERENCE SAYS 66px AND THIS SAYS 50.
+   *
+   * At 66 the 459px list shows six rows. Nine was asked for one instruction
+   * earlier and is the more specific of the two, so the row keeps the height
+   * that delivers it and takes everything else from the reference — the 36px
+   * mark, the type scale, the rule between rows. 36px of mark inside 50px of
+   * row is 7px of breathing space, which is tight and legible.
+   */
+  --p-row: 50px;
+
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+.panel__nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 8px 7px 10px;
+  background: var(--p-surface);
+  border-bottom: 1px solid var(--p-rule);
+}
+.navtab {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  color: var(--p-ink-3);
+  padding: 8px 11px;
+  border-radius: 8px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 120ms;
+}
+.navtab:hover:not([aria-selected="true"]) { color: #c9cbd4; }
+.navtab[aria-selected="true"] { color: var(--p-ink); }
+
+.panel__collapse {
+  margin-left: auto;
+  color: var(--p-ink-2);
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+}
+.panel__collapse:hover { background: var(--p-raised); color: var(--p-ink); }
+
+.panel__chips { display: flex; gap: 8px; padding: 11px 12px; }
+.chip {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--p-ink-2);
+  background: var(--color-ink);
+  border: 1px solid #262531;
+  border-radius: 9px;
+  padding: 8px 14px;
+  white-space: nowrap;
+  flex: none;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.chip:hover { color: #d2d4dc; border-color: #34333f; }
+.chip[aria-pressed="true"] {
+  background: var(--p-raised);
+  border-color: #33323f;
+  color: var(--p-ink);
+}
+
+.promo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 1px 12px 10px;
+  padding: 11px 13px;
+  background: var(--p-surface);
+  border: 1px solid var(--p-rule);
+  border-radius: 11px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--p-ink-2);
+}
+.promo b { color: var(--color-action); font-weight: 600; }
+
+.token-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--p-row);
+  padding: 0 14px;
+  text-align: left;
+  color: inherit;
+  border-bottom: 1px solid var(--p-rule);
+  border-left: 2px solid transparent;
+  transition: background 120ms;
+}
+.token-row:hover { background: #0d0c18; }
+.token-row[aria-current="true"] {
+  background: var(--p-raised);
+  border-left-color: var(--color-accent);
+}
+.token__sym {
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+}
+.token__mc { font-size: 13px; font-weight: 500; color: var(--p-ink-2); line-height: 1.25; }
+.token__price {
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+}
+.token__chg { font-size: 13px; font-weight: 600; line-height: 1.25; }
+
+.panel__foot {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--p-rule);
+}
+.split {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--p-ink-2);
+  background: var(--p-surface);
+  border: 1px solid var(--p-rule);
+  border-radius: 10px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 120ms, color 120ms;
+}
+.split:hover { background: var(--p-raised); color: var(--p-ink); }
+.split[aria-pressed="true"] { background: var(--p-raised); color: var(--p-ink); }
+
+/* ---- the chart header, from btc-chart.html ---- */
+.chead { --c-text-2: #c9ccd1; --c-muted: #8a8f98; --c-dim: #5c6068; }
+.chead__symbol { font-size: 18px; font-weight: 700; }
+.chead__meta { font-size: 14px; color: var(--c-muted); }
+.chead__meta .name { color: var(--c-text-2); }
+.chead__price-label { font-size: 14px; color: var(--c-text-2); }
+.chead__price-value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.chead__stat {
+  width: 110px;
+  height: 60px;
+  background: var(--color-slate);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.chead__stat .label { font-size: 14px; color: var(--c-text-2); }
+.chead__stat .value { font-size: 16px; font-weight: 700; }
+.chead__toolbar {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.chead__toolbar .group { display: flex; align-items: center; gap: 18px; padding: 0 16px; }
+.chead__toolbar .sep { width: 1px; height: 26px; background: var(--color-line); flex: none; }
+.chead__toolbar .idle { color: var(--c-muted); transition: color 120ms; }
+.chead__toolbar .idle:hover { color: var(--c-text-2); }
+.chead__toolbar .active { color: var(--color-action); }
+.chead__toolbar .disabled { color: var(--c-dim); }
