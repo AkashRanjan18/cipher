@@ -601,7 +601,10 @@ function TerminalBody({
       {/* ---------------- body ---------------- */}
       <div
         ref={bodyRef}
-        className="grid min-h-0 flex-1 gap-2"
+        /* `relative`, so the reopen chevron below anchors to THIS grid rather
+           than to the viewport. Absolute with no positioned ancestor put it
+           over the app header, on top of the wordmark. */
+        className="relative grid min-h-0 flex-1 gap-2"
         // Grid template in a style rather than a class: the left column has to
         // collapse to zero when the panel is closed, and Tailwind cannot hold
         // a conditional arbitrary value without generating both classes.
@@ -642,18 +645,6 @@ function TerminalBody({
               onCollapse={() => setPanelOpen(false)}
             />
           </div>
-        )}
-
-        {/* Reopening it. A collapse with no way back is a trap, and fomo's
-            chevron is the only affordance once the panel is gone. */}
-        {!panelOpen && (
-          <button
-            onClick={() => setPanelOpen(true)}
-            aria-label="Open panel"
-            className="absolute left-2 top-1/2 z-20 hidden -translate-y-1/2 rounded-r-lg border border-l-0 border-line bg-panel px-1 py-3 font-mono text-[13px] text-mute hover:text-champagne lg:block"
-          >
-            »
-          </button>
         )}
 
         {/*
@@ -737,6 +728,9 @@ function TerminalBody({
             denom={denom}
             onDenom={setDenom}
             canMcap={supply !== null}
+            /* Only when there is something to reopen: the chevron IS the
+               panel's absence, so it must not sit there while it is open. */
+            onExpand={panelOpen ? undefined : () => setPanelOpen(true)}
             zone={zone}
             onZone={setZone}
           />

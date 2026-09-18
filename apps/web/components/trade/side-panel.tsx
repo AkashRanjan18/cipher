@@ -119,7 +119,7 @@ export function SidePanel({
         <button
           onClick={onCollapse}
           aria-label="Collapse panel"
-          className="panel__collapse font-mono text-[15px]"
+          className="panel-toggle panel__collapse-pos font-mono"
         >
           «
         </button>

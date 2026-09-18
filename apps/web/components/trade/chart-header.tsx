@@ -47,6 +47,7 @@ export function ChartHeader({
   canMcap,
   zone,
   onZone,
+  onExpand,
 }: {
   market: MarketDef;
   /** The token's own icon, for a market that is a mint rather than a pair. */
@@ -64,6 +65,8 @@ export function ChartHeader({
   /** Which zone the axis is drawn in. Null until the browser reports one. */
   zone: string | null;
   onZone: (z: string) => void;
+  /** Given only while the market panel is collapsed. See terminal.tsx. */
+  onExpand?: () => void;
   onInterval: (i: Interval) => void;
   pending: boolean;
 }) {
@@ -75,6 +78,26 @@ export function ChartHeader({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline px-3 py-2">
         {/* The same mark the list rows use, so clicking a row does not change
             what the coin looks like. */}
+        {/*
+          * IN THE ROW, NOT OVER IT.
+          *
+          * It was absolutely positioned at the column's top left and landed on
+          * top of the coin's mark. The reference puts it beside the mark, and
+          * in the flow it pushes the identity along instead of covering it —
+          * which is also why the header does not need to know whether the
+          * panel is open, only whether it was handed a way to open it.
+          */}
+        {onExpand && (
+          <button
+            onClick={onExpand}
+            aria-label="Open panel"
+            title="Show tokens"
+            className="panel-toggle"
+          >
+            »
+          </button>
+        )}
+
         <CoinMark symbol={market.base} icon={icon} hue={market.hue} glyph={market.glyph} size={48} />
 
         <div className="mr-1">

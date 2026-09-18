@@ -856,16 +856,37 @@ body {
 .navtab:hover:not([aria-selected="true"]) { color: #c9cbd4; }
 .navtab[aria-selected="true"] { color: var(--p-ink); }
 
-.panel__collapse {
-  margin-left: auto;
-  color: var(--p-ink-2);
+/*
+ * THE COLLAPSE CHEVRON, AND THE ONE THAT BRINGS IT BACK, ARE ONE CONTROL.
+ *
+ * It was a bare glyph in the panel's own muted grey and read as punctuation
+ * rather than as a button — the reference boxes it, and boxing is what makes
+ * the difference between a mark and something you can press.
+ *
+ * The same class serves both directions, so the button you click to hide the
+ * panel and the button you click to bring it back are the same object at the
+ * same size in the same place. Two different-looking controls for one toggle
+ * is how people lose a panel and cannot find it again.
+ */
+.panel-toggle {
+  flex: none;
   width: 34px;
   height: 34px;
-  border-radius: 8px;
+  border-radius: 9px;
   display: grid;
   place-items: center;
+  font-size: 15px;
+  color: var(--color-ash);
+  background: var(--color-slate);
+  border: 1px solid var(--color-line);
+  transition: background 120ms, color 120ms, border-color 120ms;
 }
-.panel__collapse:hover { background: var(--p-raised); color: var(--p-ink); }
+.panel-toggle:hover {
+  background: var(--color-raised);
+  border-color: var(--color-ash);
+  color: var(--color-champagne);
+}
+.panel__collapse-pos { margin-left: auto; }
 
 .panel__chips { display: flex; gap: 8px; padding: 11px 12px; }
 .chip {
