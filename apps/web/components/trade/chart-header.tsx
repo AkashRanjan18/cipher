@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CoinMark } from "./coin-mark";
 import type { Denom } from "@/lib/chain/denom";
 import type { Interval, MarketDef } from "@/lib/market";
@@ -184,6 +184,18 @@ export function ChartHeader({
 
         {pending && <span className="font-mono text-[10.5px] text-mute">loading…</span>}
 
+        {/*
+          * WHICH CLOCK THE AXIS IS DRAWN IN.
+          *
+          * The chart renders bars in local wall-clock time so the date on the
+          * right edge matches the reader's own — see price-chart.tsx. That
+          * makes the labels correct and the FRAME implicit, and a time axis
+          * whose frame you have to guess is the thing that made this
+          * ambiguous in the first place. fomo prints "10:39:04 UTC" here for
+          * the same reason, having made the opposite choice.
+          */}
+        <TimeZoneBadge />
+
         <div className="ml-auto flex items-center gap-2.5 font-mono text-[12px] text-mute">
           {/* fomo's tool cluster. Labelled for screen readers even though the
               glyphs are the whole control — an icon row with no names is the
@@ -241,5 +253,35 @@ function Stat({
         {value}
       </div>
     </div>
+  );
+}
+
+/**
+ * "UTC+5:30", from the browser.
+ *
+ * Mounted empty and filled in an effect: the server has no timezone to read,
+ * so rendering it during SSR would print the deployment's offset and then
+ * correct itself on hydration — a mismatch React throws the subtree away for,
+ * and a wrong claim about the axis in the meantime.
+ */
+function TimeZoneBadge() {
+  const [label, setLabel] = useState("");
+
+  useEffect(() => {
+    const mins = -new Date().getTimezoneOffset();
+    const sign = mins < 0 ? "−" : "+";
+    const h = Math.floor(Math.abs(mins) / 60);
+    const m = Math.abs(mins) % 60;
+    setLabel(mins === 0 ? "UTC" : `UTC${sign}${h}${m ? `:${String(m).padStart(2, "0")}` : ""}`);
+  }, []);
+
+  if (!label) return null;
+  return (
+    <span
+      className="font-mono text-[10.5px] text-mute"
+      title="The time axis is drawn in your local time"
+    >
+      {label}
+    </span>
   );
 }

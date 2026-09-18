@@ -69,6 +69,41 @@ const VOLUME_ALPHA = 0.5;
  * the same token viewed as a $278M market cap needs none, and nine would
  * render "278,840,192.000000000". The axis has to follow the magnitude.
  */
+/**
+ * THE AXIS SPEAKS THE READER'S CLOCK, NOT UTC.
+ *
+ * lightweight-charts has no timezone setting: it treats a UNIX timestamp as
+ * UTC and draws day boundaries there. In Asia/Calcutta, UTC+5:30, that put
+ * the newest bar of 17 Sep 18:00 UTC on an axis whose right edge read "17"
+ * while the wall clock had been 18 Sep for half an hour — a chart that looks
+ * a day stale when it is 56 minutes old.
+ *
+ * The library's own answer, and the only one that gets the day RULES right as
+ * well as the labels, is to shift the timestamps into local wall-clock
+ * seconds before handing them over. A tickMarkFormatter would relabel the
+ * ticks and still place the date break at UTC midnight, which is worse than
+ * being consistently in UTC.
+ *
+ * NOTHING ELSE SEES THE SHIFT. It is applied where bars enter the chart and
+ * nowhere else — the fetched candles, the ledger, the trigger engine and
+ * every timestamp that is compared to a real clock stay in true epoch. The
+ * one thing that has to follow is the live fold, which decides whether a tick
+ * belongs to the forming bar or opens the next one; it is given a shifted
+ * `now` so both sides of that comparison are in the same frame.
+ *
+ * getTimezoneOffset() is minutes BEHIND UTC, so IST reports -330 and the
+ * shift to add is +330 minutes.
+ */
+function tzOffsetSeconds(): number {
+  return -new Date().getTimezoneOffset() * 60;
+}
+
+/** Bars moved into local wall-clock time, for the axis only. */
+function toLocal(candles: Candle[], offset: number): Candle[] {
+  if (offset === 0) return candles;
+  return candles.map((c) => ({ ...c, time: c.time + offset }));
+}
+
 function precisionFor(candles: Candle[]): number {
   const last = candles[candles.length - 1]?.close ?? 0;
   if (last >= 1000) return 2;
@@ -478,9 +513,11 @@ export function PriceChart({
       priceFormat: { type: "price", precision: p, minMove: 10 ** -p },
     });
 
-    price.setData(clean as never);
+    const shown = toLocal(clean, tzOffsetSeconds());
+
+    price.setData(shown as never);
     volume.setData(
-      clean.map((d) => ({
+      shown.map((d) => ({
         time: d.time,
         value: d.volume,
         color: volumeColor(
@@ -494,8 +531,9 @@ export function PriceChart({
        what made every candle a hairline. */
     resetView();
 
-    // The newest bar from the server becomes the one live prices extend.
-    forming.current = candles[candles.length - 1] ?? null;
+    /* The newest bar becomes the one live prices extend — the SHIFTED one,
+       so update() lands on the bar setData actually drew. */
+    forming.current = shown[shown.length - 1] ?? null;
     setLegend(forming.current);
   }, [candles, generation, resetView]);
 
@@ -522,7 +560,16 @@ export function PriceChart({
     const last = forming.current;
     if (!price || !last || livePrice === undefined || livePrice <= 0) return;
 
-    const next = foldLivePrice(last, livePrice, barSeconds);
+    /* Shifted `now`, because `last.time` is shifted: foldLivePrice asks
+       whether the clock has crossed into the next bucket, and comparing a
+       local-frame bar against a UTC-frame clock would leave the forming bar
+       5h30m in the future and never roll it over. */
+    const next = foldLivePrice(
+      last,
+      livePrice,
+      barSeconds,
+      Date.now() + tzOffsetSeconds() * 1000,
+    );
 
     forming.current = next;
     price.update(next as never);
