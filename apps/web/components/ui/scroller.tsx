@@ -120,6 +120,23 @@ export function Scroller({
        * call preventDefault in every case, including at its zoom limits.
        */
       const target = e.target as Element | null;
+
+      /*
+       * TWO KINDS OF "NOT YOURS", and they need opposite treatment.
+       *
+       * data-wheel-lock means SUPPRESS: the chart zooms on wheel and has
+       * already handled it, so the default must be killed or the column
+       * slides while the candles zoom.
+       *
+       * data-wheel-pass means STAND ASIDE: a dropdown scrolls itself, and
+       * this handler is registered in the CAPTURE phase, so preventDefault
+       * here happens before the browser has done anything — it does not
+       * merely stop this region scrolling, it stops the menu scrolling too.
+       * That is why the zone list could only be moved by dragging its bar.
+       * Returning without preventDefault leaves the native scroll intact, and
+       * overscroll-contain on the menu stops the chain at its ends.
+       */
+      if (target?.closest?.("[data-wheel-pass]")) return;
       if (target?.closest?.("[data-wheel-lock]")) {
         e.preventDefault();
         return;

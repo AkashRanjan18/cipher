@@ -993,3 +993,23 @@ body {
 .chead__toolbar .idle:hover { color: var(--c-text-2); }
 .chead__toolbar .active { color: var(--color-action); }
 .chead__toolbar .disabled { color: var(--c-dim); }
+
+/*
+ * THE PANEL'S OWN UP AND DOWN, DIMMER THAN THE CHART'S.
+ *
+ * At full strength a column of nine rows is nine saturated greens stacked
+ * vertically, and on a memecoin list most of them are three-digit percentages
+ * — it glares. The chart is one number at a time against dark candles and
+ * wants the full value; the list is a wall of them and does not.
+ *
+ * color-mix toward the panel's own ground rather than a second hex: the hue
+ * is identical, only the strength changes, so a green here and a green candle
+ * are still the same colour and there is nothing to keep in sync. 62% is
+ * roughly the 35% reduction asked for, and it stops well short of the point
+ * where up and down stop being instantly distinguishable.
+ *
+ * Scoped to .panel, so the ticket, the chart and the positions card are
+ * untouched.
+ */
+.panel .text-up { color: color-mix(in srgb, var(--color-up) 62%, var(--color-ink)); }
+.panel .text-down { color: color-mix(in srgb, var(--color-down) 62%, var(--color-ink)); }

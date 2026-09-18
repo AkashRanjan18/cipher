@@ -399,16 +399,16 @@ function TimeZoneBadge({ zone, onZone }: { zone: string | null; onZone: (z: stri
           ref={menu}
           role="listbox"
           /*
-           * data-wheel-lock: the menu owns the wheel over itself.
+           * data-wheel-pass: the menu scrolls itself and the page stays put.
            *
-           * Without it, scrolling to reach a zone scrolled the PAGE instead —
-           * the terminal's right-hand scroller saw the event and moved the
-           * whole column, so the only way down the list was to drag its bar.
-           * The chart canvas already claims the wheel the same way; see
-           * Scroller, which checks for this attribute before acting.
+           * It was data-wheel-lock, which is the chart's flavour — suppress
+           * the event entirely. In the capture phase that ran before the
+           * browser could scroll anything, so the list could only be moved by
+           * dragging its bar. `pass` returns without preventDefault, leaving
+           * the native scroll alone; overscroll-contain below stops the
+           * chain once the menu hits an end.
            */
-          data-wheel-lock
-          onWheel={(e) => e.stopPropagation()}
+          data-wheel-pass
           className="absolute left-0 top-full z-50 mt-1 max-h-[320px] w-[230px] overflow-y-auto overscroll-contain rounded-lg border border-line bg-panel py-1 shadow-xl shadow-black/50"
         >
           {ZONES.map((z) => {

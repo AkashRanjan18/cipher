@@ -6,6 +6,7 @@ import { MARKETS, marketOf } from "@/lib/market";
 import { usd, compactUsd, pct } from "@/lib/format";
 import { FeedList, LeaderList } from "./rail";
 import { Scroller } from "@/components/ui/scroller";
+import { useDragScroll } from "@/components/ui/use-drag-scroll";
 import { AlertsList } from "./alerts";
 import { useUniverse, type Feed, type UniverseToken } from "./use-universe";
 import { CoinMark } from "./coin-mark";
@@ -94,6 +95,8 @@ export function SidePanel({
   const [tab, setTab] = useState<Tab>("tokens");
   const [filter, setFilter] = useState<Filter>("Trending");
 
+  const chips = useDragScroll<HTMLDivElement>();
+
   return (
     <section className="panel flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-ink">
       {/* ---- tabs ---- */}
@@ -125,7 +128,14 @@ export function SidePanel({
       {tab === "tokens" && (
         <>
           {/* ---- filters ---- */}
-          <div className="panel__chips no-scrollbar shrink-0 overflow-x-auto">
+          {/* Grab and pull: the chips overrun the panel and there is no bar to
+              reach the last of them with. See useDragScroll — a press only
+              becomes a drag past 4px, so a chip still selects on a click. */}
+          <div
+            ref={chips.ref}
+            {...chips.handlers}
+            className="panel__chips no-scrollbar shrink-0 cursor-grab overflow-x-auto active:cursor-grabbing"
+          >
             {FILTERS.map((f) => (
               <button
                 key={f}
