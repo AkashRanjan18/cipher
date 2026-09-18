@@ -95,12 +95,19 @@ interface Turn {
   resolved?: string;
 }
 
+/*
+ * Only commands that do something real.
+ *
+ * /copy, /flock and /squawk are gone. /flock answered with invented people —
+ * "Chart Goblins is up $182K this week, three of your flock are long SOL" —
+ * and /copy name-checked users who do not exist. Flocks and squawks were
+ * already deleted on instruction as fabricated social proof; these three were
+ * the leftovers that escaped. /squawk had no handler at all, so it was a menu
+ * item that did nothing. Copy trading is not a feature cipher is offering.
+ */
 const COMMANDS: [string, string][] = [
-  ["/buy", "Buy an amount of SOL"],
-  ["/sell", "Sell part or all of your position"],
-  ["/copy", "Mirror a friend's trades"],
-  ["/flock", "See what your flocks are holding"],
-  ["/squawk", "Post a note to your flock"],
+  ["/buy", "Buy any token"],
+  ["/sell", "Sell part or all of a position"],
   ["/help", "What Sana understands"],
 ];
 
@@ -330,30 +337,9 @@ export function Sana({
         mine: false,
         text:
           "Type it the way you'd say it — \"buy $500 of SOL, sell a third at 2x, stop the rest at -50%\". " +
-          "Anything that moves money comes back as a card you have to approve first, and " +
-          "approving it really does trade your paper balance. " +
+          "If it's clear, it happens straight away and you get a receipt of exactly what was done. " +
+          "If something's missing, I'll ask for it. " +
           "I refuse rather than guess: if I only half-understood, you get nothing instead of a plausible-looking order.",
-      });
-      return;
-    }
-
-    if (low.startsWith("/flock")) {
-      push({
-        mine: false,
-        text:
-          "Chart Goblins is up $182K this week, Slow Money $41K. Three of your flock are long SOL right now, " +
-          "$720 between them. All of it small.",
-      });
-      return;
-    }
-
-    if (low.startsWith("/copy")) {
-      const who = low.match(/@?\b(mochi|vex|unipcs|crayon|ogle|salem|kaito)\b/)?.[1];
-      push({
-        mine: false,
-        text: who
-          ? `Copying @${who} would mirror their trades at your size, not theirs, capped per trade. There's no copy engine wired up yet — this is the shape it takes.`
-          : "Name someone to copy — /copy @mochi.",
       });
       return;
     }
@@ -1153,9 +1139,9 @@ export function Sana({
             }}
             onKeyDown={(e) => e.key === "Escape" && setSlashOpen(false)}
             placeholder={
-              speech.listening ? "Listening…" : "Ask Sana, place a trade, or /copy a friend"
+              speech.listening ? "Listening…" : "Place a trade"
             }
-            aria-label="Ask Sana or type a command"
+            aria-label="Place a trade"
             className="min-w-0 flex-1 bg-transparent font-sans text-sm text-ink placeholder:text-ink/45 focus:outline-none"
           />
 
