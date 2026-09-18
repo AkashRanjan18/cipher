@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Candle, Interval } from "@/lib/market";
-import { SYMBOL, intervalSeconds, subscribeCandles, marketOf, type MarketDef } from "@/lib/market";
+import { MARKETS, SYMBOL, intervalSeconds, subscribeCandles, marketOf, type MarketDef } from "@/lib/market";
 import { usd } from "@/lib/format";
 import { PaperAccountProvider, usePaperAccount, OPENING_DEPOSIT } from "@/lib/account/store";
 import { TriggerProvider, useTriggers } from "@/lib/triggers/store";
@@ -162,11 +162,22 @@ function TerminalBody({
   /* Display identity. For a mint it comes from the token itself; the listed
      Solana markets carry a nicer name, so they win where they exist. */
   const listed = onChain ? marketByMint(symbol) : null;
+  /*
+   * THE MAJORS' PLAIN NAMES WIN OVER THE MINT'S OWN.
+   *
+   * BTC and ETH are wrapped assets, and their mints describe the bridge rather
+   * than the coin — "WBTC · Wrapped BTC (Portal)", "Ether (Portal)". A trader
+   * thinks in Bitcoin and Ethereum, and the long forms were wide enough to push
+   * the price and every stat card onto a second row while SOL fit on one.
+   * MARKETS holds the plain names, so it is checked first. Every other token
+   * falls through to its own name, which chart-header truncates.
+   */
+  const major = onChain ? MARKETS.find((m) => m.symbol === symbol) : undefined;
   const market: MarketDef = onChain
     ? {
         symbol,
-        base: listed?.symbol ?? token?.symbol ?? "…",
-        name: listed?.name ?? token?.name ?? "",
+        base: major?.base ?? listed?.symbol ?? token?.symbol ?? "…",
+        name: major?.name ?? listed?.name ?? token?.name ?? "",
         /* Supply is a hardcoded table for the Binance majors and has no
            equivalent here. Zero rather than a guess: market cap for an
            on-chain token comes from Jupiter, which reports it directly. */

@@ -999,8 +999,19 @@ body {
 .chead__meta .name { color: var(--c-text-2); }
 .chead__price-label { font-size: 14px; color: var(--c-text-2); }
 .chead__price-value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+/*
+ * 110px when there is room, down to 86px when there is not.
+ *
+ * A fixed 110px made the price-and-cards block a fixed width, and on a coin
+ * with a five-digit price — BTC at $80,883.79 against SOL at $111.76 — that
+ * block ran a few pixels past the edge and the header, which could wrap,
+ * dropped every card onto a second row. The row no longer wraps; the cards
+ * give up a little width instead, which is invisible at a glance where a
+ * second row never is. 86px still fits "$274.21M" and "▲10.58%".
+ */
 .chead__stat {
-  width: 110px;
+  flex: 0 1 110px;
+  min-width: 86px;
   height: 60px;
   background: var(--color-slate);
   border-radius: 10px;

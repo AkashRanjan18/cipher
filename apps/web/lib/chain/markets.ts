@@ -147,6 +147,40 @@ export const SOLANA_MARKETS: SolanaMarket[] = [
     glyph: "$",
     chartPair: null,
   },
+  /*
+   * BITCOIN AND ETHEREUM, AS THEY EXIST ON SOLANA.
+   *
+   * Wrapped assets whose mints describe the bridge rather than the coin — the
+   * token calls itself "WBTC · Wrapped BTC (Portal)". Listed here under the
+   * name a trader actually uses, because this table is what EVERY screen
+   * consults first: the chart header, the Positions card, the Holders table
+   * and the compiler. Putting the plain name in one screen would leave the
+   * others reading "WBTC" for the same coin.
+   *
+   * Mints verified against Jupiter, not recalled: both flagged verified, WBTC
+   * with $36M of liquidity and Portal ETH with $22M. Both use 8 decimals.
+   *
+   * Side effect, and a wanted one: "buy $500 of btc" now resolves to a real,
+   * tradeable mint instead of a chart-only pair.
+   */
+  {
+    mint: "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
+    symbol: "BTC",
+    name: "Bitcoin",
+    decimals: 8,
+    hue: "#f7931a",
+    glyph: "₿",
+    chartPair: null,
+  },
+  {
+    mint: "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",
+    symbol: "ETH",
+    name: "Ethereum",
+    decimals: 8,
+    hue: "#8098ee",
+    glyph: "Ξ",
+    chartPair: null,
+  },
 ];
 
 const BY_MINT = new Map(SOLANA_MARKETS.map((m) => [m.mint, m]));

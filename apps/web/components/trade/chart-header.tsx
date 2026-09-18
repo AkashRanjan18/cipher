@@ -75,7 +75,7 @@ export function ChartHeader({
   return (
     <div className="chead shrink-0">
       {/* ---------------- row 1: identity and readings ---------------- */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline px-3 py-2">
+      <div className="flex flex-nowrap items-center gap-3 border-b border-hairline px-3 py-2">
         {/* The same mark the list rows use, so clicking a row does not change
             what the coin looks like. */}
         {/*
@@ -100,14 +100,18 @@ export function ChartHeader({
 
         <CoinMark symbol={market.base} icon={icon} hue={market.hue} glyph={market.glyph} size={48} />
 
-        <div className="mr-1">
-          <div className="flex items-center gap-[10px]">
+        <div className="mr-1 min-w-0">
+          <div className="flex items-center gap-1.5">
             {/* THE SANS, because the ticker is uppercase and Caacupe One draws its
                 capital A as a single-storey lowercase form: PAID renders "PaID"
                 and SANA renders "SaNa". Same reason the About heading uses it.
                 font-bold also went: the face is single-weight, so bold was
                 synthesised, which smeared the glyphs further. */}
-            <h1 className="chead__symbol font-sans leading-none">
+            {/* Both lines are capped, so no token — however long its ticker
+                or its name — can widen this block enough to wrap the header.
+                The stat cards share the row, and one oversized name was
+                enough to push all four of them onto a second line. */}
+            <h1 className="chead__symbol max-w-[9rem] truncate font-sans leading-none">
               {market.base}
             </h1>
             <button
@@ -121,7 +125,7 @@ export function ChartHeader({
               {starred ? "★" : "☆"}
             </button>
           </div>
-          <p className="chead__meta mt-1 font-sans leading-none">
+          <p className="chead__meta mt-1 max-w-[11rem] truncate font-sans leading-none">
             {/* A token whose name IS its ticker read "NTDA · NTDA · live".
                 Saying it twice is not more informative than saying it once. */}
             {market.name && market.name !== market.base ? `${market.name} · live` : "live"}
@@ -136,7 +140,7 @@ export function ChartHeader({
           * Boxing all five gives them equal weight and the eye has nowhere to
           * land.
           */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex min-w-0 items-center gap-3">
           <div className="px-1 text-center">
             <div className="chead__price-label font-sans">Price</div>
             <div className="chead__price-value font-mono tabular-nums">
@@ -144,7 +148,7 @@ export function ChartHeader({
             </div>
           </div>
 
-          <div className="flex items-center gap-[10px]">
+          <div className="flex min-w-0 items-center gap-[10px]">
             <Stat label="Market cap" value={compactUsd(marketCap)} />
             <Stat
               label="24H change"
