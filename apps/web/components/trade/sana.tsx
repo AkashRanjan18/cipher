@@ -215,12 +215,25 @@ export function Sana({
    * as the user's own turn before the result, and the receipt names the size
    * that actually traded.
    */
-  const speech = useSpeech((heard) => {
-    const said = heard.trim();
-    if (!said) return;
-    setInput("");
-    handle(said);
-  });
+  const speech = useSpeech(
+    (heard) => {
+      const said = heard.trim();
+      if (!said) return;
+      setInput("");
+      handle(said);
+    },
+    /*
+     * What to listen for: the coin on screen first, because it is the one a
+     * trader is overwhelmingly likely to name, then the majors. Without this
+     * the recogniser hears "buy five hundred of bonk" as "bank" — tested on
+     * real audio, and the fix was one keyterm.
+     *
+     * cipher: held positions and the trending list belong here too; they are
+     * the next most likely names. Left out only because resolving a held mint
+     * to its ticker is a lookup this component does not have in hand yet.
+     */
+    () => [market, ...majors.map((m) => m.symbol)].filter(Boolean),
+  );
 
   // Newest turn should be visible without scrolling for it.
   useEffect(() => {

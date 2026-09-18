@@ -99,7 +99,41 @@ export interface Speech {
   stop(): void;
 }
 
-export function useSpeech(onFinal?: (text: string) => void): Speech {
+/**
+ * Send the recorded clip for the authoritative transcript.
+ *
+ * Returns "" on ANY failure — no key configured, network down, slow vendor —
+ * and the caller falls back to what the browser already heard. Voice can only
+ * ever get better than it was before this existed, never worse.
+ */
+async function transcribe(blob: Blob, keyterms: string[]): Promise<string> {
+  if (blob.size === 0) return "";
+  try {
+    const q = keyterms.length ? `?keyterms=${encodeURIComponent(keyterms.join(","))}` : "";
+    const res = await fetch(`/api/transcribe${q}`, {
+      method: "POST",
+      headers: { "Content-Type": blob.type || "audio/webm" },
+      body: blob,
+      /* Past this the browser's own text is the better answer than waiting. */
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return "";
+    const body = (await res.json()) as { transcript?: unknown };
+    return typeof body.transcript === "string" ? body.transcript.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+export function useSpeech(
+  onFinal?: (text: string) => void,
+  /**
+   * The coins worth listening for — the open market, the list on screen, what
+   * the user holds. A getter rather than an array so it is read at the moment
+   * the clip is sent, not frozen at the render that opened the microphone.
+   */
+  getKeyterms?: () => string[],
+): Speech {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -113,6 +147,26 @@ export function useSpeech(onFinal?: (text: string) => void): Speech {
      recognition session mid-sentence. */
   const cbRef = useRef(onFinal);
   cbRef.current = onFinal;
+  const keytermsRef = useRef(getKeyterms);
+  keytermsRef.current = getKeyterms;
+
+  /*
+   * The recording that runs alongside the browser recogniser.
+   *
+   * SESSION, because the Deepgram reply is asynchronous and can arrive after
+   * the user has already tapped the mic again. Without it a stale transcript
+   * from the abandoned session would fire onFinal into the new one — an order
+   * nobody is currently speaking.
+   */
+  const mediaRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const sessionRef = useRef(0);
+
+  const releaseMic = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
 
   /* Support is checked after mount: the server has no window, and rendering a
      mic button that vanishes on hydration is a layout shift on every load. */
@@ -183,11 +237,66 @@ export function useSpeech(onFinal?: (text: string) => void): Speech {
       clearSilence();
       setListening(false);
       setInterim("");
-      const text = finalRef.current.trim();
-      if (text) cbRef.current?.(text);
+      const heard = finalRef.current.trim();
+      const session = sessionRef.current;
+      const mr = mediaRef.current;
+
+      /* No recording — unsupported browser, or the mic was refused. The
+         browser's text is used exactly as it always was. */
+      if (!mr || mr.state === "inactive") {
+        releaseMic();
+        if (heard) cbRef.current?.(heard);
+        return;
+      }
+
+      mr.onstop = async () => {
+        releaseMic();
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+        chunksRef.current = [];
+        const authoritative = await transcribe(blob, keytermsRef.current?.() ?? []);
+        /* A newer session has started while this one was being transcribed:
+           drop it rather than fire an order nobody is speaking. */
+        if (session !== sessionRef.current) return;
+        const text = authoritative || heard;
+        if (!text) return;
+        setTranscript(text);
+        cbRef.current?.(text);
+      };
+      mr.stop();
     };
 
     recRef.current = rec;
+    sessionRef.current += 1;
+    /* A previous session's recorder must not keep the mic open. */
+    if (mediaRef.current && mediaRef.current.state !== "inactive") mediaRef.current.stop();
+    mediaRef.current = null;
+    releaseMic();
+
+    /*
+     * Record the same audio in parallel. The browser recogniser keeps running
+     * for the live words on screen — instant, free, already written — and this
+     * clip is what gets the authoritative transcript when speech ends.
+     *
+     * Fire-and-forget: if getUserMedia is slow or refused, the session simply
+     * has no recording and falls back to the browser's text in onend.
+     */
+    void (async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return;
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
+        const mr = new MediaRecorder(stream);
+        chunksRef.current = [];
+        mr.ondataavailable = (e) => {
+          if (e.data.size) chunksRef.current.push(e.data);
+        };
+        mediaRef.current = mr;
+        mr.start();
+      } catch {
+        /* No recorder: the browser's text is used, exactly as before. */
+      }
+    })();
+
     try {
       rec.start();
       setListening(true);
@@ -203,6 +312,9 @@ export function useSpeech(onFinal?: (text: string) => void): Speech {
     return () => {
       clearSilence();
       recRef.current?.abort();
+      sessionRef.current += 1;
+      if (mediaRef.current && mediaRef.current.state !== "inactive") mediaRef.current.stop();
+      streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
