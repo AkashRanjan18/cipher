@@ -17,11 +17,27 @@ import type { Major } from "./types";
  * and a pool index land, MARKETS becomes a query and only this file changes.
  */
 
-const TICKER = "https://api.binance.com/api/v3/ticker/24hr";
+const TICKER = "https://lite-api.jup.ag/tokens/v2/search";
 const DEPTH = "https://api.binance.com/api/v3/depth";
 
+interface JupiterRow {
+  id: string;
+  icon: string | null;
+  usdPrice: number;
+  mcap: number | null;
+  fdv: number | null;
+  stats24h?: { priceChange?: number; buyVolume?: number };
+}
+
 export interface MarketDef {
-  /** Binance pair. The allowlist — never let a caller name an arbitrary one. */
+  /**
+   * THE MINT. Was a Binance pair; it is an address now.
+   *
+   * Everything downstream already branches on `looksLikeMint()`, so making
+   * this an address is what routes majors through the Solana path — Jupiter
+   * quotes, GeckoTerminal candles, a ticket that can actually buy them —
+   * without a single caller changing.
+   */
   symbol: string;
   /** What a trader calls it. */
   base: string;
@@ -46,22 +62,62 @@ export interface MarketDef {
  * is fixed rather than sorted live so the list does not reshuffle under a
  * cursor that is already moving toward a row.
  */
+/*
+ * THREE MINTS, NOT FOURTEEN PAIRS.
+ *
+ * This was fourteen Binance symbols, and every one of them was a coin you
+ * could look at and not buy: `mintFor` returns null for a Binance pair, so the
+ * ticket read "BTC is chart-only" on all of them. A tab full of controls that
+ * do nothing is the thing CLAUDE.md's design rule exists to delete.
+ *
+ * It also broke in production. Binance geo-blocks US IPs and Vercel runs in
+ * Washington, so every price rendered "—" while working perfectly on a laptop
+ * in India — the function was refused from the building it ran in.
+ *
+ * Both problems have the same fix: use the wrapped assets that already live on
+ * Solana. They are real mints with real pools, Jupiter routes them like any
+ * other token, and GeckoTerminal charts them. Majors stop being a special case
+ * with their own exchange, their own candle feed and their own failure mode.
+ *
+ * ONLY THREE SURVIVE, and that is a finding rather than a choice. Checked
+ * against Jupiter: WBTC has $36M of liquidity and Portal ETH $22M. After that
+ * it falls off a cliff — wXRP $0.9M, LINK $0.2M, ADA and AVAX and DOT nothing
+ * at all. Worse, searching "DOGE" returns BITDOGE and BLACKDOGE, which are
+ * memecoins wearing the name, and "DOT" returns a token called Y2K. Mapping
+ * tickers to mints by hand is exactly the impostor trap tokens.ts exists to
+ * prevent, so the list stops where the liquidity stops.
+ *
+ * THE DISPLAYED NAME IS THE ASSET, NOT THE WRAPPER. A trader thinks in BTC,
+ * not "Wrapped BTC (Portal)". The mint is the identity and the ticker is a
+ * display string — the same rule the rest of the codebase already follows.
+ */
 export const MARKETS: MarketDef[] = [
-  { symbol: "BTCUSDT", base: "BTC", name: "Bitcoin", supply: 19_950_000, hue: "#f7931a", glyph: "₿" },
-  { symbol: "ETHUSDT", base: "ETH", name: "Ethereum", supply: 120_700_000, hue: "#8098ee", glyph: "Ξ" },
-  { symbol: "XRPUSDT", base: "XRP", name: "XRP", supply: 60_500_000_000, hue: "#23292f", glyph: "✕" },
-  { symbol: "BNBUSDT", base: "BNB", name: "BNB", supply: 138_500_000, hue: "#f3ba2f", glyph: "◆" },
-  { symbol: "SOLUSDT", base: "SOL", name: "Solana", supply: 600_000_000, hue: "#14f195", glyph: "◎" },
-  { symbol: "DOGEUSDT", base: "DOGE", name: "Dogecoin", supply: 150_000_000_000, hue: "#c2a633", glyph: "Ð" },
-  { symbol: "TRXUSDT", base: "TRX", name: "TRON", supply: 94_600_000_000, hue: "#ff060a", glyph: "▽" },
-  { symbol: "ADAUSDT", base: "ADA", name: "Cardano", supply: 36_400_000_000, hue: "#0033ad", glyph: "₳" },
-  { symbol: "LINKUSDT", base: "LINK", name: "Chainlink", supply: 680_000_000, hue: "#2a5ada", glyph: "⬡" },
-  { symbol: "AVAXUSDT", base: "AVAX", name: "Avalanche", supply: 425_000_000, hue: "#e84142", glyph: "▲" },
-  { symbol: "SUIUSDT", base: "SUI", name: "Sui", supply: 3_450_000_000, hue: "#4da2ff", glyph: "◈" },
-  { symbol: "LTCUSDT", base: "LTC", name: "Litecoin", supply: 76_000_000, hue: "#a6a9aa", glyph: "Ł" },
-  { symbol: "DOTUSDT", base: "DOT", name: "Polkadot", supply: 1_570_000_000, hue: "#e6007a", glyph: "●" },
-  { symbol: "ZECUSDT", base: "ZEC", name: "Zcash", supply: 16_400_000, hue: "#ecb244", glyph: "ⓩ" },
+  {
+    symbol: "So11111111111111111111111111111111111111112",
+    base: "SOL",
+    name: "Solana",
+    supply: 600_000_000,
+    hue: "#14f195",
+    glyph: "◎",
+  },
+  {
+    symbol: "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
+    base: "BTC",
+    name: "Bitcoin",
+    supply: 19_950_000,
+    hue: "#f7931a",
+    glyph: "₿",
+  },
+  {
+    symbol: "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",
+    base: "ETH",
+    name: "Ethereum",
+    supply: 120_700_000,
+    hue: "#8098ee",
+    glyph: "Ξ",
+  },
 ];
+
 
 const BY_SYMBOL = new Map(MARKETS.map((m) => [m.symbol, m]));
 
@@ -97,40 +153,52 @@ interface Ticker {
  * rows would land at visibly different times.
  */
 export async function fetchMajors(): Promise<Major[]> {
-  const symbols = JSON.stringify(MARKETS.map((m) => m.symbol));
-  const res = await fetch(`${TICKER}?symbols=${encodeURIComponent(symbols)}`, {
+  const ids = MARKETS.map((m) => m.symbol).join(",");
+  const res = await fetch(`${TICKER}?query=${ids}`, {
     headers: { Accept: "application/json" },
     // A list is glanced at, not traded off. Ten seconds is well inside the
-    // rate limit and still moves while you watch it.
+    // allowance and still moves while you watch it.
     next: { revalidate: 10 },
   });
-  if (!res.ok) throw new Error(`Binance ticker ${res.status}`);
+  if (!res.ok) throw new Error(`Jupiter tokens ${res.status}`);
 
-  const rows = (await res.json()) as Ticker[];
-  const byId = new Map(rows.map((r) => [r.symbol, r]));
+  const rows = (await res.json()) as JupiterRow[];
+  const byMint = new Map(rows.map((r) => [r.id, r]));
 
   /*
    * Mapped over MARKETS rather than over the response, so the list keeps its
-   * fixed order and a symbol the exchange stops quoting drops out cleanly
-   * instead of reordering everything below it.
+   * fixed order and a mint the feed stops quoting drops out cleanly instead of
+   * reordering everything below it.
    */
   return MARKETS.flatMap<Major>((m) => {
-    const t = byId.get(m.symbol);
-    if (!t) return [];
-    const priceUsd = +t.lastPrice;
+    const t = byMint.get(m.symbol);
+    if (!t || !(t.usdPrice > 0)) return [];
     return [
       {
         id: m.symbol,
         symbol: m.base,
-        imageUrl: null,
-        priceUsd,
-        change24h: +t.priceChangePercent,
-        marketCap: priceUsd * m.supply,
-        volume24hUsd: +t.quoteVolume,
+        /* The row falls back to the brand hue and glyph when this is null,
+           which is what CoinMark already does — and for BTC, ETH and SOL it
+           prefers the verified local file anyway. */
+        imageUrl: t.icon ?? null,
+        priceUsd: t.usdPrice,
+        change24h: t.stats24h?.priceChange ?? 0,
+        /*
+         * WHAT IS BRIDGED, NOT WHAT EXISTS.
+         *
+         * Jupiter reports the cap of the mint on THIS chain, so BTC reads
+         * ~$190M rather than Bitcoin's trillions — that is the size of the
+         * wrapped supply on Solana, which is the honest number for a Solana
+         * terminal and the one that bounds what you can actually trade
+         * against. SOL's is the real thing, because SOL is native here.
+         */
+        marketCap: t.mcap ?? t.fdv ?? t.usdPrice * m.supply,
+        volume24hUsd: t.stats24h?.buyVolume ?? 0,
       },
     ];
   });
 }
+
 
 /**
  * Resting liquidity, in dollars, from the top of the order book.

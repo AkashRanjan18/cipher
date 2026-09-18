@@ -1,3 +1,4 @@
+import { MARKETS } from "../../market/markets.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { compile } from "../compile.ts";
@@ -139,9 +140,14 @@ test("the engine is addressable in words, now that it exists", () => {
 /* ──────────────────────────── navigate and ui ──────────────────────────── */
 
 test("switching what the terminal is looking at", () => {
+  /* The market key for BTC is its MINT now, not a Binance pair — majors are
+     wrapped assets on Solana, so "show me btc" navigates to something the
+     ticket can actually buy. Asserted against MARKETS rather than a literal,
+     so the test follows the list instead of pinning an address by hand. */
+  const btcMint = MARKETS.find((m) => m.base === "BTC")?.symbol;
   const btc = compile("show me btc", CTX);
   assert.equal(btc.intent.kind, "navigate");
-  assert.equal(btc.intent.kind === "navigate" && btc.intent.symbol, "BTCUSDT");
+  assert.equal(btc.intent.kind === "navigate" && btc.intent.symbol, btcMint);
 
   const daily = compile("switch to the daily chart", CTX);
   assert.equal(daily.intent.kind, "navigate");
