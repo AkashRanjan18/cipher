@@ -206,7 +206,10 @@ function PositionCard({
    * money vanishing because a request was slow. `equity()` skips it too.
    */
   const value = mark === null ? null : qty * mark;
-  const invested = qty * costBasis;
+  /* INVESTED IS WHAT WENT INTO THE TRADE — quantity × execution price, fee
+     outside it. The user's call, 19 Sep 2026: a $500 buy shows ~$497.51
+     invested, not $502. */
+  const invested = qty * (entry ?? costBasis);
   const pnl = value === null ? null : value - invested;
   const pnlPct = pnl === null || invested <= 0 ? null : (pnl / invested) * 100;
   const down = pnl !== null && pnl < 0;
@@ -767,7 +770,7 @@ function Closed({ trips, ready, fills }: { trips: RoundTrip[]; ready: boolean; f
               </div>
               <div className="pnl__pair">
                 <span className="pnl__label">Invested</span>
-                <span className="pnl__stat">{usd(t.investedUsd)}</span>
+                <span className="pnl__stat">{usd(entry !== null ? entry * t.qtyBought : t.investedUsd)}</span>
               </div>
             </div>
           </div>

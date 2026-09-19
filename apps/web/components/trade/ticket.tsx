@@ -9,8 +9,7 @@ import {
   fillPrice,
   maxBuyUsd,
   allInPrice,
-  positionOf,
-} from "@/lib/account/paper";
+  positionOf, qtyForBudget } from "@/lib/account/paper";
 import { usd } from "@/lib/format";
 import { DEFAULTS, newId } from "@cipher/shared";
 
@@ -156,7 +155,14 @@ export function Ticket({
     price && limitPrice > 0 ? ((limitPrice - price) / price) * 100 : null;
 
   const held = mint ? positionOf(account, mint).qty : 0;
-  const qty = !price ? 0 : sellAll && !buying ? held : value / fillPrice(price, side);
+  /* A buy spends exactly the dollars typed, fee included (qtyForBudget). */
+  const qty = !price
+    ? 0
+    : sellAll && !buying
+      ? held
+      : buying
+        ? qtyForBudget(value, fillPrice(price, side))
+        : value / fillPrice(price, side);
   const q =
     price && mint
       ? quote(account, mint, side, qty, price, { depthUsd, slippageBps, symbol: market })

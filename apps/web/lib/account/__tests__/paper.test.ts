@@ -64,9 +64,10 @@ test("the deposit is the whole account until something happens", () => {
   assert.equal(unrealised(a, MINT, 103), 0);
 });
 
-test("the commission floor bites below $200 and the rate takes over above it", () => {
-  assert.equal(feeFor(20), 0.95); // 4.75% — small orders are genuinely expensive
-  assert.equal(feeFor(199), 0.95);
+test("cipher's fee is 0.5% at every size — no minimum", () => {
+  // No floor since 19 Sep 2026: 0.5% flat, at every size.
+  assert.equal(feeFor(20), 0.1);
+  assert.equal(feeFor(199), 0.995);
   assert.equal(feeFor(1_000), 5);
   // The floor and the rate cross at $190; nothing between them is cheaper than both.
   assert.ok(feeFor(199) < feeFor(200));
@@ -162,11 +163,12 @@ test("it refuses rather than short-selling", () => {
   assert.match((r as { refusal: string }).refusal, /you hold/i);
 });
 
-test("it refuses a sale worth less than its own fee", () => {
+test("a small sale pays 0.5%, not a dollar minimum", () => {
   const a = openAccount(10_000);
   const { account: b } = fill(a, "buy", 10, 100);
-  const r = execute(b, { mint: MINT, side: "sell", qty: 0.001, mark: 100, ts: 1 });
-  assert.ok("refusal" in r, "0.1 dollars of SOL costs $0.95 to sell");
+  const r = execute(b, { mint: MINT, side: "sell", qty: 0.1, mark: 100, ts: 1 });
+  assert.ok(!("refusal" in r));
+  if (!("refusal" in r)) assert.ok(r.fill.feeUsd < 0.06);
 });
 
 test("percentOfPosition only means something on a sell", () => {
@@ -184,7 +186,8 @@ test("percentOfPosition only means something on a sell", () => {
 test("a usd amount resolves through the fill price, not the mark", () => {
   const a = openAccount(10_000);
   const qty = resolveQty({ kind: "usd", value: 1_000 }, "buy", a, MINT, 100)!;
-  assert.equal(qty, 1_000 / fillPrice(100, "buy"));
+  // The $1,000 is the whole budget, fee included.
+  assert.equal(qty, 1_000 / (fillPrice(100, "buy") * 1.005));
   assert.ok(qty < 10, "you get less than the chart price implies, because you do");
 });
 
@@ -383,13 +386,19 @@ test("a quoted fill and a modelled fill of the same price cost the same", () => 
   assert.equal(quoted.cashUsd, modelled.cashUsd);
 });
 
-test("the $0.95 floor still applies to a quoted fill", () => {
-  /* The reason the fee cannot live inside the Jupiter quote: basis points
-     cannot express a floor, and under $200 the floor is the whole charge. */
+test("a quoted fill pays the same flat 0.5%", () => {
   const a = openAccount(10_000);
   const q = quote(a, MINT, "buy", 1, 50, {
     quoted: { price: 50, impactBps: 0, route: "Orca" },
   });
   assert.equal(q.notionalUsd, 50);
-  assert.equal(q.feeUsd, 0.95);
+  assert.equal(q.feeUsd, 0.25);
+});
+
+test("a $500 buy spends $500 in total, fee inside it", () => {
+  const a = openAccount(10_000);
+  const qty = resolveQty({ kind: "usd", value: 500 }, "buy", a, MINT, 100)!;
+  const r = execute(a, { mint: MINT, side: "buy", qty, mark: 100, ts: 1 });
+  assert.ok(!("refusal" in r));
+  if (!("refusal" in r)) assert.ok(Math.abs(10_000 - r.account.usdc - 500) < 0.01);
 });

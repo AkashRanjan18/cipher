@@ -141,7 +141,23 @@ export function heldMints(a: Account): string[] {
  * is (4.75%), which is worth learning on paper rather than live.
  */
 export function feeFor(notionalUsd: number): number {
-  return notionalUsd < 200 ? 0.95 : notionalUsd * 0.005;
+  return notionalUsd * FEE_RATE;
+}
+
+/**
+ * cipher's fee: 0.5%, flat, at every size. The user's call, 19 Sep 2026 —
+ * the $0.95 minimum is gone (it charged 9.5% on a $10 trade). Network and
+ * pool costs are already inside the execution price; this is cipher's cut
+ * and nothing else.
+ */
+export const FEE_RATE = 0.005;
+
+/**
+ * Tokens a dollar budget buys WITH the fee inside it: "$500" spends $500 in
+ * total — $497.51 into the trade and $2.49 of fee — never $500 plus the fee.
+ */
+export function qtyForBudget(usd: number, px: number): number {
+  return usd / (px * (1 + FEE_RATE));
 }
 
 /** 10 bps of spread, charged against the trader in both directions. */
@@ -256,7 +272,8 @@ export function resolveQty(
   const px = fillPrice(mark, side);
   switch (amount.kind) {
     case "usd":
-      return amount.value / px;
+      /* A buy's dollars are the whole budget, fee included. */
+      return side === "buy" ? qtyForBudget(amount.value, px) : amount.value / px;
     case "tokens":
       return amount.value;
     case "percentOfPosition":
