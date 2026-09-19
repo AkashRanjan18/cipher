@@ -244,9 +244,33 @@ export async function fetchDepth(symbol: string): Promise<number> {
  * can mint a token called BONK.
  */
 export function resolveMarket(token: string): MarketDef | null {
-  const t = token.trim().toLowerCase();
-  if (!t) return null;
-  return (
-    MARKETS.find((m) => m.base.toLowerCase() === t || m.name.toLowerCase() === t) ?? null
-  );
+  for (const t of spellings(token)) {
+    const hit = MARKETS.find((m) => m.base.toLowerCase() === t || m.name.toLowerCase() === t);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * The ways a person writes one token name: as said, then without a plural or
+ * possessive. "solanas", "sol's", "bonks" and "$bonk" all mean the coin.
+ *
+ * Exact first, so a real token whose ticker ends in S is never trimmed when it
+ * matches as written. Only these endings — anything fuzzier is a guess about
+ * which coin somebody meant, and that is how the wrong coin gets bought.
+ */
+export function spellings(token: string): string[] {
+  const t = token.trim().toLowerCase().replace(/^\$/, "");
+  if (!t) return [];
+  const out = [t];
+  if (t.endsWith("'s")) out.push(t.slice(0, -2));
+  else if (t.endsWith("es") && t.length > 4) out.push(t.slice(0, -2), t.slice(0, -1));
+  else if (t.endsWith("s") && t.length > 3) out.push(t.slice(0, -1));
+  return out;
+}
+
+/** Does the word a person used name this ticker or name? Plurals included. */
+export function namesToken(said: string, ...names: (string | undefined)[]): boolean {
+  const wanted = names.filter(Boolean).map((n) => n!.toLowerCase());
+  return spellings(said).some((t) => wanted.includes(t));
 }

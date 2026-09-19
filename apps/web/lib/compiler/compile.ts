@@ -10,7 +10,7 @@ import { parseWithGrammar } from "./grammar.ts";
 import { askForMissing, askForMissingTrigger } from "./missing.ts";
 import { unconsumed } from "./unconsumed.ts";
 import { normaliseSpeech } from "../voice/normalise.ts";
-import { resolveMarket } from "../market/markets.ts";
+import { resolveMarket, namesToken } from "../market/markets.ts";
 
 /**
  * The router. One sentence in, one Intent out, always.
@@ -66,7 +66,7 @@ function refuse(
  * judgement about the user's balance, which is exactly the line cipher does
  * not cross. CompileContext has no balance in it for this reason.
  */
-function ambiguousSize(text: string): Compiled | null {
+function ambiguousSize(text: string, label?: string): Compiled | null {
   const m = text.match(
     /\b(buy|sell)\s+(?:me\s+)?([\d.,]+)\s+(?:of\s+)?([a-z][a-z0-9]{1,14})\b/,
   );
@@ -76,11 +76,15 @@ function ambiguousSize(text: string): Compiled | null {
   // A unit marker anywhere around the number settles it; only a naked number
   // is ambiguous.
   if (/[$%]/.test(text) || /\b(worth|dollars?|usd|tokens?|coins?)\b/.test(text)) return null;
-  // Not a real market — that is a different problem, and resolveMarket says so.
-  const def = resolveMarket(token);
-  if (!def) return null;
-
-  const upper = def.base;
+  /*
+   * KNOWN MEANS A MAJOR OR THE COIN ON SCREEN. Only the majors counted, so
+   * with BONK open "buy 100 bonk" skipped the question and bought 100 BONK —
+   * the same sentence that asks about SOL. A coin that is neither is a
+   * different problem, and Sana says so in its own sentence.
+   */
+  const major = resolveMarket(token);
+  if (!major && !namesToken(token, label)) return null;
+  const upper = major?.base ?? (label ?? token).toUpperCase();
   return ok({
     kind: "clarify",
     question: `Do you mean $${number} worth of ${upper}, or ${number} ${upper}?`,
@@ -319,7 +323,7 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
   const declined = outOfScope(text);
   if (declined) return declined;
 
-  const unclear = ambiguousSize(text);
+  const unclear = ambiguousSize(text, ctx.label);
   if (unclear) return unclear;
 
   /*

@@ -280,6 +280,8 @@ export interface Compiled {
 export interface CompileContext {
   /** The market currently open, e.g. "SOLUSDT". Resolves "this" and "it". */
   symbol: string;
+  /** The open market's ticker, e.g. "BONK" — what a person calls it. */
+  label?: string;
   /** The interval currently shown, so "zoom out" has a reference point. */
   interval: Interval;
   /** True when the user holds the open market. Resolves "sell half" vs a refusal. */

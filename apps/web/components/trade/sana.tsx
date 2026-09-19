@@ -7,7 +7,7 @@ import type { Compiled, CompileContext, ExitRule, Intent, Interval, OrderSpec } 
 import { freezeAmount } from "@/lib/triggers/execute";
 import { compile } from "@/lib/compiler/compile";
 import { compileWithModel } from "@/lib/compiler/model";
-import { resolveMarket, marketOf, type Major } from "@/lib/market";
+import { resolveMarket, marketOf, namesToken, type Major } from "@/lib/market";
 import { validateOrder, blocks } from "@/lib/compiler/validate";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
 import { usePaperAccount } from "@/lib/account/store";
@@ -374,7 +374,7 @@ export function Sana({
      * union stops this file compiling until it is handled, which is the point
      * of the union existing at all.
      */
-    const ctx: CompileContext = { symbol, interval, hasPosition: held.qty > 0 };
+    const ctx: CompileContext = { symbol, label: market, interval, hasPosition: held.qty > 0 };
     const compiled = compile(text.replace(/^\/(buy|sell)\s*/i, "$1 "), ctx);
 
     /*
@@ -502,7 +502,15 @@ export function Sana({
      * not know that token" and "I know it and cannot trade it here" are
      * different problems with different fixes.
      */
-    if (spec.entry) {
+    /*
+     * THE COIN ON SCREEN, BY ITS OWN NAME, FIRST. Only the three majors were
+     * ever resolvable, so with BONK open, "buy $50 of bonk" answered "I don't
+     * know bonk". Plurals count: "six solanas" is SOL.
+     */
+    const openName = resolveMarket(market)?.name;
+    if (spec.entry && namesToken(spec.entry.token, market, openName)) {
+      spec.entry.mint = symbol;
+    } else if (spec.entry) {
       const named = resolveMarket(spec.entry.token);
       if (!named) {
         push({

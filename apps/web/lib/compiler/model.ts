@@ -42,6 +42,7 @@ export async function compileWithModel(
       body: JSON.stringify({
         text,
         symbol: ctx.symbol,
+        label: ctx.label,
         interval: ctx.interval,
         hasPosition: ctx.hasPosition,
       }),

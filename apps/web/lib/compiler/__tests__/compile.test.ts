@@ -173,3 +173,9 @@ test("a sentence nobody can parse says what to try instead", () => {
   // A refusal that does not teach the boundary teaches nothing.
   assert.ok(out.intent.kind === "refusal" && out.intent.message.includes("$250"));
 });
+
+test("the coin on screen is known by name, plurals included, and still asks $ or tokens", () => {
+  const ctx = { symbol: "DezX", label: "BONK", interval: "1h" as const, hasPosition: false };
+  assert.equal(compile("buy 100 bonk", ctx).intent.kind, "clarify");
+  assert.equal(compile("buy me six solanas", { ...ctx, label: "SOL" }).intent.kind, "clarify");
+});

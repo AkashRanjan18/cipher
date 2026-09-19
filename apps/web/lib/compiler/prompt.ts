@@ -36,7 +36,10 @@ Rules:
 - Never answer a question about whether something is a good trade. That is outOfScope, always.
 - A refusal message is one sentence, plain, and says what the person can do instead. Never apologise.
 
-Markets cipher trades: ${MARKETS.map((m) => m.base).join(", ")}. A token outside this list is a refusal, not a guess.`;
+Tokens cipher trades: the OPEN MARKET named in the user turn, plus ${MARKETS.map((m) => m.base).join(", ")}. Put the token in entry.token exactly as its ticker (e.g. "sol", "bonk"), singular. "it", "this" and "this coin" mean the open market. A token that is neither is a refusal, not a guess.
+- Numbers said as words are numbers: "a hundred" is 100, "four hundred" is 400. "put a hundred in" means buy $100.
+- "cut me if I'm wrong by 10%" and "cut my losses at 10%" are a stop: drawdownFromEntry 10. "get me out of half at 2x" is an exit selling 50% at priceMultiple 2.
+- If the sentence gives no size for a buy, return clarify. Never invent a size.`;
 
 /**
  * The per-request half.
@@ -46,9 +49,12 @@ Markets cipher trades: ${MARKETS.map((m) => m.base).join(", ")}. A token outside
  * invalidates the cache for every user, silently, and the only symptom is the
  * bill.
  */
-export function userTurn(text: string, ctx: { symbol: string; interval: string; hasPosition: boolean }): string {
+export function userTurn(
+  text: string,
+  ctx: { symbol: string; label?: string; interval: string; hasPosition: boolean },
+): string {
   return [
-    `Open market: ${ctx.symbol}. Interval: ${ctx.interval}. The user ${ctx.hasPosition ? "holds" : "does not hold"} a position in it.`,
+    `Open market: ${ctx.label ? `${ctx.label} (${ctx.symbol})` : ctx.symbol}. Interval: ${ctx.interval}. The user ${ctx.hasPosition ? "holds" : "does not hold"} a position in it.`,
     "",
     "Sentence:",
     text,
