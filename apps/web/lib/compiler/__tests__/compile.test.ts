@@ -179,3 +179,10 @@ test("the coin on screen is known by name, plurals included, and still asks $ or
   assert.equal(compile("buy 100 bonk", ctx).intent.kind, "clarify");
   assert.equal(compile("buy me six solanas", { ...ctx, label: "SOL" }).intent.kind, "clarify");
 });
+
+test("a sentence the grammar only half read goes to the model, not to a half order", () => {
+  // Found live: the stop parsed, the $10 buy was dropped without a word.
+  const out = compile("put ten bucks in and cut me if it drops ten percent", CTX);
+  assert.equal(out.intent.kind, "refusal");
+  if (out.intent.kind === "refusal") assert.equal(out.intent.reason, "notUnderstood");
+});

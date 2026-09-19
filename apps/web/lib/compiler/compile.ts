@@ -332,7 +332,19 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
    * and would be caught by three of the matchers below.
    */
   const spec = parseWithGrammar(text);
-  if (spec) {
+  /*
+   * A DOLLAR AMOUNT THE PARSE DID NOT USE means the grammar read HALF the
+   * sentence. "put ten bucks in and cut me if it drops ten percent" matched
+   * the stop, dropped the buy, and came back as exits on a position nobody
+   * holds. Handing the whole sentence to the model is right; answering the
+   * half the grammar understood is not.
+   */
+  const lostMoney =
+    spec !== null &&
+    !spec.entry &&
+    /\$\s*\d/.test(text) &&
+    !spec.exits.some((x) => x.amount.kind === "usd");
+  if (spec && !lostMoney) {
     /* A parse can succeed and still be wrong: a stated condition with no price
        becomes `trigger: null`, which fills NOW. Ask rather than trade. */
     const noPrice = askForMissingTrigger(text, spec);
