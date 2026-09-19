@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { compiledSchema, type ModelCompiled } from "./schema.ts";
+import { compiledSchema, intentSchema, type ModelCompiled } from "./schema.ts";
 
 /**
  * THE MODEL FALLBACK: any open model, through any OpenAI-compatible provider.
@@ -61,7 +61,25 @@ export function providers(env: Record<string, string | undefined> = process.env)
  * asked for "a JSON object", and OUR side enforces the schema with zod. The
  * enforcement is the part that matters; the prompt only makes a pass likely.
  */
-const SHAPE = JSON.stringify(z.toJSONSchema(compiledSchema, { io: "input" }));
+const SHAPE = JSON.stringify(
+  z.toJSONSchema(
+    /*
+     * ONLY THE THREE KINDS THE MODEL MAY RETURN. The full schema also
+     * describes queries, navigation and screens, which ordersOnly() throws
+     * away anyway — and at ~2,400 tokens a request it spent Groq's free
+     * 8,000-tokens-a-minute allowance in three sentences, for the whole app.
+     */
+    z.object({
+      intent: z.discriminatedUnion(
+        "kind",
+        intentSchema.options.filter((o) =>
+          ["order", "clarify", "refusal"].includes(o.shape.kind.value as string),
+        ) as unknown as [typeof intentSchema.options[number], ...typeof intentSchema.options[number][]],
+      ),
+    }),
+    { io: "input" },
+  ),
+);
 
 /**
  * Pull the first JSON object out of a reply.
@@ -79,6 +97,45 @@ export function extractJson(text: string): unknown {
   } catch {
     return null;
   }
+}
+
+/** The only thing the model is ever allowed to say that is not an order. */
+export const ORDERS_ONLY = "I only place orders — I can't help with that.";
+
+/*
+ * An order-shaped sentence: what a clarify option has to look like.
+ */
+const ORDERISH = /\b(buy|sell|stop|take profit|target|trail|close|exit|dump)\b/;
+
+/**
+ * ORDERS ONLY. The user's rule, 19 Sep 2026: the model places orders and
+ * nothing else — any other request is refused, flatly, in cipher's words.
+ *
+ * Enforced HERE, on what came back, not by asking nicely in the prompt. The
+ * model writes free text in three places — a refusal's message, a clarify's
+ * question, and warnings — and each is a channel through which it could
+ * answer a question, give an opinion, or chat. So:
+ *
+ *   order     passes, with its warnings dropped (the validator writes the
+ *             warnings that matter, from the order itself)
+ *   clarify   passes only when every option is itself an order sentence,
+ *             which is the size question ("$100 or 100 SOL?") and nothing else
+ *   anything  else — a query, navigation, a screen, a refusal the model
+ *             worded — becomes ORDERS_ONLY, a sentence the model never wrote
+ *
+ * The grammar still answers "what's my P&L" and "show me BTC" itself; this
+ * only governs what the MODEL may put on screen.
+ */
+export function ordersOnly(c: ModelCompiled): ModelCompiled {
+  const i = c.intent;
+  if (i.kind === "order") return { intent: i, warnings: [] };
+  if (i.kind === "clarify") {
+    const sentences = [...(i.options ?? []).map((o) => o.sentence), ...(i.fill ? [i.fill.template] : [])];
+    if (sentences.length > 0 && sentences.every((x) => ORDERISH.test(x.toLowerCase()))) {
+      return { intent: i, warnings: [] };
+    }
+  }
+  return { intent: { kind: "refusal", reason: "outOfScope", message: ORDERS_ONLY }, warnings: [] };
 }
 
 export type Outcome =
@@ -139,7 +196,7 @@ export async function askModels(
         console.error(`[cipher] ${p.name} returned a shape we do not accept:`, safe.error.issues.slice(0, 3));
         continue;
       }
-      return { ok: true, compiled: safe.data, provider: p.name };
+      return { ok: true, compiled: ordersOnly(safe.data), provider: p.name };
     } catch (e) {
       console.error(`[cipher] ${p.name} unreachable:`, e);
     }

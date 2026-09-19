@@ -45,3 +45,56 @@ test("JSON wrapped in fences or chatter is still found", () => {
   assert.deepEqual(extractJson('Sure!\n```json\n{"a":1}\n```'), { a: 1 });
   assert.equal(extractJson("no json here"), null);
 });
+
+/* ─────────────── orders only: the user's rule, 19 Sep 2026 ─────────────── */
+
+import { ordersOnly, ORDERS_ONLY } from "../llm.ts";
+import type { ModelCompiled } from "../schema.ts";
+
+const refused = (c: ModelCompiled) =>
+  c.intent.kind === "refusal" && c.intent.message === ORDERS_ONLY;
+
+test("a question the model answered is replaced with the fixed refusal", () => {
+  const out = ordersOnly({
+    intent: { kind: "query", subject: "pnl" },
+    warnings: ["You are up $40 today!"],
+  } as ModelCompiled);
+  assert.ok(refused(out));
+  assert.deepEqual(out.warnings, []);
+});
+
+test("the model's own wording of a refusal never reaches the screen", () => {
+  const out = ordersOnly({
+    intent: { kind: "refusal", reason: "outOfScope", message: "BONK looks strong, but I can't advise." },
+    warnings: [],
+  } as ModelCompiled);
+  assert.ok(refused(out));
+});
+
+test("a clarify survives only when every option is an order", () => {
+  const size = ordersOnly({
+    intent: {
+      kind: "clarify",
+      question: "Do you mean $100 of SOL, or 100 SOL?",
+      options: [
+        { label: "$100", sentence: "buy $100 of sol" },
+        { label: "100 SOL", sentence: "buy 100 tokens of sol" },
+      ],
+    },
+    warnings: [],
+  } as ModelCompiled);
+  assert.equal(size.intent.kind, "clarify");
+
+  const chat = ordersOnly({
+    intent: {
+      kind: "clarify",
+      question: "Want the news or the chart?",
+      options: [
+        { label: "News", sentence: "tell me the news" },
+        { label: "Chart", sentence: "show me the chart" },
+      ],
+    },
+    warnings: [],
+  } as ModelCompiled);
+  assert.ok(refused(chat));
+});
