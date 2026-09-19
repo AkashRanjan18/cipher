@@ -557,7 +557,8 @@ function PendingCard({
   onCancel: () => void;
 }) {
   const { qty, exact } = quantity;
-  const approx = exact ? "" : "≈ ";
+  /* No "≈": the user reads a quantity, not an estimate marker. */
+  const approx = "";
   const cap = at !== null && supply !== null ? at * supply : null;
   const worth =
     qty !== null && at !== null
@@ -573,19 +574,10 @@ function PendingCard({
    * what it is waiting for, in tokens.
    */
   let note: { text: string; quiet: boolean } | null = null;
-  if (rule.state === "unbound") {
-    note = {
-      text:
-        waitingOn !== null
-          ? `Arms when your buy at ${usd(waitingOn)} fills.`
-          : "Arms when your buy fills.",
-      quiet: true,
-    };
-  } else if (rule.side === "sell" && qty !== null && held < qty * (1 - SELL_TOLERANCE)) {
-    note = {
-      text: `Cannot be executed unless you have ${units(qty)} ${symbol}. You have ${units(held)}.`,
-      quiet: false,
-    };
+  /* The user's wording, 19 Sep 2026, and nothing else: a sell triggers
+     only once the quantity it needs is held. */
+  if (rule.side === "sell" && qty !== null && (rule.state === "unbound" || held < qty * (1 - SELL_TOLERANCE))) {
+    note = { text: `Triggers when you have ${units(qty)} ${symbol}.`, quiet: rule.state === "unbound" };
   }
 
   return (
@@ -594,7 +586,7 @@ function PendingCard({
         <div className="pnl__col min-w-0">
           <div className={`pnl__value pnl__kind ${tone ? `pnl__kind--${tone}` : ""}`}>{kind}</div>
           <div className="pnl__sub flex items-center gap-1.5">
-            <CoinMark symbol={symbol} icon={icon} size={14} />
+            <CoinMark symbol={symbol} icon={icon} size={20} />
             <span className="truncate">
               {qty === null ? "—" : `${approx}${units(qty)}`} {symbol}
             </span>
@@ -603,7 +595,7 @@ function PendingCard({
         <div className="pnl__col pnl__col--right">
           <div className="pnl__value">{at === null ? timeOf(rule) : usd(at)}</div>
           {cap !== null && <div className="pnl__sub">{compactUsd(cap)} MC</div>}
-          <div className="pnl__label">Trigger</div>
+          <div className="pnl__label">Trigger price</div>
         </div>
       </div>
 
@@ -674,6 +666,14 @@ function Closed({ trips, ready }: { trips: RoundTrip[]; ready: boolean }) {
         const down = t.realisedUsd < 0;
         const entry = t.qtyBought > 0 ? t.investedUsd / t.qtyBought : null;
         const exit = t.qtySold > 0 ? t.proceedsUsd / t.qtySold : null;
+        const supply = meta[t.mint]?.supply ?? null;
+        /*
+         * THE OPEN CARD, EXACTLY — the user's rule, 19 Sep 2026: once an order
+         * executes, Open and Closed share one layout. Field for field: what
+         * it is worth (here, what came back), quantity, the coin's market cap
+         * (at the exit), the P&L, the average entry with its market cap, and
+         * what went in. Only the Sell button is Open's alone.
+         */
         return (
           <div key={`${t.mint}-${t.closedAt}`} className={`pnl ${down ? "is-down" : ""}`}>
             <div className="pnl__top">
@@ -691,12 +691,9 @@ function Closed({ trips, ready }: { trips: RoundTrip[]; ready: boolean }) {
                     {units(t.qtySold)} {symbol}
                   </span>
                 </div>
-                {/* How long it was held, and how long ago it ended — the two
-                    facts that place a closed trade without a date. */}
-                <div className="pnl__sub pnl__sub--cap">
-                  held {since(t.openedAt, t.closedAt * 1000) || "<1m"}
-                  {now !== null && ` · ${since(t.closedAt, now)} ago`}
-                </div>
+                {exit !== null && supply !== null && (
+                  <div className="pnl__sub pnl__sub--cap">{compactUsd(exit * supply)} MC</div>
+                )}
               </div>
               <div className="pnl__col pnl__col--right">
                 <div className="pnl__value pnl__value--gain">
@@ -721,8 +718,8 @@ function Closed({ trips, ready }: { trips: RoundTrip[]; ready: boolean }) {
                 <span className="pnl__label">Avg. entry</span>
                 <span className="pnl__stack">
                   <span className="pnl__stat">{entry === null ? "—" : usd(entry)}</span>
-                  {exit !== null && (
-                    <span className="pnl__stat pnl__stat--cap">exit {usd(exit)}</span>
+                  {entry !== null && supply !== null && (
+                    <span className="pnl__stat pnl__stat--cap">{compactUsd(entry * supply)} MC</span>
                   )}
                 </span>
               </div>
