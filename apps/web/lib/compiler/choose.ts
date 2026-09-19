@@ -54,7 +54,22 @@ export function choose(grammar: Compiled, model: Compiled | null, text = ""): Co
   const complete = (c: Compiled | null) =>
     c !== null && c.intent.kind === "order" && unplacedNumbers(said, c.intent.spec).length === 0;
 
-  if (model && (model.intent.kind === "clarify")) return model;
+  /*
+   * A QUESTION MUST NOT FORGET THE ORDER. Each answer is re-run as a whole
+   * sentence, so every number the person said has to survive into every
+   * option — or answering "$5 or 5 SOL?" silently drops the stop and target
+   * that came with it (the user's rule, 19 Sep 2026). A model question that
+   * loses one gives way to the grammar's reading.
+   */
+  if (model && model.intent.kind === "clarify") {
+    const numbers = [...said.matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => m[0].replace(/,/g, ""));
+    const answers = [
+      ...(model.intent.options ?? []).map((o) => o.sentence),
+      ...(model.intent.fill ? [model.intent.fill.template] : []),
+    ].map((s) => normaliseSpeech(s));
+    const keepsAll = answers.every((a) => numbers.every((n) => a.includes(n)));
+    if (keepsAll || grammar.intent.kind !== "order") return model;
+  }
   if (complete(model)) return model!;
   if (complete(grammar) && grammar.warnings.length === 0) return grammar;
 

@@ -180,3 +180,17 @@ test("answering '$ or tokens?' keeps every other part of the sentence", () => {
     }
   }
 });
+
+test("a buy with no size asks how much, and the answer keeps the stop and target", () => {
+  const ctx = { symbol: "x", label: "SOL", interval: "1h" as const, hasPosition: true };
+  const q = compile("buy sol and stop at -10% and target $130", ctx);
+  assert.equal(q.intent.kind, "clarify");
+  if (q.intent.kind !== "clarify" || !q.intent.fill) throw new Error("no fill");
+  const answered = q.intent.fill.template.replace("{}", "$500");
+  const out = choose(compile(answered, ctx), null, answered);
+  assert.equal(out.intent.kind, "order");
+  if (out.intent.kind === "order") {
+    assert.deepEqual(out.intent.spec.entry?.amount, { kind: "usd", value: 500 });
+    assert.equal(out.intent.spec.exits.length, 2);
+  }
+});

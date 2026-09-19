@@ -362,6 +362,27 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
    * and would be caught by three of the matchers below.
    */
   const spec = parseWithGrammar(text);
+
+  /*
+   * A BUY WITH NO SIZE, INSIDE A LONGER ORDER — "buy sol and stop at -10% and
+   * target $130". The parse kept the stop and target and dropped the buy, so
+   * they would have armed on whatever was already held. Ask how much, and put
+   * the answer INTO the whole sentence: the stop and target are part of the
+   * same order and must survive the question (the user's rule, 19 Sep 2026).
+   */
+  const sizeless = text.match(/\bbuy\s+(?:me\s+)?(?:some\s+)?([a-z][a-z0-9]{1,14})\b/);
+  if (spec && !spec.entry && sizeless && spec.exits.length > 0) {
+    return ok({
+      kind: "clarify",
+      question: `How much ${sizeless[1].toUpperCase()} do you want to buy?`,
+      options: [],
+      fill: {
+        template: text.replace(sizeless[0], `buy {} of ${sizeless[1]}`),
+        expects: "size",
+        example: "$500",
+      },
+    });
+  }
   /*
    * A DOLLAR AMOUNT THE PARSE DID NOT USE means the grammar read HALF the
    * sentence. "put ten bucks in and cut me if it drops ten percent" matched
