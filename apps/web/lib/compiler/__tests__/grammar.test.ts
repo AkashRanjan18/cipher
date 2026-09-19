@@ -247,3 +247,27 @@ test("a stop loss and a target price, said as plain numbers, both arm", () => {
 test("a trailing stop is still one exit, not a stop as well", () => {
   assert.equal(parseWithGrammar("trailing stop at 10%")!.exits.length, 1);
 });
+
+test("the second rung of a sell needs no verb of its own", () => {
+  // Found live, 19 Sep 2026: "and rest of 70% at $95" was dropped silently.
+  for (const s of [
+    "buy me $100 of solana and sell 30% at $100 and rest of 70% at $95",
+    "buy $100 of sol, sell 30% at $100 and 70% at $95",
+    "buy $100 of sol, sell 30% at $100 and the rest at $95",
+  ]) {
+    const spec = parseWithGrammar(s)!;
+    assert.deepEqual(
+      spec.exits.map((x) => [x.trigger, x.amount]),
+      [
+        [{ kind: "priceAbsolute", value: 100 }, { kind: "percentOfPosition", value: 30 }],
+        [{ kind: "priceAbsolute", value: 95 }, { kind: "percentOfPosition", value: 70 }],
+      ],
+      s,
+    );
+  }
+});
+
+test("a stop after a sell rung is still a stop, not a rung", () => {
+  const spec = parseWithGrammar("buy $100 of sol, sell 30% at $120 and stop at $80")!;
+  assert.equal(spec.exits.length, 2);
+});

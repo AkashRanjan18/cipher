@@ -460,6 +460,32 @@ export function parseWithGrammar(input: string): OrderSpec | null {
   }
 
   /*
+   * THE NEXT RUNG WITHOUT ITS VERB — "sell 30% at $100 and 70% at $95", "…
+   * and the rest at $95", "… and rest of 70% at $95".
+   *
+   * Nobody repeats "sell" (the same fact the multiple ladder above allows
+   * for). Found live, 19 Sep 2026: the second rung was dropped without a word,
+   * so a user who asked to sell everything in two steps armed one step. Only
+   * after a clause break, only once "sell" appears somewhere, and only with a
+   * size or "the rest" before the price — so "and stop at $80" is left to the
+   * stop pattern below.
+   */
+  if (/\bsell\b/.test(text)) {
+    for (const m of text.matchAll(
+      /(?:,|\band\b|\bthen\b)\s+(?:the\s+)?(?:(rest|remaining)\s*(?:of\s+)?)?(?:([\d.]+\s*%)\s+)?(?:at|@)\s*\$\s*([\d.,]+)/g,
+    )) {
+      if (!m[1] && !m[2]) continue;
+      const at = Number(m[3].replace(/,/g, ""));
+      if (!(at > 0)) continue;
+      if (exits.some((x) => x.trigger.kind === "priceAbsolute" && x.trigger.value === at)) continue;
+      /* An explicit percentage wins over "the rest" — "rest of 70%" is 70. */
+      const amount = m[2] ? parseAmount(m[2]) : parseAmount("the rest");
+      if (!amount) continue;
+      exits.push({ id: nextId(), trigger: { kind: "priceAbsolute", value: at }, amount });
+    }
+  }
+
+  /*
    * STOP — "stop the rest at -50%", "stop at -50%", "stop loss on SOL at 10%"
    * The sign is ignored: "stop at 50%" and "stop at -50%" mean the same thing,
    * and nobody has ever meant a stop 50% above their entry.
