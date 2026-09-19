@@ -2,7 +2,6 @@ import {
   QuoteError,
   USDC_MINT,
   fromBaseUnits,
-  impactPct,
   quote,
   toBaseUnits,
 } from "./jupiter.ts";
@@ -131,11 +130,45 @@ export async function quoteFill(req: FillRequest): Promise<QuotedFill> {
   const price = buying ? inAmt / outAmt : outAmt / inAmt;
   const qty = buying ? outAmt : inAmt;
 
+  /*
+   * IMPACT, MEASURED — never read off Jupiter's `priceImpactPct`.
+   *
+   * Found live, 19 Sep 2026: a $500 ZCAT buy was refused as "moves the price
+   * about 6.70%" on a $110M coin with $1.5M of liquidity. Jupiter returned
+   * priceImpactPct 0.028 for $500 and 0.039 for $50,000 — a field that barely
+   * moves with 100x the size is not an impact, and multiplying it by 100
+   * refused real trades. Measured directly the same day, $500 paid 0.51% more
+   * per token than $1 did.
+   *
+   * So impact is what THIS size pays per token against a tiny trade on the
+   * same pair: same route, same pool fees, so they cancel and what is left is
+   * what the order itself does to the price. One extra quote, in the same
+   * breath; if it fails, the model's estimate stands (0 here, and the ledger's
+   * own depth model still applies on the paper path).
+   */
+  let impactBps = 0;
+  try {
+    const refIn = Math.max(1, Math.floor(Number(toBaseUnits(size, inDecimals)) / 1000));
+    const ref = await quote(
+      { inputMint, outputMint, amount: String(refIn), slippageBps },
+      signal,
+    );
+    const rIn = fromBaseUnits(ref.inAmount, inDecimals);
+    const rOut = fromBaseUnits(ref.outAmount, outDecimals);
+    if (rIn > 0 && rOut > 0) {
+      const refPrice = buying ? rIn / rOut : rOut / rIn;
+      const worse = buying ? price / refPrice - 1 : 1 - price / refPrice;
+      impactBps = Math.max(0, Math.round(worse * 10_000));
+    }
+  } catch {
+    impactBps = 0;
+  }
+
   return {
     price,
     qty,
     minOut,
-    impactBps: Math.round(impactPct(q) * 100),
+    impactBps,
     route: q.route.map((r) => r.label).join(" > ") || "direct",
   };
 }
