@@ -76,7 +76,13 @@ const CHECKS: Check[] = [
     asked: /\b(stop|stop-?loss)\b/,
     honoured: (s) =>
       s.exits.some(
-        (e) => e.trigger.kind === "drawdownFromEntry" || e.trigger.kind === "trailingStop",
+        /* A stop at a PRICE counts too ("stop at $90", "stop loss to 80").
+           Only percentages did, so a correctly parsed price stop raised a
+           false "I didn't arm one" and the whole order was refused. */
+        (e) =>
+          e.trigger.kind === "drawdownFromEntry" ||
+          e.trigger.kind === "trailingStop" ||
+          e.trigger.kind === "priceAbsolute",
       ),
     say: "You asked for a stop and I didn't arm one — say the level, like \"stop at -20%\".",
   },

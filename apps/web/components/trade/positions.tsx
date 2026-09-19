@@ -401,7 +401,7 @@ function Open({
  * order was given, and parentId carries that — a resting buy's id, or the
  * fill id of the market buy the exit came with (see sana.tsx).
  */
-type Kind = "Buy limit" | "Sell stop loss" | "Sell target" | "Sell limit";
+type Kind = "Buy limit" | "Sell stop loss" | "Sell target";
 
 function kindOf(rule: Rule, at: number | null, reference: number | null): Kind {
   if (rule.side === "buy") return "Buy limit";
@@ -412,7 +412,9 @@ function kindOf(rule: Rule, at: number | null, reference: number | null): Kind {
     (t.kind === "priceMultiple" && t.value < 1) ||
     (at !== null && reference !== null && at < reference);
   if (below) return "Sell stop loss";
-  return rule.parentId ? "Sell target" : "Sell limit";
+  /* A sell limit IS a sell target — the user's call, 19 Sep 2026: one name
+     for a sell above the market, whenever it was set. */
+  return "Sell target";
 }
 
 /**
@@ -462,6 +464,9 @@ function Pending({ armed, waiting, ready }: { armed: Rule[]; waiting: Rule[]; re
   );
   const mints = useMemo(() => [...new Set(rules.map((r) => r.market))], [rules]);
   const meta = useTokenMeta(mints);
+  /* The live price for every coin with an order, so each card shows where
+     the market is now against where the order fires. */
+  const marks = useSolPrices("pending", mints);
 
   if (!ready) return <Quiet>Reading your rules…</Quiet>;
   if (rules.length === 0) {
@@ -515,6 +520,7 @@ function Pending({ armed, waiting, ready }: { armed: Rule[]; waiting: Rule[]; re
             symbol={meta[rule.market]?.symbol ?? baseSymbol(rule.market)}
             icon={meta[rule.market]?.icon ?? null}
             supply={meta[rule.market]?.supply ?? null}
+            mark={marks[rule.market]?.usd ?? null}
             onCancel={() => cancelRule(rule.id)}
           />
         );
@@ -533,6 +539,7 @@ function PendingCard({
   symbol,
   icon,
   supply,
+  mark,
   onCancel,
 }: {
   rule: Rule;
@@ -545,6 +552,8 @@ function PendingCard({
   symbol: string;
   icon: string | null;
   supply: number | null;
+  /** The live price. Null while the poll has not answered. */
+  mark: number | null;
   onCancel: () => void;
 }) {
   const { qty, exact } = quantity;
@@ -594,6 +603,7 @@ function PendingCard({
         <div className="pnl__col pnl__col--right">
           <div className="pnl__value">{at === null ? timeOf(rule) : usd(at)}</div>
           {cap !== null && <div className="pnl__sub">{compactUsd(cap)} MC</div>}
+          <div className="pnl__label">Trigger</div>
         </div>
       </div>
 
@@ -604,9 +614,17 @@ function PendingCard({
       <div className="pnl__rule" />
 
       <div className="pnl__foot">
+        {/* WHERE THE MARKET IS NOW, against the trigger price above — the
+            user's layout, 19 Sep 2026: quantity, token, trigger price and
+            current price, both in USD, with the market cap for each. */}
         <div className="pnl__pair">
-          <span className="pnl__label">Value</span>
-          <span className="pnl__stat">{worth === null ? "—" : `${approx}${usd(worth)}`}</span>
+          <span className="pnl__label">Now</span>
+          <span className="pnl__stack">
+            <span className="pnl__stat">{mark === null ? "—" : usd(mark)}</span>
+            {mark !== null && supply !== null && (
+              <span className="pnl__stat pnl__stat--cap">{compactUsd(mark * supply)} MC</span>
+            )}
+          </span>
         </div>
         <button onClick={onCancel} className="pnl__btn">
           Cancel
