@@ -339,11 +339,19 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
    * holds. Handing the whole sentence to the model is right; answering the
    * half the grammar understood is not.
    */
+  /* "Used" means it became an amount OR a price. The first version counted
+     only amounts, so "sell half at $250" — whose $250 is the target — was
+     refused as half-read. */
+  const used = new Set<number>(
+    (spec?.exits ?? []).flatMap((x) => [
+      ...(x.amount.kind === "usd" ? [x.amount.value] : []),
+      ...(x.trigger.kind === "priceAbsolute" ? [x.trigger.value] : []),
+    ]),
+  );
   const lostMoney =
     spec !== null &&
     !spec.entry &&
-    /\$\s*\d/.test(text) &&
-    !spec.exits.some((x) => x.amount.kind === "usd");
+    [...text.matchAll(/\$\s*([\d.,]+)/g)].some((m) => !used.has(Number(m[1].replace(/,/g, ""))));
   if (spec && !lostMoney) {
     /* A parse can succeed and still be wrong: a stated condition with no price
        becomes `trigger: null`, which fills NOW. Ask rather than trade. */

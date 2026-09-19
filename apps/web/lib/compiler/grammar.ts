@@ -483,7 +483,7 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      * `my` and `me out` are allowed between the verb and the level, and `if
      * it drops` joins `at` as a way of naming one.
      */
-    /(?<!\btrail\s)(?<!\btrailing\s)\b(?:stop|cut)(?:\s+my)?(?:\s+losses?)?(?:\s+loss)?(?:\s+me\s+out)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b|if\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@|if\s+it\s+(?:drops?|falls?)(?:\s+by)?)\s*-?\s*([\d.]+)\s*%/,
+    /(?<!\btrail\s)(?<!\btrailing\s)\b(?:stop|cut)(?:\s+my)?(?:\s+losses?)?(?:\s+loss)?(?:\s+me\s+out)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b|if\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@|of|to|if\s+it\s+(?:drops?|falls?)(?:\s+by)?)\s*-?\s*([\d.]+)\s*%/,
   );
   if (stop) {
     const percent = Number(stop[2]);

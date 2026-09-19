@@ -186,3 +186,27 @@ test("a sentence the grammar only half read goes to the model, not to a half ord
   assert.equal(out.intent.kind, "refusal");
   if (out.intent.kind === "refusal") assert.equal(out.intent.reason, "notUnderstood");
 });
+
+test("a spoken order with a stop 'of' a percent and a target said as 'one twenty'", () => {
+  // Found live, 19 Sep 2026: the stop was dropped and the target armed at $21.
+  const out = compile(
+    "buy me fifty dollars of solana at the current market price and put a stop loss of negative ten percent and set a target price of one twenty dollars",
+    CTX,
+  );
+  assert.equal(out.intent.kind, "order");
+  if (out.intent.kind !== "order") return;
+  assert.deepEqual(out.intent.spec.entry?.amount, { kind: "usd", value: 50 });
+  assert.equal(out.intent.spec.entry?.trigger, null);
+  assert.deepEqual(
+    out.intent.spec.exits.map((x) => x.trigger),
+    [
+      { kind: "drawdownFromEntry", percent: 10 },
+      { kind: "priceAbsolute", value: 120 },
+    ],
+  );
+});
+
+test("a dollar figure used as a target price counts as read", () => {
+  assert.equal(compile("sell half at $250", { ...CTX, hasPosition: true }).intent.kind, "order");
+  assert.equal(compile("sell half at two fifty dollars", { ...CTX, hasPosition: true }).intent.kind, "order");
+});

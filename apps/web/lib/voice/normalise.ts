@@ -149,7 +149,22 @@ function digitiseNumbers(text: string): string {
       j += 1;
     }
 
-    const n = wordsToNumber(run);
+    /*
+     * "ONE TWENTY" IS 120, the way prices are said out loud — "one twenty",
+     * "two fifty", "one twenty five". The accumulator added them (1 + 20 =
+     * 21), so "a target price of one twenty dollars" armed a sell at $21:
+     * a target the user placed above the market became a stop far below it.
+     * A single digit followed directly by a tens word is never how anyone
+     * says 21 ("twenty one" is), so it is always hundreds.
+     */
+    const u = UNITS[run[0]];
+    const n =
+      run.length >= 2 && u >= 1 && u <= 9 && run[1] in TENS
+        ? (() => {
+            const rest = wordsToNumber(run.slice(1));
+            return rest === null ? null : u * 100 + rest;
+          })()
+        : wordsToNumber(run);
     if (n === null) {
       out.push(words[i]);
       i += 1;

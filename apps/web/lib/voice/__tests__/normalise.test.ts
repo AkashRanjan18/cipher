@@ -109,3 +109,10 @@ test("typed shorthand nobody thinks twice about now works", () => {
   const spec = parseWithGrammar(normaliseSpeech("buy 500 dollars of sol"));
   assert.deepEqual(spec?.entry?.amount, { kind: "usd", value: 500 });
 });
+
+test("prices said the spoken way: one twenty is 120, twenty one is 21", () => {
+  assert.equal(normaliseSpeech("target one twenty dollars"), "target $120");
+  assert.equal(normaliseSpeech("target two fifty"), "target 250");
+  assert.equal(normaliseSpeech("target one twenty five dollars"), "target $125");
+  assert.equal(normaliseSpeech("buy twenty one dollars of sol"), "buy $21 of sol");
+});
