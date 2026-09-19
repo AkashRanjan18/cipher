@@ -7,6 +7,7 @@ import type { Compiled, CompileContext, ExitRule, Intent, Interval, OrderSpec } 
 import { freezeAmount } from "@/lib/triggers/execute";
 import { compile } from "@/lib/compiler/compile";
 import { compileWithModel } from "@/lib/compiler/model";
+import { choose, needsModel, ORDERS_ONLY } from "@/lib/compiler/choose";
 import { resolveMarket, marketOf, namesToken, type Major } from "@/lib/market";
 import { validateOrder, blocks } from "@/lib/compiler/validate";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
@@ -374,24 +375,28 @@ export function Sana({
      * union stops this file compiling until it is handled, which is the point
      * of the union existing at all.
      */
-    const ctx: CompileContext = { symbol, label: market, interval, hasPosition: held.qty > 0 };
+    const ctx: CompileContext = {
+      symbol,
+      label: market,
+      interval,
+      hasPosition: held.qty > 0,
+      price: price ?? undefined,
+      heldQty: held.qty,
+    };
     const compiled = compile(text.replace(/^\/(buy|sell)\s*/i, "$1 "), ctx);
 
     /*
-     * THE GRAMMAR GIVES UP, THE MODEL TRIES. In that order, always.
+     * THE MODEL READS EVERY ORDER. The user's call for the MVP, 19 Sep 2026.
      *
-     * Only `notUnderstood` falls through. A refusal for being out of scope is
-     * a DECISION, not a failure — sending "should I buy SOL?" to a model after
-     * the grammar correctly declined it would be paying to have the boundary
-     * re-litigated by something less certain about it. Same for clarify: the
-     * ambiguity is real and a model cannot resolve it either.
-     *
-     * This ordering is also the entire cost control. The grammar answers in
-     * ten milliseconds for free; this answers in a second or two for a
-     * fraction of a cent. Reverse them and every sentence is a paid request.
+     * The grammar read "a target price of one twenty dollars" as $21 and
+     * dropped "stop loss of -10%" — confidently, so the model was never
+     * asked. Now anything order-shaped goes to the model first, and the
+     * grammar is the fallback when the model cannot answer. What the grammar
+     * answers on its own (account questions, navigation, its size question)
+     * never costs a model call. See lib/compiler/choose.ts for every rule.
      */
-    if (compiled.intent.kind === "refusal" && compiled.intent.reason === "notUnderstood") {
-      void askModel(text, ctx);
+    if (needsModel(compiled)) {
+      void askModel(text, ctx, compiled);
       return;
     }
 
@@ -406,7 +411,7 @@ export function Sana({
    * reflex is to press enter again — which, for a product where enter can
    * eventually mean a trade, is a habit not to teach.
    */
-  async function askModel(text: string, ctx: CompileContext) {
+  async function askModel(text: string, ctx: CompileContext, grammar: Compiled) {
     /* A new sentence abandons the old request. Two answers arriving out of
        order would resolve the wrong turn. */
     pending.current?.abort();
@@ -414,13 +419,13 @@ export function Sana({
     pending.current = controller;
 
     const id = turnId.current++;
-    setTurns((prev) => [...prev, { id, mine: false, text: "Working that one out…", thinking: true }]);
+    setTurns((prev) => [...prev, { id, mine: false, text: "Reading your order…", thinking: true }]);
 
-    const compiled = await compileWithModel(text, ctx, controller.signal);
+    const answer = await compileWithModel(text, ctx, controller.signal);
     if (controller.signal.aborted) return;
 
     setTurns((prev) => prev.filter((t) => t.id !== id));
-    dispatch(compiled);
+    dispatch(choose(grammar, answer.unavailable ? null : answer, text));
   }
 
   function dispatch(compiled: Compiled) {
@@ -428,7 +433,10 @@ export function Sana({
 
     switch (intent.kind) {
       case "refusal":
-        push({ mine: false, text: intent.message });
+        /* Out of scope is ONE fixed sentence whoever refused it. The
+           grammar's own wording ("I don't call the market…") was still an
+           answer, and the rule is to deny, not to converse. */
+        push({ mine: false, text: intent.reason === "outOfScope" ? ORDERS_ONLY : intent.message });
         return;
 
       case "clarify":

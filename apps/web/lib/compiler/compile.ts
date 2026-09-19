@@ -67,6 +67,26 @@ function refuse(
  * not cross. CompileContext has no balance in it for this reason.
  */
 function ambiguousSize(text: string, label?: string): Compiled | null {
+  /*
+   * "BUY FOR A HUNDRED SOL." Spoken, "for" and "four" are one sound, and the
+   * sentence reads either way — $100 of SOL, or 100 (or 400) SOL. Found live:
+   * the model read it as 100 SOL, $11,200 on a $10,000 account, and only the
+   * cash check stopped it. A size after "for" with no unit is always asked.
+   */
+  const spoken = text.match(/\b(buy|sell)\s+for\s+([\d.,]+)\s+(?:of\s+)?([a-z][a-z0-9]{1,14})\b/);
+  if (spoken) {
+    const [, side, number, token] = spoken;
+    const upper = resolveMarket(token)?.base ?? token.toUpperCase();
+    return ok({
+      kind: "clarify",
+      question: `Do you mean $${number} worth of ${upper}, or ${number} ${upper}?`,
+      options: [
+        { label: `$${number} worth`, sentence: `${side} $${number} of ${token}` },
+        { label: `${number} ${upper}`, sentence: `${side} ${number} tokens of ${token}` },
+      ],
+    });
+  }
+
   const m = text.match(
     /\b(buy|sell)\s+(?:me\s+)?([\d.,]+)\s+(?:of\s+)?([a-z][a-z0-9]{1,14})\b/,
   );

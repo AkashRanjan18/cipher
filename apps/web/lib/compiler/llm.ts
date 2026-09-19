@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { newId } from "@cipher/shared";
 import { compiledSchema, intentSchema, type ModelCompiled } from "./schema.ts";
 
 /**
@@ -99,8 +100,8 @@ export function extractJson(text: string): unknown {
   }
 }
 
-/** The only thing the model is ever allowed to say that is not an order. */
-export const ORDERS_ONLY = "I only place orders — I can't help with that.";
+export { ORDERS_ONLY } from "./choose.ts";
+import { ORDERS_ONLY } from "./choose.ts";
 
 /*
  * An order-shaped sentence: what a clarify option has to look like.
@@ -128,7 +129,16 @@ const ORDERISH = /\b(buy|sell|stop|take profit|target|trail|close|exit|dump)\b/;
  */
 export function ordersOnly(c: ModelCompiled): ModelCompiled {
   const i = c.intent;
-  if (i.kind === "order") return { intent: i, warnings: [] };
+  if (i.kind === "order") {
+    /*
+     * FRESH EXIT IDS. The model names them "exit1", "exit2" — the same names
+     * in every order. A rule id is a primary key across every user, written
+     * with `on conflict do nothing`, so the second "exit1" would be dropped
+     * without a sound: an order whose stop was never armed.
+     */
+    const exits = i.spec.exits.map((x) => ({ ...x, id: newId("r") }));
+    return { intent: { ...i, spec: { ...i.spec, exits } }, warnings: [] };
+  }
   if (i.kind === "clarify") {
     const sentences = [...(i.options ?? []).map((o) => o.sentence), ...(i.fill ? [i.fill.template] : [])];
     if (sentences.length > 0 && sentences.every((x) => ORDERISH.test(x.toLowerCase()))) {
@@ -136,6 +146,39 @@ export function ordersOnly(c: ModelCompiled): ModelCompiled {
     }
   }
   return { intent: { kind: "refusal", reason: "outOfScope", message: ORDERS_ONLY }, warnings: [] };
+}
+
+/**
+ * Fill in the fields a model leaves out that carry no meaning of their own.
+ *
+ * Found live: Groq read the user's sentence perfectly and omitted an order's
+ * bookkeeping (`source`, `warnings`, `version`) — and the whole correct
+ * answer was thrown away for it. These are filled; nothing the person SAID
+ * is ever invented here. The one judgement is an exit with no size, which is
+ * the whole position — the rule the grammar and the prompt already state.
+ */
+export function repair(raw: unknown): unknown {
+  const r = raw as { intent?: { kind?: string; spec?: Record<string, unknown> }; warnings?: unknown };
+  if (!r || typeof r !== "object" || !r.intent) return raw;
+  if (!Array.isArray(r.warnings)) r.warnings = [];
+  const spec = r.intent.kind === "order" ? r.intent.spec : undefined;
+  if (spec && typeof spec === "object") {
+    spec.version ??= 1;
+    spec.source = "model";
+    if (!Array.isArray(spec.warnings)) spec.warnings = [];
+    spec.entry ??= null;
+    if (!Array.isArray(spec.exits)) spec.exits = [];
+    for (const x of spec.exits as Record<string, unknown>[]) {
+      x.id ??= "x";
+      x.amount ??= { kind: "percentOfPosition", value: 100 };
+    }
+    const e = spec.entry as Record<string, unknown> | null;
+    if (e) {
+      e.trigger ??= null;
+      e.mint ??= null;
+    }
+  }
+  return r;
 }
 
 export type Outcome =
@@ -190,7 +233,7 @@ export async function askModels(
         continue;
       }
       const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-      const raw = extractJson(body.choices?.[0]?.message?.content ?? "");
+      const raw = repair(extractJson(body.choices?.[0]?.message?.content ?? ""));
       const safe = compiledSchema.safeParse(raw);
       if (!safe.success) {
         console.error(`[cipher] ${p.name} returned a shape we do not accept:`, safe.error.issues.slice(0, 3));

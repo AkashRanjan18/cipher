@@ -20,12 +20,21 @@ import { compiledSchema } from "./schema.ts";
  * rather than assumed.
  */
 
-function refusal(reason: "outOfScope" | "notUnderstood" | "notBuilt", message: string): Compiled {
+/**
+ * The model could not be asked, or did not answer usably.
+ *
+ * Marked rather than thrown, because the caller has a better answer than any
+ * of these sentences: the grammar's own reading. See choose.ts.
+ */
+export type ModelAnswer = Compiled & { unavailable?: true };
+
+function refusal(reason: "outOfScope" | "notUnderstood" | "notBuilt", message: string): ModelAnswer {
   return {
     version: INTENT_VERSION,
     intent: { kind: "refusal", reason, message },
     source: "model",
     warnings: [],
+    unavailable: true,
   };
 }
 
@@ -33,7 +42,7 @@ export async function compileWithModel(
   text: string,
   ctx: CompileContext,
   signal?: AbortSignal,
-): Promise<Compiled> {
+): Promise<ModelAnswer> {
   let res: Response;
   try {
     res = await fetch("/api/compile", {
@@ -43,6 +52,8 @@ export async function compileWithModel(
         text,
         symbol: ctx.symbol,
         label: ctx.label,
+        price: ctx.price,
+        heldQty: ctx.heldQty,
         interval: ctx.interval,
         hasPosition: ctx.hasPosition,
       }),

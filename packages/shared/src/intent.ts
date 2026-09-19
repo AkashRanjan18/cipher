@@ -282,6 +282,10 @@ export interface CompileContext {
   symbol: string;
   /** The open market's ticker, e.g. "BONK" — what a person calls it. */
   label?: string;
+  /** The live price, so the model can tell a stop from a target. */
+  price?: number;
+  /** How much of the open market is held — "30% of my SOL" is 30% of this. */
+  heldQty?: number;
   /** The interval currently shown, so "zoom out" has a reference point. */
   interval: Interval;
   /** True when the user holds the open market. Resolves "sell half" vs a refusal. */

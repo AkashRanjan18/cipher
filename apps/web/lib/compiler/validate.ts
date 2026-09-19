@@ -234,6 +234,48 @@ function checkExitSet(exits: ExitRule[]): Problem[] {
  * error, then another after it is fixed, then a third, is how a user gives up
  * on a sentence they could have corrected in one go.
  */
+/**
+ * A price more than this far from the market is asked about, never armed.
+ *
+ * Half. Found live, 19 Sep 2026: "a target price of one twenty dollars" was
+ * read as $21 with SOL at $112 — a target the user placed above the market
+ * armed 81% below it. Whoever misreads a number, the parser or the model, the
+ * number itself gives the mistake away. A real order that far out is rare
+ * enough that asking costs nothing, and it can always be said as a
+ * percentage ("stop at -60%"), which this does not question.
+ */
+const FAR_FROM_MARKET = 0.5;
+
+function checkPricesNearMarket(spec: OrderSpec, ctx: ValidationContext): Problem[] {
+  if (ctx.price === null || !(ctx.price > 0)) return [];
+  const out: Problem[] = [];
+  const market = ctx.price;
+  const far = (p: number) => Math.abs(p - market) / market > FAR_FROM_MARKET;
+  const pct = (p: number) => `${Math.round((Math.abs(p - market) / market) * 100)}%`;
+  const side = (p: number) => (p < market ? "below" : "above");
+
+  const limit = spec.entry?.trigger?.kind === "priceAbsolute" ? spec.entry.trigger.value : null;
+  if (limit !== null && far(limit)) {
+    out.push({
+      severity: "error",
+      at: "entry",
+      message: `${money(limit)} is ${pct(limit)} ${side(limit)} the price (${money(market)}) — I didn't place it. Say the price you meant.`,
+    });
+  }
+
+  for (const e of spec.exits) {
+    if (e.trigger.kind !== "priceAbsolute") continue;
+    const p = e.trigger.value;
+    if (!far(p)) continue;
+    out.push({
+      severity: "error",
+      at: `exit:${e.id}`,
+      message: `${money(p)} is ${pct(p)} ${side(p)} the price (${money(market)}) — I didn't set it. Say the price you meant, or use a percentage like "stop at -60%".`,
+    });
+  }
+  return out;
+}
+
 export function validateOrder(spec: OrderSpec, ctx: ValidationContext): Problem[] {
   const out: Problem[] = [];
   const { entry, exits } = spec;
@@ -325,6 +367,8 @@ export function validateOrder(spec: OrderSpec, ctx: ValidationContext): Problem[
     out.push(...checkAmount(e.amount, `exit:${e.id}`));
     out.push(...checkTrigger(e.trigger, `exit:${e.id}`));
   }
+
+  out.push(...checkPricesNearMarket(spec, ctx));
 
   out.push(...checkExitSet(exits));
 

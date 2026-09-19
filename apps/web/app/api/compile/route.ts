@@ -71,6 +71,8 @@ export async function POST(request: Request) {
     text?: unknown;
     symbol?: unknown;
     label?: unknown;
+    price?: unknown;
+    heldQty?: unknown;
     interval?: unknown;
     hasPosition?: unknown;
   };
@@ -90,6 +92,8 @@ export async function POST(request: Request) {
     userTurn(text, {
       symbol: typeof body.symbol === "string" ? body.symbol : "SOL",
       label: typeof body.label === "string" ? body.label.slice(0, 20) : undefined,
+      price: typeof body.price === "number" && body.price > 0 ? body.price : undefined,
+      heldQty: typeof body.heldQty === "number" && body.heldQty >= 0 ? body.heldQty : undefined,
       interval: typeof body.interval === "string" ? body.interval : "1h",
       hasPosition: body.hasPosition === true,
     }),

@@ -127,3 +127,45 @@ export function unconsumed(text: string, spec: OrderSpec): string[] {
 
   return out;
 }
+
+/**
+ * EVERY NUMBER THE PERSON SAID MUST BE IN THE ORDER. The gate before any
+ * order executes, whichever reader produced it.
+ *
+ * Found live, 19 Sep 2026, reading with the model first: asked twice for the
+ * same sentence, Groq once returned the buy with its stop and target, and
+ * once returned the buy alone. It also turned "sell 30% of my sol at $95"
+ * into a sell at market — dropping the one number that made it wait. A
+ * dropped clause is a different trade, and it is invisible in the order
+ * itself. It is not invisible against the sentence: every number said has
+ * to land somewhere, as an amount, a price, a percentage or a multiple.
+ *
+ * `text` is the sentence AFTER normaliseSpeech, so "one twenty dollars" is
+ * already "$120" and "negative ten percent" is "-10%".
+ */
+export function unplacedNumbers(text: string, spec: OrderSpec): string[] {
+  const placed: number[] = [];
+  const e = spec.entry;
+  if (e) {
+    placed.push(e.amount.value, e.slippageBps / 100);
+    if (e.tipSol != null) placed.push(e.tipSol);
+    if (e.trigger && "value" in e.trigger) placed.push(e.trigger.value);
+  }
+  for (const x of spec.exits) {
+    placed.push(x.amount.value);
+    const t = x.trigger as { value?: number; percent?: number; seconds?: number };
+    for (const v of [t.value, t.percent]) if (typeof v === "number") placed.push(v);
+    if (typeof t.seconds === "number") placed.push(t.seconds / 60, t.seconds / 3600, t.seconds / 86400);
+  }
+  const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.01, Math.abs(b) * 0.005);
+
+  const out: string[] = [];
+  for (const m of text.matchAll(/(\$)?\s*(\d[\d,]*(?:\.\d+)?)\s*([km])?\s*(%|x\b)?/g)) {
+    let n = Number(m[2].replace(/,/g, ""));
+    if (!Number.isFinite(n) || n === 0) continue;
+    if (m[3] === "k") n *= 1_000;
+    if (m[3] === "m") n *= 1_000_000;
+    if (!placed.some((p) => close(p, n))) out.push(`${m[1] ?? ""}${m[2]}${m[3] ?? ""}${m[4] ?? ""}`);
+  }
+  return out;
+}

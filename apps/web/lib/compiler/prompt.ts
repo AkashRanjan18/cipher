@@ -33,7 +33,20 @@ Rules:
 Tokens cipher trades: the OPEN MARKET named in the user turn, plus ${MARKETS.map((m) => m.base).join(", ")}. Put the token in entry.token exactly as its ticker (e.g. "sol", "bonk"), singular. "it", "this" and "this coin" mean the open market. A token that is neither is a refusal, not a guess.
 - Numbers said as words are numbers: "a hundred" is 100, "four hundred" is 400. "put a hundred in" means buy $100.
 - "cut me if I'm wrong by 10%" and "cut my losses at 10%" are a stop: drawdownFromEntry 10. "get me out of half at 2x" is an exit selling 50% at priceMultiple 2.
-- If the sentence gives no size for a buy, return clarify. Never invent a size.`;
+- If the sentence gives no size for a buy, return clarify. Never invent a size.
+
+How people say prices and sizes (read them exactly this way):
+- "one twenty" is 120, "two fifty" is 250, "one twenty five" is 125, "twenty one" is 21. "a buck twenty" is 1.20. "1.2k" is 1200.
+- "negative ten percent", "minus 10%", "down 10%" and "-10%" as a stop are all drawdownFromEntry 10.
+- "at the current price", "at market", "now", "right now" mean a market order: entry.trigger is null.
+- "when it drops to 90", "if it dips to 90", "at 90" on a buy is a resting buy: entry.trigger priceAbsolute 90.
+- A stop or stop loss given as a PRICE ("stop loss to 80", "stop at $80", "SL 80") is an exit with priceAbsolute 80. A target, target price, take profit or TP given as a price is an exit with priceAbsolute at that price. Given as a multiple ("2x") it is priceMultiple.
+- "once bought", "then", "after it fills" attach the exits to the buy in the same sentence; they do not start a new order.
+- An exit with no size named sells the whole position: percentOfPosition 100.
+- "the rest" / "whatever is left" is 100 minus every other exit's percentage in the same sentence (a third at 2x and the rest at -50% → 33 and 67).
+- "30% of my SOL" is percentOfPosition 30. "5 SOL" is tokens 5. "$50" or "fifty bucks" is usd 50.
+- Use the live price in the user turn to check yourself: a target is above it, a stop is below it. If the person called something a target and the number you read is below the live price (or a stop above it), you misheard the number — return clarify rather than guess.
+- Never put one clause's number into another clause: a stop's price is never the buy's limit.`;
 
 /**
  * The per-request half.
@@ -45,10 +58,21 @@ Tokens cipher trades: the OPEN MARKET named in the user turn, plus ${MARKETS.map
  */
 export function userTurn(
   text: string,
-  ctx: { symbol: string; label?: string; interval: string; hasPosition: boolean },
+  ctx: {
+    symbol: string;
+    label?: string;
+    interval: string;
+    hasPosition: boolean;
+    price?: number;
+    heldQty?: number;
+  },
 ): string {
   return [
-    `Open market: ${ctx.label ? `${ctx.label} (${ctx.symbol})` : ctx.symbol}. Interval: ${ctx.interval}. The user ${ctx.hasPosition ? "holds" : "does not hold"} a position in it.`,
+    `Open market: ${ctx.label ? `${ctx.label} (${ctx.symbol})` : ctx.symbol}. Interval: ${ctx.interval}.`,
+    ctx.price ? `Live price: $${ctx.price}.` : "Live price: unknown.",
+    ctx.hasPosition
+      ? `The user holds ${ctx.heldQty ?? "some"} ${ctx.label ?? "of it"}.`
+      : "The user holds none of it.",
     "",
     "Sentence:",
     text,
