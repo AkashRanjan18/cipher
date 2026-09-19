@@ -272,6 +272,7 @@ async function fire(
         decimals,
         side: intent.side,
         size: intent.side === "buy" ? intent.usd : intent.qty,
+        mark: price,
         slippageBps: DEFAULTS.slippageBps,
       });
     } catch (e) {

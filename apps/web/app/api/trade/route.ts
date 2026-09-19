@@ -96,6 +96,7 @@ export async function POST(request: Request) {
         decimals,
         side,
         size: side === "buy" ? qty * mark : qty,
+        mark,
         slippageBps:
           typeof body.slippageBps === "number" ? body.slippageBps : DEFAULTS.slippageBps,
       });

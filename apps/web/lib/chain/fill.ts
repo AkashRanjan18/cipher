@@ -56,6 +56,8 @@ export interface FillRequest {
   size: number;
   slippageBps: number;
   signal?: AbortSignal;
+  /** The live market price, USD per token — the second impact reference. */
+  mark?: number;
 }
 
 /**
@@ -66,7 +68,7 @@ export interface FillRequest {
  * token with no liquidity path is a fact about the market rather than a bug.
  */
 export async function quoteFill(req: FillRequest): Promise<QuotedFill> {
-  const { mint, decimals, side, size, slippageBps, signal } = req;
+  const { mint, decimals, side, size, slippageBps, signal, mark } = req;
   if (!(size > 0)) throw new QuoteError("That is not an amount.", 400);
 
   /*
@@ -140,28 +142,28 @@ export async function quoteFill(req: FillRequest): Promise<QuotedFill> {
    * refused real trades. Measured directly the same day, $500 paid 0.51% more
    * per token than $1 did.
    *
-   * So impact is what THIS size pays per token against a tiny trade on the
-   * same pair: same route, same pool fees, so they cancel and what is left is
-   * what the order itself does to the price. One extra quote, in the same
-   * breath; if it fails, the model's estimate stands (0 here, and the ledger's
-   * own depth model still applies on the paper path).
+   * THE REFERENCE IS A SMALL QUOTE, TAKEN NOW, ON THE SAME PAIR — 1% of
+   * the order's size. Same moment, same pools, same fees, so they cancel and
+   * what is left is what this order does to the price. Two audits of every
+   * token on cipher (19 Sep 2026) chose this over the alternatives:
+   *   - the listed market price lags the pools by several percent on
+   *     memecoins, and read ZCAT at 7.6% and OPENAI at 50% for a $500 buy
+   *   - a reference at 0.1% of the size ($0.50) routed through a dust pool
+   *     on CDOG and read 695%; at 1% it stays on the real route
+   * The listed price stands in only if the reference quote fails.
    */
   let impactBps = 0;
+  const ratio = (paid: number, ref: number) =>
+    Math.max(0, Math.round((buying ? paid / ref - 1 : 1 - paid / ref) * 10_000));
   try {
-    const refIn = Math.max(1, Math.floor(Number(toBaseUnits(size, inDecimals)) / 1000));
-    const ref = await quote(
-      { inputMint, outputMint, amount: String(refIn), slippageBps },
-      signal,
-    );
+    const refIn = Math.max(1, Math.floor(Number(toBaseUnits(size, inDecimals)) / 100));
+    const ref = await quote({ inputMint, outputMint, amount: String(refIn), slippageBps }, signal);
     const rIn = fromBaseUnits(ref.inAmount, inDecimals);
     const rOut = fromBaseUnits(ref.outAmount, outDecimals);
-    if (rIn > 0 && rOut > 0) {
-      const refPrice = buying ? rIn / rOut : rOut / rIn;
-      const worse = buying ? price / refPrice - 1 : 1 - price / refPrice;
-      impactBps = Math.max(0, Math.round(worse * 10_000));
-    }
+    if (rIn > 0 && rOut > 0) impactBps = ratio(price, buying ? rIn / rOut : rOut / rIn);
+    else if (mark && mark > 0) impactBps = ratio(price, mark);
   } catch {
-    impactBps = 0;
+    if (mark && mark > 0) impactBps = ratio(price, mark);
   }
 
   return {
