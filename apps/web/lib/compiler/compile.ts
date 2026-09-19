@@ -81,8 +81,8 @@ function ambiguousSize(text: string, label?: string): Compiled | null {
       kind: "clarify",
       question: `Do you mean $${number} worth of ${upper}, or ${number} ${upper}?`,
       options: [
-        { label: `$${number} worth`, sentence: `${side} $${number} of ${token}` },
-        { label: `${number} ${upper}`, sentence: `${side} ${number} tokens of ${token}` },
+        { label: `$${number} worth`, sentence: text.replace(spoken[0], `${side} $${number} of ${token}`) },
+        { label: `${number} ${upper}`, sentence: text.replace(spoken[0], `${side} ${number} tokens of ${token}`) },
       ],
     });
   }
@@ -95,7 +95,10 @@ function ambiguousSize(text: string, label?: string): Compiled | null {
   const [, side, number, token] = m;
   // A unit marker anywhere around the number settles it; only a naked number
   // is ambiguous.
-  if (/[$%]/.test(text) || /\b(worth|dollars?|usd|tokens?|coins?)\b/.test(text)) return null;
+  /* THE BUY'S OWN CLAUSE, not the sentence: "buy 5 sol and sell 30% at $100"
+     has a % and a $ — both belong to the sell, and the 5 is still bare. */
+  const clause = text.slice(m.index ?? 0).split(/,|;|\band\b|\bthen\b|\bonce\b/)[0];
+  if (/[$%]/.test(clause) || /\b(worth|dollars?|usd|tokens?|coins?)\b/.test(clause)) return null;
   /*
    * KNOWN MEANS A MAJOR OR THE COIN ON SCREEN. Only the majors counted, so
    * with BONK open "buy 100 bonk" skipped the question and bought 100 BONK —
@@ -109,8 +112,15 @@ function ambiguousSize(text: string, label?: string): Compiled | null {
     kind: "clarify",
     question: `Do you mean $${number} worth of ${upper}, or ${number} ${upper}?`,
     options: [
-      { label: `$${number} worth`, sentence: `${side} $${number} of ${token}` },
-      { label: `${number} ${upper}`, sentence: `${side} ${number} tokens of ${token}` },
+      /*
+       * THE WHOLE SENTENCE, with only the size rewritten. The options used to
+       * be the buy alone — found live, 19 Sep 2026: "buy 5 solanas and sell
+       * 30% at 100 and the rest at 95" asked "$5 or 5 SOL?", and picking an
+       * answer bought 5 SOL with both sells gone. Answering a question must
+       * never delete the rest of what was said.
+       */
+      { label: `$${number} worth`, sentence: text.replace(m[0], `${side} $${number} of ${token}`) },
+      { label: `${number} ${upper}`, sentence: text.replace(m[0], `${side} ${number} tokens of ${token}`) },
     ],
   });
 }

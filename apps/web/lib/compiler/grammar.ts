@@ -450,9 +450,15 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * was explicit, and the bare form falls through to the router's clarify.
    */
   for (const m of text.matchAll(
-    /\b(?:sell|take profit(?:\s+on)?)\s+(?:(a third|a half|half|third|quarter|a quarter|all|everything|the rest|rest|[\d.]+\s*%)\s+)?(?:at|@)\s*\$\s*([\d.,]+)\b/g,
+    /\b(?:sell|take profit(?:\s+on)?)\s+(?:(a third|a half|half|third|quarter|a quarter|all|everything|the rest|rest|[\d.]+\s*%)\s+)?(?:at|@)\s*(\$)?\s*([\d.,]+)\b(?!\s*[x%.\d])/g,
   )) {
-    const at = Number(m[2].replace(/,/g, ""));
+    /* A BARE PRICE IS READ WHEN A SIZE CAME FIRST. "sell 30% at 100" can
+       only mean a price — x and % are excluded above, and a price wildly
+       off the market is caught by validate.ts. Found live, 19 Sep 2026:
+       requiring "$" dropped a typed "at 100" without a word. With no size
+       ("sell at 100") the $ is still required. */
+    if (!m[2] && !m[1]) continue;
+    const at = Number(m[3].replace(/,/g, ""));
     if (!(at > 0)) continue;
     const amount = m[1] ? parseAmount(m[1]) : { kind: "percentOfPosition" as const, value: 100 };
     if (!amount) continue;
@@ -472,7 +478,7 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    */
   if (/\bsell\b/.test(text)) {
     for (const m of text.matchAll(
-      /(?:,|\band\b|\bthen\b)\s+(?:the\s+)?(?:(rest|remaining)\s*(?:of\s+)?)?(?:([\d.]+\s*%)\s+)?(?:at|@)\s*\$\s*([\d.,]+)/g,
+      /(?:,|\band\b|\bthen\b)\s+(?:the\s+)?(?:(rest|remaining)\s*(?:of\s+)?)?(?:([\d.]+\s*%)\s+)?(?:at|@)\s*\$?\s*([\d.,]+)\b(?!\s*[x%.\d])/g,
     )) {
       if (!m[1] && !m[2]) continue;
       const at = Number(m[3].replace(/,/g, ""));

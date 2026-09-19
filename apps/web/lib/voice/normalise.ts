@@ -222,7 +222,9 @@ export function normaliseSpeech(raw: string): string {
   t = t.replace(/\b(\d[\d.,]*)\s*(?:dollars?|bucks?|usd|usdc)\b/g, "$$$1");
 
   // "fifty percent" → "50%".
-  t = t.replace(/\b(\d[\d.]*)\s*(?:percent|per cent|pct)\b/g, "$1%");
+  /* And the ways it gets typed: "percentage", and misspellings of both —
+     found live, "30 percantage" was a bare 30 and the sell was lost. */
+  t = t.replace(/\b(\d[\d.]*)\s*(?:per\s?cent\w*|perc[a-z]*|prc?n?t\w*|pct)\b/g, "$1%");
 
   /* "two x", "two times", "double" → "2x". The recogniser writes the bare
      letter as "x" or "ex" depending on how it was said. */

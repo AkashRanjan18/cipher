@@ -157,3 +157,26 @@ test("when no reading has every number, nothing executes and the lost number is 
   assert.equal(out.intent.kind, "refusal");
   if (out.intent.kind === "refusal") assert.match(out.intent.message, /\$120/);
 });
+
+test("answering '$ or tokens?' keeps every other part of the sentence", () => {
+  // Found live, 19 Sep 2026: the answer bought 5 SOL and both sells vanished.
+  const ctx = { symbol: "x", label: "SOL", interval: "1h" as const, hasPosition: false };
+  const said = "buy me 5 solanas and sell 30 percantage at 100 and the rest 70 percentage at 95";
+  const q = compile(said, ctx);
+  assert.equal(q.intent.kind, "clarify");
+  if (q.intent.kind !== "clarify") return;
+  for (const o of q.intent.options) {
+    const out = choose(compile(o.sentence, ctx), null, o.sentence);
+    assert.equal(out.intent.kind, "order", o.label);
+    if (out.intent.kind === "order") {
+      assert.deepEqual(
+        out.intent.spec.exits.map((x) => [x.trigger, x.amount]),
+        [
+          [{ kind: "priceAbsolute", value: 100 }, { kind: "percentOfPosition", value: 30 }],
+          [{ kind: "priceAbsolute", value: 95 }, { kind: "percentOfPosition", value: 70 }],
+        ],
+        o.label,
+      );
+    }
+  }
+});

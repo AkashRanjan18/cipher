@@ -207,11 +207,20 @@ test("a resting entry and a priced exit in one sentence stay separate", () => {
   assert.deepEqual(spec.exits[0].trigger, { kind: "priceAbsolute", value: 200 });
 });
 
-test("a bare number after 'at' on an exit is not guessed at", () => {
-  // "sell half at 200" — dollars, percent, or a multiple? The dollar sign is
-  // required, and the bare form falls through to the router's clarify.
-  const spec = parseWithGrammar("sell half at 200");
-  assert.equal(spec?.exits.length ?? 0, 0);
+test("a bare number after 'at' on a sized exit is a price, and only a price", () => {
+  // This once required "$", on the theory that "sell half at 200" could be a
+  // percent or a multiple. It cannot: "200%" and "2x" carry their own marks
+  // and are excluded. Requiring "$" only dropped real orders — found live,
+  // 19 Sep 2026, "sell 30% at 100" lost without a word. A price wildly off
+  // the market is caught by validate.ts instead.
+  assert.deepEqual(parseWithGrammar("sell half at 200")!.exits[0].trigger, {
+    kind: "priceAbsolute",
+    value: 200,
+  });
+  assert.equal(
+    parseWithGrammar("sell half at 2x")!.exits[0].trigger.kind,
+    "priceMultiple",
+  );
 });
 
 /* ─────────── the user's own cases, 19 Sep 2026 — verbatim shapes ────────── */
