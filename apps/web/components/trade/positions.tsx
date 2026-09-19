@@ -7,6 +7,7 @@ import { baseSymbol, marketByMint } from "@/lib/chain/markets";
 import { useTriggers } from "@/lib/triggers/store";
 import { compactUsd, since, units, usd } from "@/lib/format";
 import { resolve, type Rule } from "@cipher/shared";
+import type { Fill } from "@/lib/account/paper";
 import { CoinMark } from "./coin-mark";
 import { useSolPrices } from "./sol-prices";
 import { useTokenMeta } from "./use-token-meta";
@@ -124,11 +125,43 @@ export function Positions() {
         * trigger store. Gating the whole card on both would leave Open saying
         * "reading…" because the rules were slow.
         */}
-      {tab === "open" && <Open held={open} ready={hydrated} />}
+      {tab === "open" && <Open held={open} ready={hydrated} fills={account.fills} />}
       {tab === "pending" && <Pending armed={armed} waiting={waiting} ready={rulesReady} />}
-      {tab === "closed" && <Closed trips={closed} ready={hydrated} />}
+      {tab === "closed" && <Closed trips={closed} ready={hydrated} fills={account.fills} />}
     </section>
   );
+}
+
+/**
+ * THE PRICE THE MARKET FILLED AT, averaged over the buys of one position —
+ * what fomo shows as "average entry". The user's call, 19 Sep 2026: the
+ * entry is the execution price, with cipher's fee NOT blended in (it made a
+ * 118M-cap buy read as a 122M entry). P&L and Invested still include the fee,
+ * because that money really was paid.
+ *
+ * `from`/`to` (Unix seconds) bound one round trip; without them, the position
+ * currently open — the buys since the holding was last empty.
+ */
+function executionEntry(fills: Fill[], mint: string, from?: number, to?: number): number | null {
+  let qty = 0;
+  let boughtQty = 0;
+  let boughtUsd = 0;
+  for (const f of fills) {
+    if (f.mint !== mint) continue;
+    if (from !== undefined && (f.ts < from || f.ts > (to ?? Infinity))) continue;
+    if (f.side === "buy") {
+      if (from === undefined && qty <= 1e-9) {
+        boughtQty = 0;
+        boughtUsd = 0;
+      }
+      qty += f.qty;
+      boughtQty += f.qty;
+      boughtUsd += f.qty * f.price;
+    } else {
+      qty -= f.qty;
+    }
+  }
+  return boughtQty > 0 ? boughtUsd / boughtQty : null;
 }
 
 /* ---------------------------------------------------------------- open --- */
@@ -153,7 +186,10 @@ function PositionCard({
   mark,
   supply,
   mint,
+  entry,
 }: {
+  /** The execution price — shown as Avg. entry. */
+  entry: number | null;
   symbol: string;
   icon: string | null;
   qty: number;
@@ -191,7 +227,8 @@ function PositionCard({
    * The cap is dropped rather than guessed when no supply is known, which is
    * every Binance major and any token whose lookup failed.
    */
-  const entryCap = supply !== null ? `${compactUsd(costBasis * supply)} MC` : null;
+  const shownEntry = entry ?? costBasis;
+  const entryCap = supply !== null ? `${compactUsd(shownEntry * supply)} MC` : null;
 
   return (
     <div className={`pnl ${down ? "is-down" : ""}`}>
@@ -256,7 +293,7 @@ function PositionCard({
         <div className="pnl__pair">
           <span className="pnl__label">Avg. entry</span>
           <span className="pnl__stack">
-            <span className="pnl__stat">{usd(costBasis)}</span>
+            <span className="pnl__stat">{usd(shownEntry)}</span>
             {entryCap && <span className="pnl__stat pnl__stat--cap">{entryCap}</span>}
           </span>
         </div>
@@ -345,7 +382,9 @@ function SellAll({
 function Open({
   held,
   ready,
+  fills,
 }: {
+  fills: Fill[];
   held: [string, { qty: number; costBasis: number }][];
   ready: boolean;
 }) {
@@ -381,6 +420,7 @@ function Open({
           mark={marks[mint]?.usd ?? null}
           supply={meta[mint]?.supply ?? null}
           mint={mint}
+          entry={executionEntry(fills, mint)}
         />
       ))}
     </div>
@@ -646,7 +686,7 @@ function timeOf(rule: Rule): string {
  * entry — with the average exit stacked where the open card stacks the
  * entry's market cap — and what went in, bottom right.
  */
-function Closed({ trips, ready }: { trips: RoundTrip[]; ready: boolean }) {
+function Closed({ trips, ready, fills }: { trips: RoundTrip[]; ready: boolean; fills: Fill[] }) {
   const mints = useMemo(() => [...new Set(trips.map((t) => t.mint))], [trips]);
   const meta = useTokenMeta(mints);
   /* Thirty seconds, not one. "4h ago" does not change often enough to justify
@@ -664,7 +704,9 @@ function Closed({ trips, ready }: { trips: RoundTrip[]; ready: boolean }) {
         const listed = marketByMint(t.mint);
         const symbol = meta[t.mint]?.symbol ?? t.mint;
         const down = t.realisedUsd < 0;
-        const entry = t.qtyBought > 0 ? t.investedUsd / t.qtyBought : null;
+        const entry =
+          executionEntry(fills, t.mint, t.openedAt, t.closedAt) ??
+          (t.qtyBought > 0 ? t.investedUsd / t.qtyBought : null);
         const exit = t.qtySold > 0 ? t.proceedsUsd / t.qtySold : null;
         const supply = meta[t.mint]?.supply ?? null;
         /*
