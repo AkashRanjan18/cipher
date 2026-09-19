@@ -204,7 +204,7 @@ export function readback(spec: OrderSpec): ReadbackLine[] {
     lines.push({
       label: "AFTER",
       value: "nothing",
-      note: "no exit is armed — this position will not sell itself",
+      note: "no stop loss or target set",
     });
   }
 

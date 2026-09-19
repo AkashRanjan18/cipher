@@ -52,7 +52,7 @@ test("an unconfirmed token is flagged", () => {
 test("an entry with no exit says so plainly", () => {
   const l = line("buy $100 of wif", "AFTER");
   assert.equal(l.value, "nothing");
-  assert.match(l.note!, /will not sell itself/);
+  assert.match(l.note!, /no stop loss or target set/);
 });
 
 test("a ladder renders in order", () => {

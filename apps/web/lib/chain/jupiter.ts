@@ -105,7 +105,7 @@ export async function quote(req: QuoteRequest, signal?: AbortSignal): Promise<Qu
     const body = await res.text().catch(() => "");
     throw new QuoteError(
       res.status === 400
-        ? "No route for that trade. The token may have no liquidity paired with SOL."
+        ? "This token can't be traded yet — no market can fill it right now."
         : `Jupiter returned ${res.status}. ${body.slice(0, 120)}`,
       res.status,
     );

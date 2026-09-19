@@ -44,13 +44,20 @@ export async function GET(request: Request) {
   const limit = Math.min(Math.max(Number(q.get("limit")) || 50, 1), 200);
 
   try {
-    const tokens = await discover(feed as Feed, {
+    /*
+     * UNTRADABLE TOKENS ARE NOT LISTED. The all-token audit (19 Sep 2026)
+     * found launches in the feeds that no route could fill — they showed up
+     * and every buy failed. Under $1,000 of liquidity is where they cluster;
+     * anything above that still gets an honest "can't be traded yet" if no
+     * route exists.
+     */
+    const tokens = (await discover(feed as Feed, {
       ...(stage ? { lifecycle: stage as Lifecycle } : {}),
       limit,
       /* A launch feed is worth ten seconds. The volume leaders barely move in
          a minute, and spending the allowance to re-learn that is waste. */
       revalidate: feed === "new" ? 10 : 60,
-    });
+    })).filter((t) => (t.liquidityUsd ?? 0) >= 1_000);
 
     return NextResponse.json({
       feed,
