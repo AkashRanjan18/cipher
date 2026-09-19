@@ -67,10 +67,10 @@ function usdValue(a: Amount, ctx: ValidationContext): number | null {
 /**
  * Checks that apply to any amount, anywhere.
  *
- * Percentages above 100 are the interesting case: `percentOfPosition` is a
- * share of the position AT FIRE TIME, so a ladder can never oversell — but a
- * single rule asking for 140% of something is still a misparse, and letting it
- * through means arming a rule whose readback reads as nonsense.
+ * Percentages above 100 are the interesting case: a single rule asking for
+ * 140% of something is a misparse, and letting it through means arming a rule
+ * whose readback reads as nonsense. A LADDER that sums past 100 is checked in
+ * checkExits, because it is only visible across rules.
  */
 function checkAmount(a: Amount, at: Problem["at"]): Problem[] {
   const out: Problem[] = [];
@@ -184,6 +184,28 @@ function checkExitSet(exits: ExitRule[]): Problem[] {
       at: "exits",
       message:
         "Two stops each sell the whole position, so only the first one can ever fire.",
+    });
+  }
+
+  /*
+   * A LADDER THAT SELLS MORE THAN YOU HOLD.
+   *
+   * Percentages are frozen into tokens when the order is placed (19 Sep
+   * 2026) — "half at 2x, half at 3x, half at 4x" is 150% of the position, not
+   * the 87.5% it was when each half was taken of whatever was left. A sell
+   * never executes short, so the last rung waits for tokens that will not be
+   * there. A warning, not a refusal: it does no harm, and buying more would
+   * wake it. Only targets are summed — a stop and a target are alternatives,
+   * and both selling everything is the normal case.
+   */
+  const laddered = exits
+    .filter((e) => e.trigger.kind === "priceMultiple" && e.amount.kind === "percentOfPosition")
+    .reduce((sum, e) => sum + e.amount.value, 0);
+  if (laddered > 100) {
+    out.push({
+      severity: "warning",
+      at: "exits",
+      message: `Your targets add up to ${laddered}% of the position, so the last one needs more than you will hold and waits until you do.`,
     });
   }
 

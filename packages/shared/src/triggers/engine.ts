@@ -436,7 +436,7 @@ export function cancel(state: EngineState, ruleId: string, at: number): Step {
 export function onResult(
   state: EngineState,
   ruleId: string,
-  outcome: { ok: true } | { ok: false; reason: string },
+  outcome: { ok: true } | { ok: false; reason: string; hold?: boolean },
   at: number,
 ): Step {
   const rule = state.rules[ruleId];
@@ -445,6 +445,24 @@ export function onResult(
   if (outcome.ok) {
     drop(state.expiries, ruleId);
     return { state, fire: [], transitions: [move(rule, "filled", at, "executed")] };
+  }
+
+  /*
+   * HELD, NOT FAILED: a sell that needs more than is owned.
+   *
+   * Back to watching with its attempts untouched. Counting it would kill the
+   * order after three ticks — and the user's rule is that it waits, however
+   * long, until the holding covers it (or it expires, which it still does).
+   *
+   * cipher: the indexes are level-triggered, so while the price sits past
+   * the threshold this fires, holds and re-arms on every tick — two audit
+   * rows a minute on the worker. Harmless at paper scale; when it is not,
+   * gate the fire on the holding before the rule is claimed.
+   */
+  if (outcome.hold) {
+    const transition = move(rule, "armed", at, `waiting: ${outcome.reason}`);
+    place(state, rule, resolve(rule.trigger, rule.entryPrice!, at));
+    return { state, fire: [], transitions: [transition] };
   }
 
   rule.attempts += 1;

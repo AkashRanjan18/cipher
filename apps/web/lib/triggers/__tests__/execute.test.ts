@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arm, emptyEngine, type Rule } from "@cipher/shared";
+import { arm, emptyEngine, onResult, type Rule } from "@cipher/shared";
 import { openAccount, execute, type Account, positionOf } from "../../account/paper.ts";
-import { fireRule } from "../execute.ts";
+import { fireRule, freezeAmount } from "../execute.ts";
 
 const T0 = 1_700_000_000_000;
 const TS = 1_700_000_000; // seconds — what paper.ts stores on a fill
@@ -45,7 +45,7 @@ test("a take-profit sells the whole position and books the fill as Sana's", () =
   assert.ok(out.account.realisedUsd > 0);
 });
 
-test("a percentage is of the position at fire time, not at arm time", () => {
+test("a percentage never frozen (armed before 19 Sep) still resolves at fire time", () => {
   // Armed against 10 SOL, but the user bought more before it fired.
   const rule = ruleFor({ kind: "priceMultiple", value: 2 }, { kind: "percentOfPosition", value: 50 });
   const account = holding(30);
@@ -78,7 +78,7 @@ test("dust is moot — it would cost a dollar to sell fifty cents", () => {
   assert.equal(out.kind, "moot");
 });
 
-test("a rung asking for slightly more than is held clamps instead of refusing", () => {
+test("a sell within rounding of the holding sells what is held", () => {
   const account = holding(10);
   // 100.5% of the position — the shape rounding across a ladder produces.
   const rule = ruleFor(
@@ -217,4 +217,52 @@ test("a trailing stop is a market order too", () => {
     ts: TS,
   });
   assert.equal(out.kind, "filled");
+});
+
+/* ───────────────── a sell executes in full or waits (19 Sep 2026) ──────── */
+
+test("a percentage freezes into tokens against the quantity it is given", () => {
+  assert.deepEqual(freezeAmount({ kind: "percentOfPosition", value: 30 }, 5), {
+    kind: "tokens",
+    value: 1.5,
+  });
+  // Anything already absolute passes straight through.
+  assert.deepEqual(freezeAmount({ kind: "usd", value: 500 }, 5), { kind: "usd", value: 500 });
+});
+
+test("a sell for more than is held waits instead of selling what is there", () => {
+  // Sell 5 at $135 — but a stop already took 1.5, so 3.5 are left.
+  const account = holding(3.5);
+  const rule = ruleFor({ kind: "priceMultiple", value: 1.35 }, { kind: "tokens", value: 5 });
+
+  const out = fireRule(account, rule, { mark: 135, ts: TS });
+  assert.equal(out.kind, "hold");
+});
+
+test("the same sell fires in full once the holding covers it", () => {
+  const account = holding(6);
+  const rule = ruleFor({ kind: "priceMultiple", value: 1.35 }, { kind: "tokens", value: 5 });
+
+  const out = fireRule(account, rule, { mark: 135, ts: TS });
+  assert.equal(out.kind, "filled");
+  if (out.kind !== "filled") return;
+  assert.equal(positionOf(out.account, MKT).qty, 1);
+});
+
+test("a held sell goes back to watching with its attempts untouched", () => {
+  const s = emptyEngine();
+  arm(s, {
+    rule: { id: "r1", trigger: { kind: "priceMultiple", value: 2 }, amount: { kind: "tokens", value: 5 } },
+    market: MKT,
+    at: T0,
+    entryPrice: 100,
+  });
+  s.rules.r1.state = "firing";
+  for (let i = 0; i < 5; i++) {
+    s.rules.r1.state = "firing";
+    onResult(s, "r1", { ok: false, reason: "short", hold: true }, T0 + i);
+  }
+  // Five holds would have been five failures — and dead after three.
+  assert.equal(s.rules.r1.state, "armed");
+  assert.equal(s.rules.r1.attempts, 0);
 });

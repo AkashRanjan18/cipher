@@ -41,6 +41,19 @@ function parseNumber(raw: string): number | null {
   return m[2] === "k" ? n * 1_000 : m[2] === "m" ? n * 1_000_000 : n;
 }
 
+/**
+ * "The rest" — a placeholder, never a real percentage.
+ *
+ * It was 100, which read as "all of it" and made "sell 30% at 2x and stop the
+ * rest at -50%" a stop for the WHOLE position. Now that percentages freeze
+ * into token counts when an order is placed, that stop would need 100% of
+ * the tokens after the ladder had already sold 30% — and a sell never
+ * executes short, so the stop protecting the position could never fire.
+ * resolveRest() turns this into what the sentence meant: whatever the other
+ * exits leave behind.
+ */
+const REST = -1;
+
 /** Words people use instead of percentages. */
 const FRACTIONS: Record<string, number> = {
   half: 50,
@@ -51,8 +64,8 @@ const FRACTIONS: Record<string, number> = {
   "a quarter": 25,
   all: 100,
   everything: 100,
-  "the rest": 100,
-  rest: 100,
+  "the rest": REST,
+  rest: REST,
 };
 
 function parseAmount(raw: string): Amount | null {
@@ -329,7 +342,15 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      * and "at 50%" is a drawdown, and reading either as a price in dollars is
      * how a take-profit becomes a limit order at two dollars.
      */
-    const limit = text.match(
+    /*
+     * ONLY THE ENTRY'S OWN CLAUSE. This searched the whole sentence, so in
+     * "buy 5 sol, sell 30% at $95, sell 100% at $135" the first price anywhere
+     * — the stop's — became the BUY's limit: a market buy the user asked for
+     * turned into a resting order at $95. The clause ends at the first comma,
+     * semicolon, "and", "then" or "once"; everything after that belongs to
+     * the exits.
+     */
+    const limit = entryClause(text).match(
       /\b(?:at|@|below|under|above|over|to|hits?|reaches|touches)\s*\$?\s*([\d.,]+)\b(?!\s*[x%])/,
     );
     if (limit) {
@@ -478,6 +499,30 @@ export function parseWithGrammar(input: string): OrderSpec | null {
     }
   }
 
+  /*
+   * STOP AND TARGET AT A PRICE — "stop loss to 80", "stop at $80", "target
+   * price 100", "target $100".
+   *
+   * The user's own Case II sentence — "once bought, set a stop loss to 80 and
+   * a target price to 100" — parsed as NOTHING: the stop above only knows
+   * percentages, and "target" was not a word the grammar had. Both exits were
+   * dropped without a sound, which is the one thing this file may never do.
+   *
+   * A bare number is allowed here, unlike "sell half at $200": after "stop
+   * loss" or "target" a number with no % and no x can only be a price.
+   */
+  for (const m of text.matchAll(
+    /(?<!\btrail\s)(?<!\btrailing\s)\b(stop(?:\s+loss)?|sl|target(?:\s+price)?|tp)(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?\s*(?:at|@|to|of|is|=)?\s*\$?\s*(\d[\d.,]*)\b(?!\s*[x%.\d])/g,
+  )) {
+    const at = Number(m[3].replace(/,/g, ""));
+    if (!(at > 0)) continue;
+    /* Already there as "take profit at $100" or "sell all at $100". */
+    if (exits.some((x) => x.trigger.kind === "priceAbsolute" && x.trigger.value === at)) continue;
+    const amount = m[2] ? parseAmount(m[2]) : { kind: "percentOfPosition" as const, value: 100 };
+    if (!amount) continue;
+    exits.push({ id: nextId(), trigger: { kind: "priceAbsolute", value: at }, amount });
+  }
+
   /* TRAILING STOP — "trail 30%", "trailing stop 30%", "trailing stop loss at 10%" */
   const trail = text.match(
     /* "trail my sol by 40%" — the token and the "by" both sat between the
@@ -498,6 +543,8 @@ export function parseWithGrammar(input: string): OrderSpec | null {
   // Nothing recognised at all — hand it to the model rather than guess.
   if (!entry && exits.length === 0) return null;
 
+  resolveRest(entry, exits);
+
   return {
     version: ORDER_SPEC_VERSION,
     entry,
@@ -505,4 +552,36 @@ export function parseWithGrammar(input: string): OrderSpec | null {
     source: "grammar",
     warnings: [],
   };
+}
+
+/**
+ * The part of the sentence that describes the entry: from its verb to the
+ * first clause break. Every single-clause order is its own entry clause.
+ */
+function entryClause(text: string): string {
+  const verb = text.search(/\b(?:buy|sell|ape|grab|cop|get\s+me|dump|close|exit)\b/);
+  const from = verb < 0 ? text : text.slice(verb);
+  return from.split(/,|;|\band\b|\bthen\b|\bonce\b/)[0];
+}
+
+/**
+ * "The rest" becomes 100 minus every other exit's share.
+ *
+ * "Sell a third at 2x, stop the rest at -50%" → 33 and 67. On an entry there
+ * are no siblings to subtract, so "sell the rest of my sol" is all of it.
+ * If the other exits already claim everything, the rest is also taken as
+ * 100 — the validator then refuses the oversell and says why, which beats
+ * silently arming a stop for nothing.
+ */
+function resolveRest(entry: OrderSpec["entry"], exits: ExitRule[]): void {
+  const isRest = (a: Amount) => a.kind === "percentOfPosition" && a.value === REST;
+  if (entry && isRest(entry.amount)) entry.amount = { kind: "percentOfPosition", value: 100 };
+
+  const claimed = exits
+    .filter((x) => x.amount.kind === "percentOfPosition" && !isRest(x.amount))
+    .reduce((sum, x) => sum + x.amount.value, 0);
+  const left = 100 - claimed;
+  for (const x of exits) {
+    if (isRest(x.amount)) x.amount = { kind: "percentOfPosition", value: left > 0 ? left : 100 };
+  }
 }

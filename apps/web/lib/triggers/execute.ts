@@ -1,4 +1,4 @@
-import { DEFAULTS, type Rule } from "@cipher/shared";
+import { DEFAULTS, type Amount, type Rule } from "@cipher/shared";
 import {
   execute,
   fillPrice,
@@ -38,7 +38,16 @@ import {
 export type Outcome =
   | { kind: "filled"; account: Account; fill: Fill }
   | { kind: "failed"; reason: string }
-  | { kind: "moot"; reason: string };
+  | { kind: "moot"; reason: string }
+  /**
+   * NOT YET. A sell whose quantity is larger than what is held.
+   *
+   * Distinct from `failed` because it is not a fault to retry into a terminal
+   * state — the user asked for 5 SOL to be sold and holds 3.5, and the rule is
+   * that a sell only ever executes in full. It goes back to watching, with its
+   * attempts untouched, and fires the moment the holding is back to size.
+   */
+  | { kind: "hold"; reason: string };
 
 /**
  * Below this, the trade is not worth making.
@@ -113,7 +122,32 @@ export type Plan =
       usd: number;
     }
   | { kind: "moot"; reason: string }
-  | { kind: "failed"; reason: string };
+  | { kind: "failed"; reason: string }
+  | { kind: "hold"; reason: string };
+
+/**
+ * Room for rounding between what a sell was sized at and what is held.
+ *
+ * Half a percent. A buy sized in dollars fills at mark × (1 + spread), so
+ * "$500 at $90" receives 5.550 SOL where $500 / $90 reads 5.556 — and a stop
+ * that demanded the exact 5.556 would never fire, six thousandths short, on
+ * the position it exists to protect. Well under any size a person would
+ * notice, well over any rounding the ledger can produce.
+ */
+const SELL_TOLERANCE = 0.005;
+
+/**
+ * A percentage of a position, turned into a fixed number of tokens.
+ *
+ * THE USER'S RULE, 19 Sep 2026: "30% of my SOL" means 30% of the quantity
+ * held when the order is placed — 1.5 of 5 — and that number is what the
+ * order shows and what it needs. It does not drift as the position changes.
+ * Anything already in tokens or dollars passes through untouched.
+ */
+export function freezeAmount(amount: Amount, basisQty: number): Amount {
+  if (amount.kind !== "percentOfPosition") return amount;
+  return { kind: "tokens", value: (basisQty * amount.value) / 100 };
+}
 
 export function plan(account: Account, rule: Rule, mark: number): Plan {
   /*
@@ -126,12 +160,14 @@ export function plan(account: Account, rule: Rule, mark: number): Plan {
   const side = rule.side;
 
   /*
-   * SIZE IS RESOLVED NOW, NOT AT ARM TIME.
+   * SIZE, as the rule carries it.
    *
-   * "Sell a third" means a third of what is held at the moment the rule fires.
-   * A quantity frozen when the user approved the sentence would be wrong the
-   * first time they topped up or sold by hand — and wrong in the direction of
-   * selling more than they own.
+   * Rules armed since 19 Sep carry a fixed token quantity — freezeAmount()
+   * turned the user's percentage into one when the order was placed. The
+   * worry that used to argue against freezing was selling more than is
+   * owned; that cannot happen now, because a sell larger than the holding
+   * waits instead of executing. Older rules still carrying a percentage
+   * resolve against the holding here, exactly as before.
    */
   const qty = resolveQty(rule.amount, side, account, rule.market, mark);
   if (qty === null) {
@@ -147,16 +183,26 @@ export function plan(account: Account, rule: Rule, mark: number): Plan {
   }
 
   /*
-   * Clamp rather than refuse — on a SELL only.
+   * A SELL EXECUTES IN FULL OR NOT AT ALL.
    *
-   * A ladder is a set of percentages of a position that is shrinking as the
-   * ladder fills, and rounding across three rungs can ask for a fraction more
-   * than is held. Refusing the last rung over a rounding error would leave a
-   * user holding dust and an alert saying their take-profit failed.
+   * The user's rule, 19 Sep 2026: any sell — stop loss, target or limit —
+   * needs the quantity it names, or more, actually held. This used to CLAMP,
+   * selling whatever was left when an order asked for more; that quietly turns
+   * "sell 5 SOL at $135" into "sell 3.5 SOL at $135", which is not what anyone
+   * said. Now a short order waits, and the Positions card says what it needs.
    *
-   * A buy is not clamped to the position — it is bounded by cash, which the
+   * Within SELL_TOLERANCE it still sells what is held: that gap is rounding,
+   * not a smaller position, and refusing over it would strand a stop.
+   *
+   * A buy is never held to the position — it is bounded by cash, which the
    * ledger checks itself and reports as a refusal worth retrying.
    */
+  if (side === "sell" && held < qty * (1 - SELL_TOLERANCE)) {
+    return {
+      kind: "hold",
+      reason: `needs ${qty.toFixed(6)} and ${held.toFixed(6)} is held`,
+    };
+  }
   const size = side === "sell" ? Math.min(qty, held) : qty;
 
   if (size * mark < DUST_USD) {

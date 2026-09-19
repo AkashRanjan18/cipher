@@ -32,7 +32,7 @@ import { usePaperAccount } from "../account/store";
 import { positionOf } from "../account/paper";
 import { allInPrice } from "../account/paper";
 import { armRemote, cancelRemote, fetchSnapshotResult } from "../db/remote";
-import { fireRule } from "./execute";
+import { fireRule, freezeAmount } from "./execute";
 
 /**
  * The host. Where the engine actually runs.
@@ -379,9 +379,17 @@ export function TriggerProvider({
                * panel showed a 2x target priced off the wrong fill.
                */
               if (r.parentId !== rule.id || r.state !== "unbound") continue;
+              /* Percentages freeze against the tokens this fill delivered,
+                 not the size the sentence asked for. */
+              r.amount = freezeAmount(r.amount, outcome.fill.qty);
               log.push(...bind(next, r.id, paid, at).transitions);
             }
           }
+        } else if (outcome.kind === "hold") {
+          log.push(
+            ...onResult(next, rule.id, { ok: false, reason: outcome.reason, hold: true }, at)
+              .transitions,
+          );
         } else if (outcome.kind === "moot") {
           /*
            * NOT A FAILURE. The position is gone, or what is left is dust. A

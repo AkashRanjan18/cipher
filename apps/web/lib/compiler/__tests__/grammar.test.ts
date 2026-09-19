@@ -15,6 +15,16 @@ test("the canonical sentence", () => {
   assert.deepEqual(s.exits[0].trigger, { kind: "priceMultiple", value: 2 });
   assert.deepEqual(s.exits[0].amount, { kind: "percentOfPosition", value: 33 });
   assert.deepEqual(s.exits[1].trigger, { kind: "drawdownFromEntry", percent: 50 });
+  /* "The rest" is what the third leaves, not the whole position again. */
+  assert.deepEqual(s.exits[1].amount, { kind: "percentOfPosition", value: 67 });
+});
+
+test("the rest is the remainder of every other exit, and all of it alone", () => {
+  const ladder = parseWithGrammar("sell 30% at 2x, stop the rest at -50%")!;
+  assert.deepEqual(ladder.exits[1].amount, { kind: "percentOfPosition", value: 70 });
+
+  const alone = parseWithGrammar("sell the rest of my sol")!;
+  assert.deepEqual(alone.entry!.amount, { kind: "percentOfPosition", value: 100 });
 });
 
 test("defaults are applied when unstated", () => {
@@ -202,4 +212,38 @@ test("a bare number after 'at' on an exit is not guessed at", () => {
   // required, and the bare form falls through to the router's clarify.
   const spec = parseWithGrammar("sell half at 200");
   assert.equal(spec?.exits.length ?? 0, 0);
+});
+
+/* ─────────── the user's own cases, 19 Sep 2026 — verbatim shapes ────────── */
+
+test("an exit's price never becomes the entry's limit", () => {
+  // Case I. The $95 belongs to the stop; the buy is at market.
+  const s = parseWithGrammar("buy 5 sol, sell 30% at $95, sell 100% at $135")!;
+  assert.equal(s.entry!.trigger, null);
+  assert.deepEqual(
+    s.exits.map((x) => [x.trigger, x.amount]),
+    [
+      [{ kind: "priceAbsolute", value: 95 }, { kind: "percentOfPosition", value: 30 }],
+      [{ kind: "priceAbsolute", value: 135 }, { kind: "percentOfPosition", value: 100 }],
+    ],
+  );
+});
+
+test("a stop loss and a target price, said as plain numbers, both arm", () => {
+  // Case II. Both used to be dropped without a word.
+  const s = parseWithGrammar(
+    "buy 5 sol when sol drops to 90, once bought set a stop loss to 80 and a target price to 100",
+  )!;
+  assert.deepEqual(s.entry!.trigger, { kind: "priceAbsolute", value: 90 });
+  assert.deepEqual(
+    s.exits.map((x) => x.trigger),
+    [
+      { kind: "priceAbsolute", value: 80 },
+      { kind: "priceAbsolute", value: 100 },
+    ],
+  );
+});
+
+test("a trailing stop is still one exit, not a stop as well", () => {
+  assert.equal(parseWithGrammar("trailing stop at 10%")!.exits.length, 1);
 });

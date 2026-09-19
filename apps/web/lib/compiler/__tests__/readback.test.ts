@@ -12,13 +12,15 @@ test("the canonical sentence renders only what matters", () => {
   // mentioned them, so a line about them is noise.
   assert.deepEqual(out.map((l) => l.label), ["BUY", "THEN", "STOP"]);
   assert.equal(out[0].value, "$500 of BONK");
-  assert.equal(out[1].value, "sell a third at 2× your entry");
-  assert.equal(out[2].value, "sell whatever is left if it falls 50% below your entry");
+  assert.equal(out[1].value, "sell 33% at 2× your entry");
+  /* "The rest" resolves to what the third leaves, and says the number. */
+  assert.equal(out[2].value, "sell 67% if it falls 50% below your entry");
 });
 
-test("word fractions come back as words", () => {
-  assert.match(line("sell half at 2x", "THEN").value, /sell half/);
-  assert.match(line("sell a quarter at 2x", "THEN").value, /sell a quarter/);
+/* The user's rule, 19 Sep 2026: numbers, never words. */
+test("word fractions come back as numbers", () => {
+  assert.match(line("sell half at 2x", "THEN").value, /sell 50%/);
+  assert.match(line("sell a quarter at 2x", "THEN").value, /sell 25%/);
   assert.match(line("sell 40% at 2x", "THEN").value, /sell 40%/);
 });
 

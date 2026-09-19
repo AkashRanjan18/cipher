@@ -1,5 +1,5 @@
 import { allInPrice, positionOf } from "../account/paper.ts";
-import { fireRule, plan } from "./execute.ts";
+import { fireRule, freezeAmount, plan } from "./execute.ts";
 import { quoteFill, type QuotedFill } from "../chain/fill.ts";
 import { QuoteError } from "../chain/jupiter.ts";
 import { DEFAULTS } from "@cipher/shared";
@@ -343,7 +343,17 @@ async function fire(
     if (rule.side === "buy") {
       const paid = allInPrice(outcome.fill);
       for (const { rule: child } of await childrenOf(rule.id)) {
-        await replace({ ...child, entryPrice: paid, highWater: paid, state: "armed" });
+        /* A percentage becomes tokens HERE, against what this entry actually
+           received — the fill, not the sentence. "$500 of SOL at $90" types
+           as 5.556 and fills as 5.550; frozen early, a 100% stop would ask
+           for tokens that never arrived. */
+        await replace({
+          ...child,
+          amount: freezeAmount(child.amount, outcome.fill.qty),
+          entryPrice: paid,
+          highWater: paid,
+          state: "armed",
+        });
         transitions.push({
           ruleId: child.id,
           from: "unbound",
@@ -354,6 +364,17 @@ async function fire(
         });
       }
     }
+  } else if (outcome.kind === "hold") {
+    /* A sell larger than the holding waits, attempts untouched — see the
+       hold case in execute.ts. */
+    await setState(rule.id, "armed");
+    transitions.push({
+      ruleId: rule.id,
+      from: "firing",
+      to: "armed",
+      at: now,
+      reason: `waiting: ${outcome.reason}`,
+    });
   } else if (outcome.kind === "moot") {
     await setState(rule.id, "cancelled");
     transitions.push({

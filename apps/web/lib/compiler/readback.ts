@@ -41,20 +41,12 @@ function amount(a: Amount, token?: string): string {
       return `${nf.format(a.value)}${token ? ` ${token.toUpperCase()}` : ""}`;
     case "percentOfPosition":
       /*
-       * "whatever is left", not "everything".
-       *
-       * "sell half at 2x, stop THE REST at -30%" compiles the stop to 100% of
-       * the position, which is correct — a percentage resolves at FIRE time,
-       * so once the take-profit has sold half, 100% of what remains is exactly
-       * "the rest". But reading it back as "sell everything" loses the user's
-       * own word and reads like cipher misunderstood and is about to dump the
-       * lot. Both phrasings mean the same thing at fire time, and this is the
-       * phrase that is true for both.
+       * ALWAYS THE NUMBER. The user's rule, 19 Sep 2026: "numbers, never
+       * words". This used to say "half", "a third" and "whatever is left" —
+       * and "whatever is left" became untrue the day percentages started
+       * freezing into token counts, because "the rest" is now resolved to its
+       * own number (67% after a third) when the sentence is parsed.
        */
-      if (a.value === 100) return "whatever is left";
-      if (a.value === 50) return "half";
-      if (a.value === 33) return "a third";
-      if (a.value === 25) return "a quarter";
       return `${a.value}%`;
   }
 }

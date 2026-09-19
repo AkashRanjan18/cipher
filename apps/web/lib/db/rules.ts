@@ -179,6 +179,7 @@ export async function replace(rule: Rule): Promise<void> {
   const p = placement(rule);
   await db()`
     update rules set
+      amount = ${JSON.stringify(rule.amount)},
       entry_price = ${rule.entryPrice},
       high_water = ${rule.highWater},
       threshold = ${p.threshold},

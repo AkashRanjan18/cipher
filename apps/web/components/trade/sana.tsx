@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { baseSymbol, mintFor } from "@/lib/chain/markets";
 import { newId } from "@cipher/shared";
-import type { Compiled, CompileContext, Intent, Interval, OrderSpec } from "@cipher/shared";
+import type { Compiled, CompileContext, ExitRule, Intent, Interval, OrderSpec } from "@cipher/shared";
+import { freezeAmount } from "@/lib/triggers/execute";
 import { compile } from "@/lib/compiler/compile";
 import { compileWithModel } from "@/lib/compiler/model";
 import { resolveMarket, marketOf, type Major } from "@/lib/market";
@@ -112,6 +113,12 @@ const COMMANDS: [string, string][] = [
 ];
 
 let nextId = 0;
+
+
+/** Every percentage in a set of exits, fixed against a token quantity. */
+function frozen(exits: ExitRule[], basisQty: number): ExitRule[] {
+  return exits.map((x) => ({ ...x, amount: freezeAmount(x.amount, basisQty) }));
+}
 
 export function Sana({
   price,
@@ -591,8 +598,10 @@ export function Sana({
        * moved to a server. Telling someone their stop is set when the write
        * failed is the worst sentence this product can say.
        */
+      /* "30% of the SOL I own" is 30% of what is owned NOW, fixed as a
+         number of tokens — see freezeAmount in lib/triggers/execute.ts. */
       const ok = await armExits({
-        rules: spec.exits,
+        rules: frozen(spec.exits, held.qty),
         market: symbol,
         entryPrice: held.costBasis,
       });
@@ -612,7 +621,13 @@ export function Sana({
        */
       const entryId = newId("e");
       const armed = await armEntry({
-        rule: { id: entryId, trigger: entry.trigger, amount: entry.amount },
+        rule: {
+          id: entryId,
+          trigger: entry.trigger,
+          /* A resting SELL is sized against the holding today; a resting buy
+             has no holding to be a percentage of. */
+          amount: entry.side === "sell" ? freezeAmount(entry.amount, held.qty) : entry.amount,
+        },
         market: symbol,
         referencePrice: price,
         side: entry.side,
@@ -678,7 +693,20 @@ export function Sana({
      * that is precisely the moment to say so loudly rather than to report a
      * clean success.
      */
-    const armedOk = await armExits({ rules: spec.exits, market: symbol, entryPrice: filledAt });
+    /* Sized on what THIS buy delivered — "once bought, sell 100% at $100"
+       means the tokens just bought, not whatever else happens to be held. */
+    const armedOk = await armExits({
+      rules: frozen(spec.exits, r.fill.qty),
+      market: symbol,
+      entryPrice: filledAt,
+      /*
+       * The FILL as the parent, so the Positions card can tell a target set
+       * with the buy from a sell limit set later — the user's own distinction.
+       * Harmless to the engine: parentId is only ever matched against rule
+       * ids when a resting buy fills, and a fill id ("f…") is never one.
+       */
+      parentId: r.fill.id,
+    });
     return armedOk
       ? `${filled} ${armedLine(spec.exits.length, filledAt)}`
       : `${filled} But I could NOT arm the ${spec.exits.length === 1 ? "exit" : "exits"} — you are holding this unprotected. Try setting them again.`;
@@ -1039,8 +1067,8 @@ export function Sana({
                   {t.lines && (
                     <div className="mt-2 rounded-xl border border-accent/40 bg-accent/10 p-3">
                       <dl className="flex flex-col gap-1">
-                        {t.lines.map((l) => (
-                          <div key={l.label} className="flex flex-wrap gap-x-3 font-mono text-[11.5px]">
+                        {t.lines.map((l, i) => (
+                          <div key={`${l.label}-${i}`} className="flex flex-wrap gap-x-3 font-mono text-[11.5px]">
                             <dt className="w-20 shrink-0 text-ash">{l.label}</dt>
                             <dd className="text-champagne">{l.value}</dd>
                             {l.note && <dd className="text-ash">— {l.note}</dd>}

@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePaperAccount } from "@/lib/account/store";
 import { roundTrips, type RoundTrip } from "@/lib/account/roundtrips";
 import { baseSymbol, marketByMint } from "@/lib/chain/markets";
 import { useTriggers } from "@/lib/triggers/store";
-import { compactUsd, pct, since, units, usd } from "@/lib/format";
-import type { Amount, Rule } from "@cipher/shared";
+import { compactUsd, since, units, usd } from "@/lib/format";
+import { resolve, type Rule } from "@cipher/shared";
 import { CoinMark } from "./coin-mark";
 import { useSolPrices } from "./sol-prices";
 import { useTokenMeta } from "./use-token-meta";
@@ -152,6 +152,7 @@ function PositionCard({
   costBasis,
   mark,
   supply,
+  mint,
 }: {
   symbol: string;
   icon: string | null;
@@ -160,6 +161,7 @@ function PositionCard({
   /** Null while the price poll has not answered for this mint. */
   mark: number | null;
   supply: number | null;
+  mint: string;
 }) {
   /*
    * A MISSING MARK IS NOT A ZERO. The poll has not answered yet, or Jupiter
@@ -263,7 +265,80 @@ function PositionCard({
           <span className="pnl__stat">{usd(invested)}</span>
         </div>
       </div>
+
+      {/* Below the card's own rows rather than in them, so the layout the
+          user approved is untouched and the button is simply added. */}
+      <div className="pnl__actions">
+        <SellAll mint={mint} symbol={symbol} qty={qty} mark={mark} />
+      </div>
     </div>
+  );
+}
+
+/**
+ * SELL THE WHOLE POSITION, AT MARKET — in two taps.
+ *
+ * The first tap only asks. A single tap that sells everything sits a few
+ * pixels from a tab switch, and a paper account is still someone's practice
+ * money; the header's Reset makes the same trade-off for the same reason.
+ * The confirmation lapses after four seconds so a stray tap cannot be
+ * finished by another one a minute later.
+ *
+ * All of it, at market, because that is the one sell with no question left
+ * in it. A partial or a limit sell is a sentence for Sana, which already
+ * knows how to say every size and every price.
+ */
+function SellAll({
+  mint,
+  symbol,
+  qty,
+  mark,
+}: {
+  mint: string;
+  symbol: string;
+  qty: number;
+  mark: number | null;
+}) {
+  const { trade } = usePaperAccount();
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!asking) return;
+    const t = setTimeout(() => setAsking(false), 4000);
+    return () => clearTimeout(t);
+  }, [asking]);
+
+  useEffect(() => {
+    if (!said) return;
+    const t = setTimeout(() => setSaid(null), 5000);
+    return () => clearTimeout(t);
+  }, [said]);
+
+  /* No price, no sell: a market order needs a mark to fill against. */
+  if (mark === null) return null;
+
+  const onClick = async () => {
+    if (!asking) return setAsking(true);
+    setAsking(false);
+    setBusy(true);
+    const r = await trade({ mint, symbol, side: "sell", qty, mark, source: "ticket" });
+    setBusy(false);
+    if ("refusal" in r) setSaid(r.refusal);
+  };
+
+  return (
+    <>
+      {said && <span className="pnl__label mr-auto self-center truncate">{said}</span>}
+      <button
+        onClick={onClick}
+        disabled={busy}
+        className={`pnl__btn ${asking ? "pnl__btn--armed" : ""}`}
+      >
+        {busy ? "Selling…" : asking ? `Sell ${units(qty)} ${symbol}?` : "Sell"}
+      </button>
+    </>
   );
 }
 
@@ -305,6 +380,7 @@ function Open({
           costBasis={p.costBasis}
           mark={marks[mint]?.usd ?? null}
           supply={meta[mint]?.supply ?? null}
+          mint={mint}
         />
       ))}
     </div>
@@ -313,40 +389,82 @@ function Open({
 
 /* ------------------------------------------------------------- pending --- */
 
-/** "a third", "$500", "1.5 SOL" — the instruction, not the arithmetic. */
-function amountLabel(amount: Amount, base: string): string {
-  switch (amount.kind) {
-    case "usd":
-      return `${usd(amount.value)} of ${base}`;
+/*
+ * What an order is, in the user's four words (19 Sep 2026).
+ *
+ *   Buy limit        a resting buy
+ *   Sell stop loss   a sell BELOW the price it was measured from
+ *   Sell target      a sell above it, set together with a buy
+ *   Sell limit       a sell above it, set on its own later
+ *
+ * Target and limit fire identically; the user's distinction is only WHEN the
+ * order was given, and parentId carries that — a resting buy's id, or the
+ * fill id of the market buy the exit came with (see sana.tsx).
+ */
+type Kind = "Buy limit" | "Sell stop loss" | "Sell target" | "Sell limit";
+
+function kindOf(rule: Rule, at: number | null, reference: number | null): Kind {
+  if (rule.side === "buy") return "Buy limit";
+  const t = rule.trigger;
+  const below =
+    t.kind === "drawdownFromEntry" ||
+    t.kind === "trailingStop" ||
+    (t.kind === "priceMultiple" && t.value < 1) ||
+    (at !== null && reference !== null && at < reference);
+  if (below) return "Sell stop loss";
+  return rule.parentId ? "Sell target" : "Sell limit";
+}
+
+/**
+ * How many tokens an order moves, as a number — never "30% of your SOL".
+ *
+ * `exact` is false where the number is a projection: a buy sized in dollars
+ * (the tokens depend on the fill), or an exit still waiting for its buy.
+ */
+function quantityOf(
+  rule: Rule,
+  at: number | null,
+  held: number,
+  parentQty: number | null,
+): { qty: number | null; exact: boolean } {
+  const a = rule.amount;
+  switch (a.kind) {
     case "tokens":
-      return `${units(amount.value)} ${base}`;
+      return { qty: a.value, exact: true };
+    case "usd":
+      return { qty: at ? a.value / at : null, exact: false };
     case "percentOfPosition":
-      return amount.value === 100 ? `all of your ${base}` : `${amount.value}% of your ${base}`;
+      /* Frozen at bind for exits waiting on a buy; until then, a share of
+         what that buy is expected to deliver. Anything else still carrying a
+         percentage predates freezing and resolves against the holding. */
+      if (rule.state === "unbound") {
+        return { qty: parentQty === null ? null : (parentQty * a.value) / 100, exact: false };
+      }
+      return { qty: (held * a.value) / 100, exact: true };
   }
 }
 
-function triggerLabel(rule: Rule): string {
-  switch (rule.trigger.kind) {
-    case "priceMultiple":
-      return `at ${rule.trigger.value}x`;
-    case "priceAbsolute":
-      return `when ${baseSymbol(rule.market)} reaches ${usd(rule.trigger.value)}`;
-    case "drawdownFromEntry":
-      return `if it falls ${rule.trigger.percent}% from entry`;
-    case "trailingStop":
-      return `${rule.trigger.percent}% below the high`;
-    case "timeAbsolute":
-      return `at ${new Date(rule.trigger.iso).toLocaleString()}`;
-    case "duration":
-      return `${Math.round(rule.trigger.seconds / 60)} minutes after it fills`;
-  }
-}
+/** Mirrors SELL_TOLERANCE in lib/triggers/execute.ts — the note and the engine must agree. */
+const SELL_TOLERANCE = 0.005;
 
 function Pending({ armed, waiting, ready }: { armed: Rule[]; waiting: Rule[]; ready: boolean }) {
-  const { cancelRule, thresholdOf, server, watching } = useTriggers();
+  const { cancelRule, thresholdOf, server, watching, rulesById } = useTriggers();
+  const { account } = usePaperAccount();
+
+  /* Buys first — they open the positions the exits below them will close. */
+  const rules = useMemo(
+    () => [
+      ...armed.filter((r) => r.side === "buy"),
+      ...armed.filter((r) => r.side === "sell"),
+      ...waiting,
+    ],
+    [armed, waiting],
+  );
+  const mints = useMemo(() => [...new Set(rules.map((r) => r.market))], [rules]);
+  const meta = useTokenMeta(mints);
 
   if (!ready) return <Quiet>Reading your rules…</Quiet>;
-  if (armed.length === 0 && waiting.length === 0) {
+  if (rules.length === 0) {
     return (
       <Quiet>
         Nothing pending. A limit order rests here until its price arrives — try{" "}
@@ -355,27 +473,12 @@ function Pending({ armed, waiting, ready }: { armed: Rule[]; waiting: Rule[]; re
     );
   }
 
-  /*
-   * SPLIT BY WHAT THEY DO TO A POSITION, not by the engine's own states.
-   *
-   * A resting buy is a position you do not have yet; an armed sell is one you
-   * do. Those are different things to a person reading this card, and
-   * "armed" versus "unbound" — the distinction the engine cares about — is
-   * not one of them.
-   */
-  const entries = armed.filter((r) => r.side === "buy");
-  const exits = [...armed.filter((r) => r.side === "sell"), ...waiting];
-
   return (
     <div className="flex flex-col gap-2">
       {/*
         * THE DEADMAN'S SWITCH, repeated from the alerts panel on purpose.
-        *
-        * Everything on this tab implies "something is watching this". When
-        * that stops being true it stops silently, and this card is now a
-        * place people will look instead of the alerts panel. A warning shown
-        * twice costs a few pixels; shown in only one of the two places a user
-        * checks, it may as well not exist.
+        * Everything on this tab implies "something is watching this"; when
+        * that stops being true it stops silently.
         */}
       {server && !watching && armed.length > 0 && (
         <p className="rounded-lg border border-down/30 bg-down/10 px-2 py-1.5 font-sans text-[11px] font-bold text-down">
@@ -383,77 +486,156 @@ function Pending({ armed, waiting, ready }: { armed: Rule[]; waiting: Rule[]; re
         </p>
       )}
 
-      {entries.length > 0 && (
-        <Group label="Will open a position">
-          {entries.map((rule) => (
-            <PendingRow
-              key={rule.id}
-              rule={rule}
-              at={thresholdOf(rule)}
-              onCancel={() => cancelRule(rule.id)}
-            />
-          ))}
-        </Group>
-      )}
+      {rules.map((rule) => {
+        /*
+         * An exit waiting on a resting buy has no entry yet, so it is priced
+         * off the buy's limit — what the fill will be, near enough, and far
+         * better than showing no price at all.
+         */
+        const parent =
+          rule.state === "unbound" && rule.parentId ? rulesById[rule.parentId] : undefined;
+        const parentAt = parent ? thresholdOf(parent) : null;
+        let at = thresholdOf(rule);
+        if (at === null && parentAt !== null) {
+          const r = resolve(rule.trigger, parentAt, Date.now());
+          at = r.kind === "price" ? r.at : null;
+        }
+        const parentQty = parent ? quantityOf(parent, parentAt, 0, null).qty : null;
+        const held = account.positions[rule.market]?.qty ?? 0;
 
-      {exits.length > 0 && (
-        <Group label="Will close one">
-          {exits.map((rule) => (
-            <PendingRow
-              key={rule.id}
-              rule={rule}
-              at={thresholdOf(rule)}
-              /* An exit armed alongside an order that has not filled cannot
-                 fire and has no threshold to show. Saying so is the whole
-                 difference between "inert" and "broken". */
-              note={rule.state === "unbound" ? "arms when your order fills" : null}
-              onCancel={() => cancelRule(rule.id)}
-            />
-          ))}
-        </Group>
-      )}
+        return (
+          <PendingCard
+            key={rule.id}
+            rule={rule}
+            kind={kindOf(rule, at, rule.entryPrice ?? parentAt)}
+            at={at}
+            quantity={quantityOf(rule, at, held, parentQty)}
+            held={held}
+            waitingOn={parentAt}
+            symbol={meta[rule.market]?.symbol ?? baseSymbol(rule.market)}
+            icon={meta[rule.market]?.icon ?? null}
+            supply={meta[rule.market]?.supply ?? null}
+            onCancel={() => cancelRule(rule.id)}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function PendingRow({
+function PendingCard({
   rule,
+  kind,
   at,
-  note = null,
+  quantity,
+  held,
+  waitingOn,
+  symbol,
+  icon,
+  supply,
   onCancel,
 }: {
   rule: Rule;
+  kind: Kind;
   at: number | null;
-  note?: string | null;
+  quantity: { qty: number | null; exact: boolean };
+  held: number;
+  /** The resting buy's price, when this exit is waiting for it. */
+  waitingOn: number | null;
+  symbol: string;
+  icon: string | null;
+  supply: number | null;
   onCancel: () => void;
 }) {
-  const base = baseSymbol(rule.market);
+  const { qty, exact } = quantity;
+  const approx = exact ? "" : "≈ ";
+  const cap = at !== null && supply !== null ? at * supply : null;
+  const worth =
+    qty !== null && at !== null
+      ? qty * at
+      : rule.amount.kind === "usd"
+        ? rule.amount.value
+        : null;
+  const tone = kind === "Sell stop loss" ? "down" : kind === "Buy limit" ? null : "up";
+
+  /*
+   * THE USER'S RULE, SAID ON THE CARD: a sell executes only with the full
+   * quantity held. When it is not, the order stays here and says exactly
+   * what it is waiting for, in tokens.
+   */
+  let note: { text: string; quiet: boolean } | null = null;
+  if (rule.state === "unbound") {
+    note = {
+      text:
+        waitingOn !== null
+          ? `Arms when your buy at ${usd(waitingOn)} fills.`
+          : "Arms when your buy fills.",
+      quiet: true,
+    };
+  } else if (rule.side === "sell" && qty !== null && held < qty * (1 - SELL_TOLERANCE)) {
+    note = {
+      text: `Cannot be executed unless you have ${units(qty)} ${symbol}. You have ${units(held)}.`,
+      quiet: false,
+    };
+  }
+
   return (
-    <Row>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate font-sans text-[12.5px] font-bold text-champagne">
-            {rule.side === "buy" ? "Buy" : "Sell"} {amountLabel(rule.amount, base)}
-          </div>
-          <div className="font-sans text-[10.5px] leading-tight text-ash">
-            {triggerLabel(rule)}
-            {at !== null && <span className="text-mute"> · {usd(at)}</span>}
-            {note && <span className="text-mute"> — {note}</span>}
+    <div className="pnl">
+      <div className="pnl__top">
+        <div className="pnl__col min-w-0">
+          <div className={`pnl__value pnl__kind ${tone ? `pnl__kind--${tone}` : ""}`}>{kind}</div>
+          <div className="pnl__sub flex items-center gap-1.5">
+            <CoinMark symbol={symbol} icon={icon} size={14} />
+            <span className="truncate">
+              {qty === null ? "—" : `${approx}${units(qty)}`} {symbol}
+            </span>
           </div>
         </div>
-        <button
-          onClick={onCancel}
-          className="shrink-0 rounded-md px-1.5 py-0.5 font-sans text-[10.5px] font-bold text-mute transition-colors hover:bg-slate hover:text-down"
-        >
-          cancel
+        <div className="pnl__col pnl__col--right">
+          <div className="pnl__value">{at === null ? timeOf(rule) : usd(at)}</div>
+          {cap !== null && <div className="pnl__sub">{compactUsd(cap)} MC</div>}
+        </div>
+      </div>
+
+      {note && (
+        <div className={`pnl__note ${note.quiet ? "pnl__note--quiet" : ""}`}>{note.text}</div>
+      )}
+
+      <div className="pnl__rule" />
+
+      <div className="pnl__foot">
+        <div className="pnl__pair">
+          <span className="pnl__label">Value</span>
+          <span className="pnl__stat">{worth === null ? "—" : `${approx}${usd(worth)}`}</span>
+        </div>
+        <button onClick={onCancel} className="pnl__btn">
+          Cancel
         </button>
       </div>
-    </Row>
+    </div>
   );
+}
+
+/** A timed exit has no price; its moment is the number. */
+function timeOf(rule: Rule): string {
+  const t = rule.trigger;
+  if (t.kind === "timeAbsolute") {
+    return new Date(t.iso).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+  }
+  if (t.kind === "duration") return `${Math.round(t.seconds / 60)} min`;
+  return "—";
 }
 
 /* -------------------------------------------------------------- closed --- */
 
+/**
+ * A ROUND TRIP, on the same card as an open position.
+ *
+ * Mapped field for field so the eye finds the same thing in the same place:
+ * what it is worth (here, what came back), the P&L and its percent, the
+ * entry — with the average exit stacked where the open card stacks the
+ * entry's market cap — and what went in, bottom right.
+ */
 function Closed({ trips, ready }: { trips: RoundTrip[]; ready: boolean }) {
   const mints = useMemo(() => [...new Set(trips.map((t) => t.mint))], [trips]);
   const meta = useTokenMeta(mints);
@@ -467,57 +649,71 @@ function Closed({ trips, ready }: { trips: RoundTrip[]; ready: boolean }) {
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col gap-2">
       {trips.map((t) => {
         const listed = marketByMint(t.mint);
         const symbol = meta[t.mint]?.symbol ?? t.mint;
-        const won = t.realisedUsd >= 0;
+        const down = t.realisedUsd < 0;
+        const entry = t.qtyBought > 0 ? t.investedUsd / t.qtyBought : null;
+        const exit = t.qtySold > 0 ? t.proceedsUsd / t.qtySold : null;
         return (
-          <Row key={`${t.mint}-${t.closedAt}`}>
-            <div className="flex items-center gap-2">
-              <CoinMark
-                symbol={symbol}
-                icon={meta[t.mint]?.icon ?? null}
-                hue={listed?.hue}
-                glyph={listed?.glyph}
-                size={24}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate font-sans text-[13.5px] font-bold text-champagne">
-                    {symbol}
-                  </span>
-                  <span
-                    className={`shrink-0 font-sans text-[13.5px] font-bold tabular-nums ${
-                      won ? "text-up" : "text-down"
-                    }`}
-                  >
-                    {won ? "+" : "−"}
-                    {usd(Math.abs(t.realisedUsd))}
+          <div key={`${t.mint}-${t.closedAt}`} className={`pnl ${down ? "is-down" : ""}`}>
+            <div className="pnl__top">
+              <div className="pnl__col min-w-0">
+                <div className="pnl__value">{usd(t.proceedsUsd)}</div>
+                <div className="pnl__sub flex items-center gap-1.5">
+                  <CoinMark
+                    symbol={symbol}
+                    icon={meta[t.mint]?.icon ?? null}
+                    hue={listed?.hue}
+                    glyph={listed?.glyph}
+                    size={14}
+                  />
+                  <span className="truncate">
+                    {units(t.qtySold)} {symbol}
                   </span>
                 </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate font-sans text-[11.5px] text-mute">
-                    {/* How long it was held, and how long ago it ended — the
-                        two facts that place a closed trade without a date. */}
-                    held {since(t.openedAt, t.closedAt * 1000) || "moments"}
-                    {now !== null && ` · ${since(t.closedAt, now)} ago`}
-                  </span>
-                  <span
-                    className={`shrink-0 font-sans text-[11.5px] font-semibold tabular-nums ${
-                      won ? "text-up" : "text-down"
-                    }`}
-                  >
-                    {pct(t.returnPct, false)}
-                  </span>
+                {/* How long it was held, and how long ago it ended — the two
+                    facts that place a closed trade without a date. */}
+                <div className="pnl__sub pnl__sub--cap">
+                  held {since(t.openedAt, t.closedAt * 1000) || "<1m"}
+                  {now !== null && ` · ${since(t.closedAt, now)} ago`}
+                </div>
+              </div>
+              <div className="pnl__col pnl__col--right">
+                <div className="pnl__value pnl__value--gain">
+                  {down ? "−" : "+"}
+                  {usd(Math.abs(t.realisedUsd))}
+                </div>
+                <div className="pnl__sub pnl__sub--gain">
+                  {t.returnPct !== null && (
+                    <svg className="pnl__caret" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+                      <path d="M5 1.2 9.2 8.4H0.8z" />
+                    </svg>
+                  )}
+                  {t.returnPct === null ? "—" : `${Math.abs(t.returnPct).toFixed(2)}%`}
                 </div>
               </div>
             </div>
-            <div className="mt-1 flex items-baseline justify-between gap-2 font-sans text-[10.5px] text-mute">
-              <span className="tabular-nums">In {usd(t.investedUsd)}</span>
-              <span className="tabular-nums">Out {usd(t.proceedsUsd)}</span>
+
+            <div className="pnl__rule" />
+
+            <div className="pnl__foot">
+              <div className="pnl__pair">
+                <span className="pnl__label">Avg. entry</span>
+                <span className="pnl__stack">
+                  <span className="pnl__stat">{entry === null ? "—" : usd(entry)}</span>
+                  {exit !== null && (
+                    <span className="pnl__stat pnl__stat--cap">exit {usd(exit)}</span>
+                  )}
+                </span>
+              </div>
+              <div className="pnl__pair">
+                <span className="pnl__label">Invested</span>
+                <span className="pnl__stat">{usd(t.investedUsd)}</span>
+              </div>
             </div>
-          </Row>
+          </div>
         );
       })}
     </div>
@@ -525,25 +721,6 @@ function Closed({ trips, ready }: { trips: RoundTrip[]; ready: boolean }) {
 }
 
 /* --------------------------------------------------------------- parts --- */
-
-function Row({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="border-b border-hairline py-2 first:pt-0 last:border-0 last:pb-0">
-      {children}
-    </div>
-  );
-}
-
-function Group({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="font-sans text-[9.5px] font-bold uppercase tracking-[0.11em] text-ash">
-        {label}
-      </div>
-      {children}
-    </div>
-  );
-}
 
 /** Every empty and loading state, one shape. */
 function Quiet({ children }: { children: React.ReactNode }) {

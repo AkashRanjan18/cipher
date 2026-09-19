@@ -109,12 +109,11 @@ test("a stop of 100% or more is refused", () => {
 });
 
 /*
- * A LADDER IS NOT AN OVERSELL. percentOfPosition is a share of the position at
- * FIRE time, so half, then half of the rest, then half of that is 87.5% of the
- * original — not 150%. This test exists to stop someone "fixing" that later by
- * summing the percentages.
+ * A LADDER OF THREE HALVES IS NOW 150%. Percentages freeze into tokens when
+ * the order is placed (the user's rule, 19 Sep 2026), so each half is half of
+ * the ORIGINAL position. It still arms — the last rung waits — but says so.
  */
-test("a ladder of three halves is valid, not an oversell", () => {
+test("a ladder of three halves arms, and warns that the last rung will wait", () => {
   const p = validateOrder(
     spec({
       exits: [2, 3, 4].map((x, i) => ({
@@ -125,7 +124,8 @@ test("a ladder of three halves is valid, not an oversell", () => {
     }),
     holding,
   );
-  assert.deepEqual(p, []);
+  assert.ok(!blocks(p));
+  assert.ok(p.some((x) => x.severity === "warning" && /150%/.test(x.message)));
 });
 
 test("a single exit over 100% is refused", () => {
