@@ -401,10 +401,13 @@ function Open({
  * order was given, and parentId carries that — a resting buy's id, or the
  * fill id of the market buy the exit came with (see sana.tsx).
  */
-type Kind = "Buy limit" | "Sell stop loss" | "Sell target";
+type Kind = "Buy limit" | "Buy stop" | "Sell stop loss" | "Sell target";
 
 function kindOf(rule: Rule, at: number | null, reference: number | null): Kind {
-  if (rule.side === "buy") return "Buy limit";
+  /* A buy ABOVE the market is a buy stop (the rulebook in CLAUDE.md). */
+  if (rule.side === "buy") {
+    return at !== null && reference !== null && at > reference ? "Buy stop" : "Buy limit";
+  }
   const t = rule.trigger;
   const below =
     t.kind === "drawdownFromEntry" ||
@@ -566,7 +569,7 @@ function PendingCard({
       : rule.amount.kind === "usd"
         ? rule.amount.value
         : null;
-  const tone = kind === "Sell stop loss" ? "down" : kind === "Buy limit" ? null : "up";
+  const tone = kind === "Sell stop loss" ? "down" : kind.startsWith("Buy") ? null : "up";
 
   /*
    * THE USER'S RULE, SAID ON THE CARD: a sell executes only with the full

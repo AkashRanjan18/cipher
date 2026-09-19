@@ -266,3 +266,29 @@ test("a held sell goes back to watching with its attempts untouched", () => {
   assert.equal(s.rules.r1.state, "armed");
   assert.equal(s.rules.r1.attempts, 0);
 });
+
+/* ───────────── the rulebook, 19 Sep 2026: stops have no floor ─────────── */
+
+test("a sell stop at a PRICE sells at that price or below — a gap does not stop it", () => {
+  // Entry $100, stop at $90, the market gaps straight through to $85.
+  const out = fireRule(holding(10), ruleFor({ kind: "priceAbsolute", value: 90 }), { mark: 85, ts: TS });
+  assert.equal(out.kind, "filled");
+});
+
+test("a sell target still never sells below its price", () => {
+  const out = fireRule(holding(10), ruleFor({ kind: "priceAbsolute", value: 130 }), { mark: 125, ts: TS });
+  assert.equal(out.kind, "failed");
+});
+
+test("a buy above the market is a buy stop: it fills at or above its price", () => {
+  const s = emptyEngine();
+  arm(s, {
+    rule: { id: "bs", trigger: { kind: "priceAbsolute", value: 130 }, amount: { kind: "usd", value: 100 } },
+    market: MKT,
+    at: T0,
+    side: "buy",
+    entryPrice: 112, // the market when it was placed: $130 is above, so a breakout
+  });
+  const out = fireRule(openAccount(10_000), s.rules.bs, { mark: 131, ts: TS });
+  assert.equal(out.kind, "filled");
+});

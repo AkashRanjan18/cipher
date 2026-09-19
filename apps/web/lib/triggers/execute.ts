@@ -87,6 +87,27 @@ const DUST_USD = 1;
 function worseThanLimit(rule: Rule, price: number, quoted = false): string | null {
   if (rule.trigger.kind !== "priceAbsolute") return null;
   const limit = rule.trigger.value;
+  /*
+   * A STOP HAS NO FLOOR. The user's rulebook, 19 Sep 2026:
+   *
+   *   sell stop loss   sells at that price OR BELOW   — no floor
+   *   sell target      sells at that price or above   — never below
+   *   sell limit       the same as a sell target
+   *   buy limit        buys at that price or below    — never above
+   *   buy stop         (a buy above the market) buys at that price or above
+   *
+   * Which one a price order is comes from where it sits against the price it
+   * was measured from: the entry fill for an exit, the market at arm time
+   * for a resting order. This function used to treat EVERY price order as a
+   * limit — so a stop at $90 that the market gapped through to $89.50 was
+   * refused as "below your limit", retried three times and died: the stop
+   * failed in exactly the moment it exists for.
+   */
+  const reference = rule.entryPrice;
+  if (reference !== null) {
+    const isStop = rule.side === "sell" ? limit < reference : limit > reference;
+    if (isStop) return null;
+  }
   /* A quoted price IS the fill — spread, impact and cipher's fee are already
      inside it. Applying the model's spread on top would charge it twice. */
   const fill = quoted ? price : fillPrice(price, rule.side);
