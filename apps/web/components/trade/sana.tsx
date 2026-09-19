@@ -112,8 +112,6 @@ const COMMANDS: [string, string][] = [
   ["/help", "What Sana understands"],
 ];
 
-let nextId = 0;
-
 
 /** Every percentage in a set of exits, fixed against a token quantity. */
 function frozen(exits: ExitRule[], basisQty: number): ExitRule[] {
@@ -204,6 +202,14 @@ export function Sana({
    */
   const pendingFill = useRef<Turn["fill"] | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
+  /*
+   * The next turn's id — a REF, not a module variable. It was `let nextId = 0`
+   * at module scope, and Fast Refresh re-runs the module on every edit while
+   * keeping this component's state: the counter went back to 0 with turns 0
+   * and 1 still on screen, and the next message was a second key `1`. A ref
+   * lives and resets with the conversation it numbers.
+   */
+  const turnId = useRef(0);
   const [input, setInput] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
@@ -269,7 +275,10 @@ export function Sana({
   }, []);
 
   function push(t: Omit<Turn, "id">) {
-    setTurns((prev) => [...prev, { ...t, id: nextId++ }]);
+    /* Taken OUTSIDE the updater: React may run an updater more than once,
+       and a side effect inside one is how two turns end up sharing an id. */
+    const id = turnId.current++;
+    setTurns((prev) => [...prev, { ...t, id }]);
   }
 
   function handle(raw: string) {
@@ -404,7 +413,7 @@ export function Sana({
     const controller = new AbortController();
     pending.current = controller;
 
-    const id = nextId++;
+    const id = turnId.current++;
     setTurns((prev) => [...prev, { id, mine: false, text: "Working that one out…", thinking: true }]);
 
     const compiled = await compileWithModel(text, ctx, controller.signal);
