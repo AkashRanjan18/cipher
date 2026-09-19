@@ -116,3 +116,9 @@ test("prices said the spoken way: one twenty is 120, twenty one is 21", () => {
   assert.equal(normaliseSpeech("target one twenty five dollars"), "target $125");
   assert.equal(normaliseSpeech("buy twenty one dollars of sol"), "buy $21 of sol");
 });
+
+test("thousands written with k become digits", () => {
+  // Found live: "81.5k" was read as $81.
+  assert.equal(normaliseSpeech("buy 0.001 tokens of btc when it reaches 81.5k"), "buy 0.001 tokens of btc when it reaches 81500");
+  assert.equal(normaliseSpeech("buy $1.5k of sol"), "buy $1500 of sol");
+});

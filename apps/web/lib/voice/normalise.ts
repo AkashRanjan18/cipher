@@ -230,6 +230,16 @@ export function normaliseSpeech(raw: string): string {
      letter as "x" or "ex" depending on how it was said. */
   t = t.replace(/\b(\d[\d.]*)\s*(?:x|ex|times)\b/g, "$1x");
   t = t.replace(/\bdoubles?\b/g, "2x");
+
+  /*
+   * "81.5k" → "81500". Found live, 19 Sep 2026: "buy 0.001 btc when it
+   * reaches 81.5k" read the price as $81 — the rules that read a price stopped
+   * at the "k". Written out here, once, no price pattern can miss it. Only
+   * "k": "m" also means minutes ("in 5m"), so millions stay as they are.
+   */
+  t = t.replace(/\b(\d[\d,]*(?:\.\d+)?)\s*k\b/g, (_, n: string) =>
+    String(Math.round(Number(n.replace(/,/g, "")) * 1_000 * 1e6) / 1e6),
+  );
   t = t.replace(/\btriples?\b/g, "3x");
 
   // Spoken signs. The grammar ignores a stop's sign, but "-50%" is what a
