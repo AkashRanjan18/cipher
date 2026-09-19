@@ -64,10 +64,9 @@ test("the deposit is the whole account until something happens", () => {
   assert.equal(unrealised(a, MINT, 103), 0);
 });
 
-test("cipher's fee is 0.5% at every size — no minimum", () => {
-  // No floor since 19 Sep 2026: 0.5% flat, at every size.
-  assert.equal(feeFor(20), 0.1);
-  assert.equal(feeFor(199), 0.995);
+test("the fee is $0.95 under $200 and 0.5% from $200 up", () => {
+  assert.equal(feeFor(20), 0.95);
+  assert.equal(feeFor(199), 0.95);
   assert.equal(feeFor(1_000), 5);
   // The floor and the rate cross at $190; nothing between them is cheaper than both.
   assert.ok(feeFor(199) < feeFor(200));
@@ -163,12 +162,12 @@ test("it refuses rather than short-selling", () => {
   assert.match((r as { refusal: string }).refusal, /you hold/i);
 });
 
-test("a small sale pays 0.5%, not a dollar minimum", () => {
+test("a small sale pays the $0.95 fee", () => {
   const a = openAccount(10_000);
   const { account: b } = fill(a, "buy", 10, 100);
   const r = execute(b, { mint: MINT, side: "sell", qty: 0.1, mark: 100, ts: 1 });
   assert.ok(!("refusal" in r));
-  if (!("refusal" in r)) assert.ok(r.fill.feeUsd < 0.06);
+  if (!("refusal" in r)) assert.equal(r.fill.feeUsd, 0.95);
 });
 
 test("percentOfPosition only means something on a sell", () => {
@@ -187,7 +186,7 @@ test("a usd amount resolves through the fill price, not the mark", () => {
   const a = openAccount(10_000);
   const qty = resolveQty({ kind: "usd", value: 1_000 }, "buy", a, MINT, 100)!;
   // The $1,000 is the whole budget, fee included.
-  assert.equal(qty, 1_000 / (fillPrice(100, "buy") * 1.005));
+  assert.ok(Math.abs(qty - 1_000 / (fillPrice(100, "buy") * 1.005)) < 1e-9);
   assert.ok(qty < 10, "you get less than the chart price implies, because you do");
 });
 
@@ -386,13 +385,13 @@ test("a quoted fill and a modelled fill of the same price cost the same", () => 
   assert.equal(quoted.cashUsd, modelled.cashUsd);
 });
 
-test("a quoted fill pays the same flat 0.5%", () => {
+test("a quoted fill under $200 pays the $0.95 fee", () => {
   const a = openAccount(10_000);
   const q = quote(a, MINT, "buy", 1, 50, {
     quoted: { price: 50, impactBps: 0, route: "Orca" },
   });
   assert.equal(q.notionalUsd, 50);
-  assert.equal(q.feeUsd, 0.25);
+  assert.equal(q.feeUsd, 0.95);
 });
 
 test("a $500 buy spends $500 in total, fee inside it", () => {
@@ -401,4 +400,15 @@ test("a $500 buy spends $500 in total, fee inside it", () => {
   const r = execute(a, { mint: MINT, side: "buy", qty, mark: 100, ts: 1 });
   assert.ok(!("refusal" in r));
   if (!("refusal" in r)) assert.ok(Math.abs(10_000 - r.account.usdc - 500) < 0.01);
+});
+
+test("a $100 buy spends $100 in total, the $0.95 fee inside it", () => {
+  const a = openAccount(10_000);
+  const qty = resolveQty({ kind: "usd", value: 100 }, "buy", a, MINT, 100)!;
+  const r = execute(a, { mint: MINT, side: "buy", qty, mark: 100, ts: 1 });
+  assert.ok(!("refusal" in r));
+  if (!("refusal" in r)) {
+    assert.ok(Math.abs(10_000 - r.account.usdc - 100) < 0.01);
+    assert.equal(r.fill.feeUsd, 0.95);
+  }
 });

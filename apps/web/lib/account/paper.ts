@@ -141,12 +141,15 @@ export function heldMints(a: Account): string[] {
  * is (4.75%), which is worth learning on paper rather than live.
  */
 export function feeFor(notionalUsd: number): number {
-  return notionalUsd * FEE_RATE;
+  return notionalUsd < FEE_FLOOR_BELOW ? FEE_FLOOR : notionalUsd * FEE_RATE;
 }
 
+/** Under $200 of trade, a flat $0.95 — the user's call, 19 Sep 2026 (again). */
+export const FEE_FLOOR = 0.95;
+export const FEE_FLOOR_BELOW = 200;
+
 /**
- * cipher's fee: 0.5%, flat, at every size. The user's call, 19 Sep 2026 —
- * the $0.95 minimum is gone (it charged 9.5% on a $10 trade). Network and
+ * cipher's fee: $0.95 under $200 of trade, 0.5% from $200 up. Network and
  * pool costs are already inside the execution price; this is cipher's cut
  * and nothing else.
  */
@@ -154,10 +157,13 @@ export const FEE_RATE = 0.005;
 
 /**
  * Tokens a dollar budget buys WITH the fee inside it: "$500" spends $500 in
- * total — $497.51 into the trade and $2.49 of fee — never $500 plus the fee.
+ * total ($497.51 into the trade, $2.49 fee); "$100" spends $100 ($99.05 in,
+ * $0.95 fee) — never the amount plus the fee.
  */
 export function qtyForBudget(usd: number, px: number): number {
-  return usd / (px * (1 + FEE_RATE));
+  const atRate = usd / (1 + FEE_RATE);
+  const notional = atRate >= FEE_FLOOR_BELOW ? atRate : usd - FEE_FLOOR;
+  return notional > 0 ? notional / px : 0;
 }
 
 /** 10 bps of spread, charged against the trader in both directions. */
