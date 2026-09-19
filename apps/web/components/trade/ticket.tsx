@@ -84,7 +84,7 @@ export function Ticket({
   depthUsd?: number | null;
 }) {
   const { account, hydrated, trade } = usePaperAccount();
-  const { armEntry } = useTriggers();
+  const { armEntry, armExits } = useTriggers();
   const [side, setSide] = useState<Side>("buy");
   const [orderType, setOrderType] = useState<OrderType>("market");
   /* Defaults come from packages/shared, not from a literal here, so the ticket
@@ -100,6 +100,9 @@ export function Ticket({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [limit, setLimit] = useState("");
   const [amount, setAmount] = useState("");
+  /* Optional exits on a buy, market or limit — the user's call, 19 Sep 2026. */
+  const [stopStr, setStopStr] = useState("");
+  const [targetStr, setTargetStr] = useState("");
   const [receipt, setReceipt] = useState<{ ok: boolean; text: string } | null>(null);
   /*
    * Set only by the 100% preset. "Sell everything" is a quantity instruction,
@@ -171,6 +174,35 @@ export function Ticket({
    */
   const resting = limiting && limitPrice > 0 && !marketable;
 
+  /*
+   * THE EXITS, checked against where the buy will fill: the limit when it
+   * rests, the market when it fills now. A stop above that or a target below
+   * it would fire the moment the buy lands — refused here, not armed.
+   */
+  const stopPrice = buying ? parseFloat(stopStr.replace(/,/g, "")) || 0 : 0;
+  const targetPrice = buying ? parseFloat(targetStr.replace(/,/g, "")) || 0 : 0;
+  const entryRef = resting ? limitPrice : (price ?? 0);
+  const exitProblem =
+    stopPrice > 0 && entryRef > 0 && stopPrice >= entryRef
+      ? `Stop loss must be below ${usd(entryRef)}.`
+      : targetPrice > 0 && entryRef > 0 && targetPrice <= entryRef
+        ? `Target price must be above ${usd(entryRef)}.`
+        : null;
+  const exitRules = [
+    ...(stopPrice > 0 ? [stopPrice] : []),
+    ...(targetPrice > 0 ? [targetPrice] : []),
+  ].map((value) => ({
+    id: newId("r"),
+    trigger: { kind: "priceAbsolute" as const, value },
+    amount: { kind: "percentOfPosition" as const, value: 100 },
+  }));
+  const exitsLine =
+    exitRules.length === 0
+      ? ""
+      : ` ${[stopPrice > 0 ? `Stop loss ${usd(stopPrice)}` : "", targetPrice > 0 ? `target ${usd(targetPrice)}` : ""]
+          .filter(Boolean)
+          .join(" and ")} set.`;
+
   const blocked = hydrated ? (resting ? null : (q?.refusal ?? null)) : null;
 
   /** What you can spend on a buy, what the position is worth on a sell. */
@@ -222,9 +254,10 @@ export function Ticket({
      * agree; they are one system with two front doors.
      */
     if (resting) {
+      const entryId = newId("t");
       armEntry({
         rule: {
-          id: newId("t"),
+          id: entryId,
           trigger: { kind: "priceAbsolute", value: limitPrice },
           amount: buying
             ? { kind: "usd", value }
@@ -234,11 +267,17 @@ export function Ticket({
         referencePrice: price,
         side,
       });
+      /* The exits wait for THIS buy, and freeze to what it actually fills. */
+      if (buying && exitRules.length > 0) {
+        await armExits({ rules: exitRules, market: symbol, parentId: entryId });
+      }
       setSellAll(false);
       setAmount("");
+      setStopStr("");
+      setTargetStr("");
       setReceipt({
         ok: true,
-        text: `Resting. I'll ${side} when ${market} reaches ${usd(limitPrice)}.`,
+        text: `Resting. I'll ${side} when ${market} reaches ${usd(limitPrice)}.${exitsLine}`,
       });
       return;
     }
@@ -266,8 +305,20 @@ export function Ticket({
      * money — and the all-in price, so quantity × price is exactly the cash
      * that moved and nothing looks unaccounted for.
      */
+    /* Exits on a market buy: sized to the tokens this fill delivered, bound
+       to what was paid, parented to the fill so they read as targets. */
+    if (buying && exitRules.length > 0) {
+      await armExits({
+        rules: exitRules.map((x) => ({ ...x, amount: { kind: "tokens" as const, value: r.fill.qty } })),
+        market: symbol,
+        entryPrice: allInPrice(r.fill),
+        parentId: r.fill.id,
+      });
+    }
     setSellAll(false);
     setAmount("");
+    setStopStr("");
+    setTargetStr("");
     setReceipt({
       ok: true,
       text:
@@ -275,7 +326,8 @@ export function Ticket({
         `${usd(allInPrice(r.fill))}. Cash is now ${usd(buying ? before - cash : before + cash)}.` +
         (buying
           ? ""
-          : ` Booked ${r.fill.realisedUsd >= 0 ? "+" : "−"}${usd(Math.abs(r.fill.realisedUsd))}.`),
+          : ` Booked ${r.fill.realisedUsd >= 0 ? "+" : "−"}${usd(Math.abs(r.fill.realisedUsd))}.`) +
+        exitsLine,
     });
   }
 
@@ -525,11 +577,43 @@ export function Ticket({
         {available === null ? "—" : `${usd(available)} available`}
       </button>
 
+      {buying && (
+        /* Optional exits on the buy: both are sell orders that wait in
+           Pending until their trigger price. Left empty, nothing is set. */
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { label: "Stop loss", value: stopStr, set: setStopStr },
+            { label: "Target price", value: targetStr, set: setTargetStr },
+          ].map((f) => (
+            <label
+              key={f.label}
+              className="flex flex-col gap-1 rounded-xl border border-line bg-slate px-3 py-2 focus-within:border-action"
+            >
+              <span className="font-sans text-[10.5px] font-semibold text-mute">{f.label}</span>
+              <span className="flex items-center gap-1 font-sans text-[15px] font-bold text-champagne">
+                <span className="text-mute">$</span>
+                <input
+                  value={f.value}
+                  onChange={(e) => f.set(e.target.value.replace(/[^\d.,]/g, ""))}
+                  inputMode="decimal"
+                  placeholder="Optional"
+                  aria-label={f.label}
+                  className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[12px] placeholder:font-medium placeholder:text-mute"
+                />
+              </span>
+            </label>
+          ))}
+          {exitProblem && (
+            <p className="col-span-2 font-sans text-[11px] font-semibold text-down">{exitProblem}</p>
+          )}
+        </div>
+      )}
+
       <button
         // A limit order with no limit price would fall through and submit as
         // a market order — the one substitution a ticket must never make.
         disabled={
-          !tradable || !price || !!blocked || value <= 0 || (limiting && limitPrice <= 0)
+          !tradable || !price || !!blocked || !!exitProblem || value <= 0 || (limiting && limitPrice <= 0)
         }
         onClick={() => void submit()}
         /*
