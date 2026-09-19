@@ -255,6 +255,20 @@ function checkPricesNearMarket(spec: OrderSpec, ctx: ValidationContext): Problem
   const side = (p: number) => (p < market ? "below" : "above");
 
   const limit = spec.entry?.trigger?.kind === "priceAbsolute" ? spec.entry.trigger.value : null;
+
+  /*
+   * NO BUY STOPS. The user's call, 19 Sep 2026: a buy limit is at the price
+   * or BELOW, and cipher does not offer a buy that waits for the price to
+   * rise. "Buy $100 of SOL at $130" with SOL at $112 used to rest as a
+   * breakout buy; now it is refused, with the two things it could have meant.
+   */
+  if (spec.entry?.side === "buy" && limit !== null && limit > market) {
+    out.push({
+      severity: "error",
+      at: "entry",
+      message: `A buy limit has to be below the current price (${money(market)}), and ${money(limit)} is above it. Say a lower price, or buy now at the market.`,
+    });
+  }
   if (limit !== null && far(limit)) {
     out.push({
       severity: "error",

@@ -94,7 +94,9 @@ function worseThanLimit(rule: Rule, price: number, quoted = false): string | nul
    *   sell target      sells at that price or above   — never below
    *   sell limit       the same as a sell target
    *   buy limit        buys at that price or below    — never above
-   *   buy stop         (a buy above the market) buys at that price or above
+   *
+   * There is no buy stop: the user removed it (19 Sep 2026), and
+   * validate.ts refuses a buy priced above the market before it can rest.
    *
    * Which one a price order is comes from where it sits against the price it
    * was measured from: the entry fill for an exit, the market at arm time
@@ -105,7 +107,7 @@ function worseThanLimit(rule: Rule, price: number, quoted = false): string | nul
    */
   const reference = rule.entryPrice;
   if (reference !== null) {
-    const isStop = rule.side === "sell" ? limit < reference : limit > reference;
+    const isStop = rule.side === "sell" && limit < reference;
     if (isStop) return null;
   }
   /* A quoted price IS the fill — spread, impact and cipher's fee are already

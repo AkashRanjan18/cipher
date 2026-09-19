@@ -401,13 +401,10 @@ function Open({
  * order was given, and parentId carries that — a resting buy's id, or the
  * fill id of the market buy the exit came with (see sana.tsx).
  */
-type Kind = "Buy limit" | "Buy stop" | "Sell stop loss" | "Sell target";
+type Kind = "Buy limit" | "Sell stop loss" | "Sell target";
 
 function kindOf(rule: Rule, at: number | null, reference: number | null): Kind {
-  /* A buy ABOVE the market is a buy stop (the rulebook in CLAUDE.md). */
-  if (rule.side === "buy") {
-    return at !== null && reference !== null && at > reference ? "Buy stop" : "Buy limit";
-  }
+  if (rule.side === "buy") return "Buy limit";
   const t = rule.trigger;
   const below =
     t.kind === "drawdownFromEntry" ||

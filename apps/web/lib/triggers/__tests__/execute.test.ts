@@ -280,7 +280,7 @@ test("a sell target still never sells below its price", () => {
   assert.equal(out.kind, "failed");
 });
 
-test("a buy above the market is a buy stop: it fills at or above its price", () => {
+test("a buy limit never fills above its price, even when placed above the market", () => {
   const s = emptyEngine();
   arm(s, {
     rule: { id: "bs", trigger: { kind: "priceAbsolute", value: 130 }, amount: { kind: "usd", value: 100 } },
@@ -289,6 +289,7 @@ test("a buy above the market is a buy stop: it fills at or above its price", () 
     side: "buy",
     entryPrice: 112, // the market when it was placed: $130 is above, so a breakout
   });
+  // No buy stops (removed 19 Sep 2026): above its price, a buy refuses.
   const out = fireRule(openAccount(10_000), s.rules.bs, { mark: 131, ts: TS });
-  assert.equal(out.kind, "filled");
+  assert.equal(out.kind, "failed");
 });

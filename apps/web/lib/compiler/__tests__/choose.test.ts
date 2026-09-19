@@ -194,3 +194,11 @@ test("a buy with no size asks how much, and the answer keeps the stop and target
     assert.equal(out.intent.spec.exits.length, 2);
   }
 });
+
+test("no buy stops: a buy priced above the market is refused", () => {
+  const above = spec({ entry: { ...spec().entry!, trigger: { kind: "priceAbsolute", value: 130 } } });
+  const p = validateOrder(above, { cashUsd: 10_000, position: 0, price: 112 });
+  assert.ok(p.some((x) => x.severity === "error" && /has to be below the current price/.test(x.message)));
+  const below = spec({ entry: { ...spec().entry!, trigger: { kind: "priceAbsolute", value: 100 } } });
+  assert.ok(!validateOrder(below, { cashUsd: 10_000, position: 0, price: 112 }).some((x) => x.severity === "error"));
+});
