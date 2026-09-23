@@ -635,9 +635,22 @@ function resolveRest(entry: OrderSpec["entry"], exits: ExitRule[]): void {
   const isRest = (a: Amount) => a.kind === "percentOfPosition" && a.value === REST;
   if (entry && isRest(entry.amount)) entry.amount = { kind: "percentOfPosition", value: 100 };
 
+  /*
+   * A RESTING SELL CLAIMS ITS SHARE TOO.
+   *
+   * "sell 70% of my PUMP at 0.0042 and the rest at 0.0048" puts the 70% in
+   * the ENTRY — a resting sell is an entry with a trigger — so the exits were
+   * empty when "the rest" was resolved and it came back 100%. The ladder then
+   * sold 70% and then everything. Reported live, 23 Sep 2026.
+   */
+  const claimedByEntry =
+    entry && entry.side === "sell" && entry.amount.kind === "percentOfPosition" && !isRest(entry.amount)
+      ? entry.amount.value
+      : 0;
+
   const claimed = exits
     .filter((x) => x.amount.kind === "percentOfPosition" && !isRest(x.amount))
-    .reduce((sum, x) => sum + x.amount.value, 0);
+    .reduce((sum, x) => sum + x.amount.value, claimedByEntry);
   const left = 100 - claimed;
   for (const x of exits) {
     if (isRest(x.amount)) x.amount = { kind: "percentOfPosition", value: left > 0 ? left : 100 };

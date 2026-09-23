@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ORDER_SPEC_VERSION, type OrderSpec } from "@cipher/shared";
 import { validateOrder, blocks, type ValidationContext } from "../validate.ts";
+import { parseWithGrammar } from "../grammar.ts";
 
 /**
  * The validator is the last thing between a misparse and a real order, so the
@@ -237,5 +238,43 @@ test("a percentage IS a sell size, and stays legal", () => {
   assert.equal(
     p.some((x) => /isn't a buy size/.test(x.message)),
     false,
+  );
+});
+
+test("exits priced on the same side of the entry are a ladder and must add to 100", () => {
+  /*
+   * Reported live, 23 Sep 2026:
+   *
+   *   "buy me $500 of PUMP at 0.0040 and set a stop loss at 0.00420
+   *    and set a target price at 0.00480"
+   *
+   * armed two exits selling 100% each — 200% of a position that did not exist
+   * yet — and said nothing. Whichever fires first takes the whole position and
+   * the other waits forever, while the card goes on showing an armed
+   * take-profit that can never fire.
+   *
+   * Only `priceMultiple` exits were ever summed, and a price is how people
+   * actually write a ladder.
+   */
+  const spec = parseWithGrammar(
+    "buy $500 of pump at 0.0040 and sell at 0.0042 and target 0.0048",
+  )!;
+  const problems = validateOrder(spec, { cashUsd: 10_000, position: 0, price: 0.004152 });
+  const ladder = problems.find((p) => p.message.includes("add up to"));
+  assert.ok(ladder, "two whole-position targets above the entry must be flagged");
+  assert.equal(ladder.severity, "warning");
+  assert.match(ladder.message, /200%/);
+});
+
+test("a stop and a target are alternatives, not a ladder", () => {
+  /* Both selling everything is the normal, correct case: one fires, the other
+     is cancelled when the position goes flat. Grouping by side is what keeps
+     this from being warned about. */
+  const spec = parseWithGrammar("buy $500 of sol at 100 and stop at 90 and target 150")!;
+  const problems = validateOrder(spec, { cashUsd: 10_000, position: 0, price: 100 });
+  assert.equal(
+    problems.find((p) => p.message.includes("add up to")),
+    undefined,
+    "a stop below and a target above must not be summed together",
   );
 });

@@ -329,3 +329,17 @@ test('"sell 70% of it at X" is an exit; "sell 70% of my SOL at X" is a resting s
   assert.deepEqual(resting?.entry?.trigger, { kind: "priceAbsolute", value: 300 });
   assert.deepEqual(resting?.exits, [], "a resting sell must not also arm a duplicate exit");
 });
+
+test('"the rest" counts what a resting sell already claimed', () => {
+  /*
+   * "sell 70% of my PUMP at 0.0042 and the rest at 0.0048" puts the 70% in the
+   * ENTRY, because a resting sell is an entry with a trigger. The exits were
+   * therefore empty when "the rest" was resolved, and it came back 100% — so
+   * the ladder sold 70% and then the lot. Reported live, 23 Sep 2026.
+   */
+  const spec = parseWithGrammar("sell 70% of my pump at 0.0042 and the rest at 0.0048")!;
+  assert.deepEqual(spec.entry?.amount, { kind: "percentOfPosition", value: 70 });
+  assert.deepEqual(spec.exits.map((e) => e.amount), [
+    { kind: "percentOfPosition", value: 30 },
+  ]);
+});

@@ -152,7 +152,7 @@ function checkTrigger(t: Trigger, at: Problem["at"]): Problem[] {
  * with a trader. They belong in the readback, where the user can see them and
  * decide.
  */
-function checkExitSet(exits: ExitRule[]): Problem[] {
+function checkExitSet(exits: ExitRule[], reference: number | null): Problem[] {
   const out: Problem[] = [];
 
   const stops = exits.filter((e) => e.trigger.kind === "drawdownFromEntry");
@@ -198,15 +198,52 @@ function checkExitSet(exits: ExitRule[]): Problem[] {
    * wake it. Only targets are summed — a stop and a target are alternatives,
    * and both selling everything is the normal case.
    */
+  const share = (e: ExitRule) =>
+    e.amount.kind === "percentOfPosition" ? e.amount.value : 0;
+
   const laddered = exits
-    .filter((e) => e.trigger.kind === "priceMultiple" && e.amount.kind === "percentOfPosition")
-    .reduce((sum, e) => sum + e.amount.value, 0);
+    .filter((e) => e.trigger.kind === "priceMultiple")
+    .reduce((sum, e) => sum + share(e), 0);
   if (laddered > 100) {
     out.push({
       severity: "warning",
       at: "exits",
       message: `Your targets add up to ${laddered}% of the position, so the last one needs more than you will hold and waits until you do.`,
     });
+  }
+
+  /*
+   * THE SAME SUM, FOR PRICES RATHER THAN MULTIPLES.
+   *
+   * Only `priceMultiple` was ever added up, and a price is how people
+   * actually write a ladder. Reported live, 23 Sep 2026:
+   *
+   *   "buy $500 of PUMP at 0.0040, stop loss at 0.0042, target at 0.0048"
+   *
+   * armed two exits selling 100% each, 200% of a position that does not
+   * exist yet, and nothing said a word. Whichever fires first takes the whole
+   * position; the other waits forever for tokens it will never see, while the
+   * card goes on showing an armed take-profit that cannot fire.
+   *
+   * GROUPED BY SIDE, because a stop and a target ARE alternatives and both
+   * selling everything is the normal, correct case. Two exits on the SAME
+   * side of the entry are a ladder, and a ladder has to add to 100.
+   */
+  if (reference !== null && reference > 0) {
+    for (const [side, above] of [["targets", true], ["stops", false]] as const) {
+      const rungs = exits.filter(
+        (e) => e.trigger.kind === "priceAbsolute" && e.trigger.value > reference === above,
+      );
+      if (rungs.length < 2) continue;
+      const total = rungs.reduce((sum, e) => sum + share(e), 0);
+      if (total > 100) {
+        out.push({
+          severity: "warning",
+          at: "exits",
+          message: `Your ${side} add up to ${total}% of the position. The first one to trigger sells everything it needs, and the rest wait for tokens you will not be holding.`,
+        });
+      }
+    }
   }
 
   /* Two rules at the identical level is almost always a duplicate from a
@@ -384,7 +421,15 @@ export function validateOrder(spec: OrderSpec, ctx: ValidationContext): Problem[
 
   out.push(...checkPricesNearMarket(spec, ctx));
 
-  out.push(...checkExitSet(exits));
+  /*
+   * What the exits are measured against: the price the entry rests at, the
+   * fill it will get, or — with no entry — the market the position is held
+   * in. It decides which exits are targets and which are stops, so it is the
+   * same reference kindOf() and worseThanLimit() use.
+   */
+  const reference =
+    entry?.trigger?.kind === "priceAbsolute" ? entry.trigger.value : ctx.price || null;
+  out.push(...checkExitSet(exits, reference));
 
   /*
    * Exits with nothing to attach to.
