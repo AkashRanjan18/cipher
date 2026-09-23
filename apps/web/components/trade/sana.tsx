@@ -15,6 +15,8 @@ import { usePaperAccount } from "@/lib/account/store";
 import { useTriggers } from "@/lib/triggers/store";
 import { useSpeech } from "@/lib/voice/use-speech";
 import { normaliseSpeech } from "@/lib/voice/normalise";
+import { useRegistry } from "@/lib/market/use-registry";
+import { correctSentence, nearest, type RegistryToken } from "@/lib/market/registry";
 import { resolveQty, allInPrice,
   positionOf,
   heldMints,
@@ -216,6 +218,22 @@ export function Sana({
   const turnId = useRef(0);
   const [input, setInput] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
+
+  /*
+   * The registry, and the token the chart is currently on.
+   *
+   * `symbol` is the mint and `market` is the label, so the mint is tried
+   * first — it is the only identifier that cannot be squatted. The label is
+   * the fallback for markets whose mint is not in the file yet.
+   */
+  const registry = useRegistry();
+  const openToken: RegistryToken | null =
+    registry.find((t) => t.mint === symbol) ?? nearest(market, registry)?.token ?? null;
+
+  /** What a spoken name was corrected to, shown under the bar until it is sent. */
+  const [heardAs, setHeardAs] = useState<{ from: string; to: string } | null>(null);
+  /** A real token that is not the one on screen — a market to open, not to trade. */
+  const [elsewhere, setElsewhere] = useState<RegistryToken | null>(null);
   const streamRef = useRef<HTMLDivElement>(null);
   /** The whole bar, so an outside click can be told from an inside one. */
   const shellRef = useRef<HTMLDivElement>(null);
@@ -243,8 +261,23 @@ export function Sana({
     (heard) => {
       const said = heard.trim();
       if (!said) return;
-      setInput("");
-      handle(said);
+
+      /*
+       * A SPOKEN ORDER LANDS IN THE BAR, IT DOES NOT EXECUTE. The user's rule,
+       * 23 Sep 2026: "before pressing Enter he could see what we have
+       * written. Once he presses Enter, the trade gets taken."
+       *
+       * This used to call handle() directly, so a recogniser's guess became a
+       * live order with nothing on screen in between. It is also the entire
+       * safety argument for the correction below — snapping a misheard name
+       * to the coin on screen is only defensible because the corrected
+       * sentence is read before it runs.
+       */
+      const fixed = correctSentence(said, openToken, registry);
+      setInput(fixed.text);
+      setHeardAs(fixed.changed);
+      setElsewhere(fixed.elsewhere);
+      inputRef.current?.focus();
     },
     /*
      * What to listen for: the coin on screen first, because it is the one a
@@ -1174,6 +1207,10 @@ export function Sana({
             setSlashOpen(false);
             handle(input);
             setInput("");
+            /* The note describes the sentence that was in the bar. Once it has
+               been sent it is describing nothing. */
+            setHeardAs(null);
+            setElsewhere(null);
           }}
           className="flex items-center gap-2.5 rounded-xl bg-champagne py-2 pl-3 pr-2 shadow-lg shadow-black/30 ring-1 ring-black/10 focus-within:ring-4 focus-within:ring-accent"
         >
@@ -1196,6 +1233,11 @@ export function Sana({
             onChange={(e) => {
               setInput(e.target.value);
               setSlashOpen(e.target.value.startsWith("/") && !e.target.value.includes(" "));
+              /* Typing supersedes what was heard. The correction is only ever
+                 a claim about a sentence the recogniser produced, and the
+                 moment a person edits it the claim is stale. */
+              setHeardAs(null);
+              setElsewhere(null);
             }}
             onKeyDown={(e) => e.key === "Escape" && setSlashOpen(false)}
             placeholder={
@@ -1243,6 +1285,31 @@ export function Sana({
       {speech.error && (
         <p className="mt-1.5 rounded-lg border border-down/40 bg-down/10 px-2.5 py-1.5 font-sans text-[11px] text-champagne">
           {speech.error}
+        </p>
+      )}
+
+      {/*
+        * What was heard, and what it was changed to.
+        *
+        * SHOWN, NOT ASSUMED. Snapping a misheard name to the coin on screen is
+        * only defensible while the user can see it happen and can still edit
+        * the sentence — so this line and the unsent bar above it ARE the
+        * safety argument, not decoration. It clears the moment they type or
+        * send.
+        */}
+      {heardAs && (
+        <p className="mt-1.5 px-2.5 font-sans text-[11px] text-ash">
+          Heard <span className="line-through opacity-60">{heardAs.from}</span> — reading it as{" "}
+          <b className="text-accent">{heardAs.to}</b>, the market on screen. Edit it before you send.
+        </p>
+      )}
+
+      {/* A real token that is not this chart. cipher will not switch the
+          market out from under a sentence, so it says so and stops. */}
+      {elsewhere && (
+        <p className="mt-1.5 px-2.5 font-sans text-[11px] text-ash">
+          That names <b className="text-champagne">{elsewhere.symbol}</b>, not {market}. Open its
+          chart and say it again.
         </p>
       )}
 

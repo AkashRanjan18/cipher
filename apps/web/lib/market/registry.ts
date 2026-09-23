@@ -305,3 +305,66 @@ export function against(said: string, open: RegistryToken, tokens: RegistryToken
   const other = nearest(said, tokens);
   return other ? { kind: "elsewhere", token: other.token } : { kind: "unknown" };
 }
+
+/* ────────────────────────── correcting a sentence ──────────────────────── */
+
+/**
+ * Where a token name sits in an order.
+ *
+ * ONLY THE TOKEN SLOT IS EVER TOUCHED. A correction that scanned every word
+ * would rewrite "cut" or "rest" into whatever coin they resemble, and the
+ * whole value of this is that the user can trust what appears in the bar. So
+ * the word has to follow a verb and its size, exactly where the grammar looks
+ * for it — a near-miss anywhere else is left alone and refused later, which
+ * costs a retype instead of a position.
+ */
+const TOKEN_SLOT =
+  /\b(?:buy|sell|ape|grab|cop|get\s+me|dump|put)\s+(?:me\s+)?(?:\$?\s*[\d.,]+\s*%?\s*[km]?\s*(?:tokens?|coins?)?\s*)?(?:half|a\s+third|a\s+quarter|all|everything|the\s+rest\s+)?\s*(?:worth\s+of\s+|of\s+|into\s+|in\s+)?(?:my\s+|the\s+)?([a-z][a-z0-9]{1,14})\b/i;
+
+export interface Correction {
+  /** The sentence to show, corrected. */
+  text: string;
+  /** What was changed, for the note under the bar. Null when nothing was. */
+  changed: { from: string; to: string } | null;
+  /** Set when the sentence named a real token that is not the open one. */
+  elsewhere: RegistryToken | null;
+}
+
+/**
+ * Rewrite a misheard token name to the one on screen.
+ *
+ * FOR SPEECH, NOT FOR TYPING. A recogniser hands over a finished sentence and
+ * this fixes it before the user reads it; rewriting words under a moving
+ * cursor would fight whoever is typing them. The user sees the corrected
+ * sentence in the bar and presses Enter — which is the whole safety argument
+ * for snapping a name to the open chart, and the reason this must never run
+ * anywhere the result is not shown before it executes.
+ */
+export function correctSentence(
+  said: string,
+  open: RegistryToken | null,
+  tokens: RegistryToken[],
+): Correction {
+  const none: Correction = { text: said, changed: null, elsewhere: null };
+  if (!open) return none;
+
+  const m = said.match(TOKEN_SLOT);
+  if (!m) return none;
+
+  const heard = m[1];
+  const verdict = against(heard, open, tokens);
+
+  if (verdict.kind === "corrected") {
+    /* Replaced at its own offset, not by a global replace: the same letters
+       can appear elsewhere in the sentence, and "sell 30% of my sol at 200"
+       must not have its size or its price rewritten. */
+    const at = said.lastIndexOf(heard, (m.index ?? 0) + m[0].length);
+    return {
+      text: said.slice(0, at) + verdict.token.symbol + said.slice(at + heard.length),
+      changed: { from: heard, to: verdict.token.symbol },
+      elsewhere: null,
+    };
+  }
+  if (verdict.kind === "elsewhere") return { ...none, elsewhere: verdict.token };
+  return none;
+}

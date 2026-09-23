@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { nearest, readScale, against, type RegistryToken } from "../registry.ts";
+import { nearest, readScale, against, correctSentence, type RegistryToken } from "../registry.ts";
 
 /** Shaped like the live file, with the figures that were actually in it. */
 const tok = (p: Partial<RegistryToken> & Pick<RegistryToken, "symbol">): RegistryToken => ({
@@ -97,4 +97,31 @@ test("the open chart is the scope", () => {
   assert.ok(other.kind === "elsewhere" && other.token.mint === "SOL");
   // And a word that names nothing stays unknown.
   assert.equal(against("qqqqqq", ZCAT, ALL).kind, "unknown");
+});
+
+test("a misheard token in a spoken order is corrected to the open one", () => {
+  const { text, changed } = correctSentence("buy $500 of zcash and stop at 0.003", ZCAT, ALL);
+  assert.equal(text, "buy $500 of ZCAT and stop at 0.003");
+  assert.deepEqual(changed, { from: "zcash", to: "ZCAT" });
+});
+
+test("only the token slot is rewritten, never the rest of the sentence", () => {
+  /* A correction that scanned every word would rewrite "cut" or "rest" into
+     whatever coin they resemble. The value of this is that the bar can be
+     trusted, so it touches exactly the word the grammar reads as the token. */
+  const out = correctSentence("sell 30% of my zcat at 0.0042 and cut the rest", ZCAT, ALL);
+  assert.equal(out.text, "sell 30% of my zcat at 0.0042 and cut the rest");
+  assert.equal(out.changed, null);
+});
+
+test("naming a different real token is reported, not silently switched", () => {
+  const out = correctSentence("buy $500 of solana", ZCAT, ALL);
+  assert.equal(out.changed, null, "the chart must not be switched underneath a sentence");
+  assert.equal(out.elsewhere?.mint, "SOL");
+  assert.equal(out.text, "buy $500 of solana");
+});
+
+test("a sentence with no token slot is left exactly as it is", () => {
+  assert.equal(correctSentence("what is my pnl", ZCAT, ALL).text, "what is my pnl");
+  assert.equal(correctSentence("stop at 0.003", ZCAT, ALL).changed, null);
 });
