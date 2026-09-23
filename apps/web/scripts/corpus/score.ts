@@ -207,11 +207,21 @@ for (const row of rows) {
 
   if (useModel && needsModel(grammar)) {
     const out = await askModels(SYSTEM, userTurn(row.text, ctx));
+    /*
+     * Cast, as edge-battery.ts does. The zod schema in schema.ts is kept in
+     * step with packages/shared/intent.ts BY HAND — shared carries no zod
+     * dependency on purpose — so the two Intent types are structurally equal
+     * without TypeScript being able to prove it.
+     */
     const model: Compiled | null = out.ok
-      ? { version: grammar.version, intent: out.compiled.intent, source: "model", warnings: [] }
+      ? ({ version: grammar.version, intent: out.compiled.intent, source: "model", warnings: [] } as Compiled)
       : null;
     final = choose(grammar, model, row.text);
-    reader = model ? (final === grammar ? "grammar(model-refused)" : "model") : `grammar(${out.reason})`;
+    reader = out.ok
+      ? final === grammar
+        ? "grammar(model-refused)"
+        : "model"
+      : `grammar(${out.reason})`;
   }
   const ms = performance.now() - started;
 
