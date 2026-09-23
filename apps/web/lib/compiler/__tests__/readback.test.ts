@@ -68,8 +68,19 @@ test("stop and trailing stop are distinguished", () => {
   assert.match(line("trail 30%", "STOP").note!, /resets if you exit/);
 });
 
-test("large numbers are grouped", () => {
-  assert.equal(line("buy $1.5k of bonk", "BUY").value, "$1,500 of BONK");
+test("large numbers are abbreviated, the way they were said", () => {
+  /*
+   * The user's rule, 23 Sep 2026: K and M, not four and seven digits. Nobody
+   * types "3,400,000" into a prompt bar and nobody reads it back out of one
+   * either — and on market caps, which are the figures that get big, the
+   * grouped form is harder to check at a glance than "3.4M".
+   *
+   * Under a thousand nothing is abbreviated: "$500" is already how anyone
+   * says $500, and "$0.5K" is how nobody does.
+   */
+  assert.equal(line("buy $1.5k of bonk", "BUY").value, "$1.5K of BONK");
+  assert.equal(line("buy $500 of bonk", "BUY").value, "$500 of BONK");
+  assert.equal(line("buy $3.4m of bonk", "BUY").value, "$3.4M of BONK");
 });
 
 test("text form is loggable — it is what the user approved", () => {

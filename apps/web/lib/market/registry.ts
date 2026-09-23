@@ -188,6 +188,28 @@ const DECISIVE_DECADES = 1;
 const MAX_DECADES = 3;
 
 /**
+ * Did the sentence SAY which scale it meant?
+ *
+ * The chart header can be showing price or market cap, and the user is free
+ * to speak in either regardless of which one is up (the user's rule, 23 Sep
+ * 2026) — so the open window is never consulted. What IS consulted is whether
+ * they named the scale out loud, and when they did, that settles it: cipher
+ * transcribes an instruction rather than second-guessing one. The magnitude
+ * test below is only for sentences that leave it unsaid.
+ *
+ * "mc" and "cap" are in because that is how it is typed in a chat; "at a
+ * price of" and "per token" are the two ways people disambiguate downward.
+ */
+export function statedScale(text: string): "price" | "cap" | null {
+  const t = text.toLowerCase();
+  if (/\b(market\s*cap|marketcap|mcap|mkt\s*cap|\bmc\b|\bcap\b|valuation|fdv)\b/.test(t)) {
+    return "cap";
+  }
+  if (/\b(price|per\s+token|per\s+coin|a\s+token|each)\b/.test(t)) return "price";
+  return null;
+}
+
+/**
  * Was that number a price or a market cap?
  *
  * Decided by distance on a log scale, because the question is never "is 3.4
@@ -195,9 +217,28 @@ const MAX_DECADES = 3;
  * works identically for a token at $0.000004 and one at $100,000, which is the
  * range cipher has to span.
  */
-export function readScale(said: number, token: RegistryToken): Scale {
+export function readScale(
+  said: number,
+  token: RegistryToken,
+  /** What the sentence said, when it said. Overrides the magnitude test. */
+  stated: "price" | "cap" | null = null,
+): Scale {
   if (!(said > 0)) return { kind: "neither" };
   const { price, cap } = token;
+
+  /*
+   * A NAMED SCALE IS NOT A GUESS TO SECOND-GUESS. "buy zcat at 3.4 million
+   * market cap" is unambiguous however far 3.4M sits from anything, and
+   * overriding it because the arithmetic looks surprising would be cipher
+   * exercising judgement about an instruction it was given plainly. A cap
+   * that cannot be converted — no cap figure for this token — is refused
+   * rather than quietly re-read as a price.
+   */
+  if (stated === "cap") {
+    if (!cap || !(cap > 0) || !(price > 0)) return { kind: "neither" };
+    return { kind: "cap", price: (said * price) / cap, cap: said };
+  }
+  if (stated === "price") return { kind: "price", price: said };
 
   const toPrice = price > 0 ? Math.abs(Math.log10(said / price)) : Infinity;
   const toCap = cap && cap > 0 ? Math.abs(Math.log10(said / cap)) : Infinity;

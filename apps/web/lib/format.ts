@@ -82,6 +82,25 @@ export function units(n: number): string {
   return n.toLocaleString("en-US", { maximumFractionDigits: n >= 1 ? 4 : 6 });
 }
 
+/**
+ * compact(), without the padding zeros — for prose rather than a column.
+ *
+ * `compact` fixes the decimals so a column of figures lines up, which is right
+ * on an axis and wrong in a sentence: "I'll buy $3.40M of BONK" reads like a
+ * spreadsheet talking. A readback is the user's own words handed back, so the
+ * number is written the way they would have said it.
+ *
+ * Below a thousand nothing is abbreviated, because "$500" is already how
+ * anyone says $500 and "$0.5K" is how nobody does.
+ */
+export function compactWords(n: number | null): string {
+  if (n === null) return "—";
+  /* Whole dollars stay whole: "$500", never "$500.00". `price()` is for
+     figures that need their decimals, and under a thousand most do not. */
+  if (n < 1_000) return Number.isInteger(n) ? String(n) : price(n);
+  return compact(n).replace(/\.?0+(?=[KMBT]$)/, "");
+}
+
 /** compact(), with a dollar sign. */
 export function compactUsd(n: number | null): string {
   if (n === null) return "—";

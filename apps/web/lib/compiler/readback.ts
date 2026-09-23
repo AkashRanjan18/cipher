@@ -1,3 +1,4 @@
+import { compactWords } from "../format.ts";
 import { DEFAULTS, type Amount, type ExitRule, type OrderSpec, type Trigger } from "@cipher/shared";
 
 /**
@@ -28,8 +29,16 @@ export interface ReadbackLine {
 
 const nf = new Intl.NumberFormat("en-US");
 
+/**
+ * Money, written the way it was said.
+ *
+ * K and M rather than four and seven digits (the user's rule, 23 Sep 2026).
+ * Nobody types "3,400,000" into a prompt bar and nobody reads it back out of
+ * one either — and on market caps, which are the numbers that get big, the
+ * grouped form is genuinely harder to check at a glance than "3.4M".
+ */
 function money(n: number): string {
-  return `$${nf.format(n)}`;
+  return `$${compactWords(n)}`;
 }
 
 /** Percentages people said in words go back out in words. */
