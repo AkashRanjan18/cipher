@@ -107,6 +107,15 @@ function wordsToNumber(words: string[]): number | null {
       continue;
     }
     if (decimals !== null) {
+      /* A SCALE CLOSES THE DECIMAL AND MULTIPLIES IT. "one point five
+         thousand" is 1500; without this the run failed at "thousand", the
+         words were re-scanned in pieces and it came out "one point 5000". */
+      if (w in SCALES) {
+        total = Number(`${total + current}.${decimals}`) * SCALES[w];
+        current = 0;
+        decimals = null;
+        continue;
+      }
       // After "point", every digit is spoken alone: "five" then "one" is .51
       if (!(w in UNITS)) return null;
       decimals += String(UNITS[w]);
@@ -162,6 +171,36 @@ function digitiseNumbers(text: string): string {
       isNumberWord(wordAt(i + 1)) && wordAt(i + 1) in SCALES;
     /* "oh point oh oh four" opens on a zero that is not spelled "zero". */
     const leadingZeroish = ZEROISH.test(bare) && wordAt(i + 1) === "point";
+
+    /*
+     * A DIGIT MULTIPLIED BY A SCALE WORD — "1.5 thousand", "2 million",
+     * "5 grand", "3 hundred".
+     *
+     * The scan only ever started on a number WORD, so "1.5" was passed
+     * through untouched and the bare "thousand" behind it scored 1000 on its
+     * own: "at 1.5 thousand" became "at 1.5 1000", two numbers where the user
+     * said one. Reported live, 23 Sep 2026 — the order was refused for four
+     * numbers it could not place, and two of them were halves of the same
+     * price. "1.5k" already worked; only the spelled-out scale did not.
+     *
+     * The prefix is carried so "$1.5 thousand" keeps its dollar sign, which
+     * is the difference between a size and a price further down the pipeline.
+     */
+    const literal = /^\d[\d,]*(?:\.\d+)?$/.test(bare) ? Number(bare.replace(/,/g, "")) : null;
+    if (literal !== null && wordAt(i + 1) in SCALES) {
+      let value = literal;
+      let k = i + 1;
+      /* Consecutive scales compound: "2 hundred thousand" is 200,000. */
+      while (k < words.length && wordAt(k) in SCALES) {
+        value *= SCALES[wordAt(k)];
+        k += 1;
+      }
+      const prefix = words[i].match(/^[^\d]*/)?.[0] ?? "";
+      const tail = words[k - 1].match(/[^a-z0-9]+$/)?.[0] ?? "";
+      out.push(prefix + String(value) + tail);
+      i = k;
+      continue;
+    }
 
     if (!isNumberWord(bare) && !leadingArticle && !leadingZeroish) {
       out.push(words[i]);

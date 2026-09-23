@@ -306,3 +306,26 @@ test("a target at a bare price is read, not silently dropped", () => {
     { kind: "drawdownFromEntry", percent: 10 },
   ]);
 });
+
+test('"sell 70% of it at X" is an exit; "sell 70% of my SOL at X" is a resting sell', () => {
+  /*
+   * Reported live, 23 Sep 2026: "buy $100 of ZDC at 1500 and sell 70% of it
+   * at 1300" built the buy and dropped the exit, because the price had to
+   * follow the size immediately and "of it" sat between them.
+   *
+   * The pronoun restriction is load-bearing, not tidiness. "of it" refers
+   * back to the buy in the same sentence. "of my SOL" names a holding, which
+   * the entry branch builds as a sell with a trigger — and accepting both
+   * here armed BOTH, selling the same 50% twice.
+   */
+  const compound = parseWithGrammar("buy $100 of zdc at 1500 and sell 70% of it at 1300");
+  assert.deepEqual(compound?.entry?.trigger, { kind: "priceAbsolute", value: 1500 });
+  assert.deepEqual(compound?.exits.map((e) => [e.trigger, e.amount]), [
+    [{ kind: "priceAbsolute", value: 1300 }, { kind: "percentOfPosition", value: 70 }],
+  ]);
+
+  const resting = parseWithGrammar("sell half of my sol at 300");
+  assert.equal(resting?.entry?.side, "sell");
+  assert.deepEqual(resting?.entry?.trigger, { kind: "priceAbsolute", value: 300 });
+  assert.deepEqual(resting?.exits, [], "a resting sell must not also arm a duplicate exit");
+});

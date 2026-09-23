@@ -152,3 +152,27 @@ test('a bare "point" is the English word, not zero', () => {
   assert.equal(normaliseSpeech("what's the point"), "what's the point");
   assert.equal(normaliseSpeech("point"), "point");
 });
+
+test("a digit multiplied by a spoken scale word", () => {
+  /*
+   * Reported live, 23 Sep 2026. "at 1.5 thousand" became "at 1.5 1000" — two
+   * numbers where one was said — and the order was refused for four numbers
+   * it could not place, two of which were halves of the same price. The scan
+   * only ever began on a number WORD, so a digit was passed through and the
+   * bare scale behind it scored on its own. "1.5k" had always worked.
+   */
+  assert.equal(normaliseSpeech("1.5 thousand"), "1500");
+  assert.equal(normaliseSpeech("2 million"), "2000000");
+  assert.equal(normaliseSpeech("5 grand"), "5000");
+  assert.equal(normaliseSpeech("3 hundred"), "300");
+  // The prefix survives: a "$" is what separates a size from a price later on.
+  assert.equal(normaliseSpeech("$1.5 thousand"), "$1500");
+  // Consecutive scales compound.
+  assert.equal(normaliseSpeech("2 hundred thousand"), "200000");
+  // A scale closes a spoken decimal and multiplies it.
+  assert.equal(normaliseSpeech("one point five thousand"), "1500");
+  assert.equal(
+    normaliseSpeech("buy me $100 of zdc at 1.5 thousand and sell 70% of it at 1.3 thousand"),
+    "buy me $100 of zdc at 1500 and sell 70% of it at 1300",
+  );
+});

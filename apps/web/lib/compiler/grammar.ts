@@ -450,7 +450,21 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * was explicit, and the bare form falls through to the router's clarify.
    */
   for (const m of text.matchAll(
-    /\b(?:sell|take profit(?:\s+on)?)\s+(?:(a third|a half|half|third|quarter|a quarter|all|everything|the rest|rest|[\d.]+\s*%)\s+)?(?:at|@)\s*(\$)?\s*([\d.,]+)\b(?!\s*[x%.\d])/g,
+    /*
+     * A PRONOUN MAY SIT BETWEEN THE SIZE AND THE PRICE — "sell 70% OF IT at
+     * 1300". The price had to follow the size immediately, so the exit was
+     * dropped entirely from an order whose buy parsed perfectly. Reported
+     * live, 23 Sep 2026.
+     *
+     * ONLY A PRONOUN, and the restriction is the whole point. "of it" refers
+     * back to something bought in the same sentence, so it is an exit. "sell
+     * half OF MY SOL at 300" names a holding, and that is a resting sell —
+     * which the entry branch above already builds as an entry with a trigger.
+     * Accepting both spellings here armed BOTH: the same instruction became a
+     * resting sell AND a duplicate exit at the same price, selling 50% twice.
+     * Caught by the corpus, which went from 100% on exits to 97.9%.
+     */
+    /\b(?:sell|take profit(?:\s+on)?)\s+(?:(a third|a half|half|third|quarter|a quarter|all|everything|the rest|rest|[\d.]+\s*%)\s+)?(?:of\s+(?:it|them|that|these|those)\s+)?(?:at|@)\s*(\$)?\s*([\d.,]+)\b(?!\s*[x%.\d])/g,
   )) {
     /*
      * A BARE PRICE IS A PRICE, with or without a size in front of it.
