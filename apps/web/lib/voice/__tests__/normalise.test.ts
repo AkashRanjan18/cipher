@@ -122,3 +122,33 @@ test("thousands written with k become digits", () => {
   assert.equal(normaliseSpeech("buy 0.001 tokens of btc when it reaches 81.5k"), "buy 0.001 tokens of btc when it reaches 81500");
   assert.equal(normaliseSpeech("buy $1.5k of sol"), "buy $1500 of sol");
 });
+
+test("a memecoin price said out loud keeps its leading zeros", () => {
+  /*
+   * Found by the user, 23 Sep 2026. A run that BEGAN at "point" scored
+   * `seen === false`, so the whole run failed, "point" survived as a word and
+   * the digits behind it were rescanned on their own: "point zero zero four"
+   * came back "point 4". That is a stop at four dollars instead of four
+   * thousandths of one — three orders of magnitude, silently, on the price
+   * range cipher actually trades.
+   */
+  assert.equal(normaliseSpeech("sell at point zero zero four"), "sell at 0.004");
+  assert.equal(normaliseSpeech("sell at zero point zero zero four"), "sell at 0.004");
+  assert.equal(normaliseSpeech("stop at point five"), "stop at 0.5");
+  assert.equal(normaliseSpeech("stop at zero point zero one"), "stop at 0.01");
+});
+
+test('"oh" is a zero beside a decimal point and an interjection everywhere else', () => {
+  assert.equal(normaliseSpeech("sell at oh point oh oh four"), "sell at 0.004");
+  assert.equal(normaliseSpeech("sell at point oh oh four two"), "sell at 0.0042");
+  // The guard: a recogniser transcribes an interjection faithfully, and a 0
+  // in front of an order is worse than a stray word in it.
+  assert.equal(normaliseSpeech("oh buy some sol"), "oh buy some sol");
+  assert.equal(normaliseSpeech("oh, sell half"), "oh, sell half");
+});
+
+test('a bare "point" is the English word, not zero', () => {
+  // `seen` now counts the decimal branch, so this needs its own guard.
+  assert.equal(normaliseSpeech("what's the point"), "what's the point");
+  assert.equal(normaliseSpeech("point"), "point");
+});

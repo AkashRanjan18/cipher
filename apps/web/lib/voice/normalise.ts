@@ -46,6 +46,17 @@ const SCALES: Record<string, number> = {
 };
 
 /**
+ * How a zero is said inside a price. "oh" is the common one — "oh point oh oh
+ * four" — and "nought" is the same word in British English.
+ *
+ * ONLY NEXT TO "point", never alone. "oh" is also an interjection, and a
+ * recogniser transcribes "oh, buy some sol" faithfully; treating that leading
+ * "oh" as a digit would put a 0 in front of an order. Beside a decimal point
+ * it cannot be anything else, and that is the only place this is consulted.
+ */
+const ZEROISH = /^(?:oh|o|nought|naught)$/;
+
+/**
  * Homophones, fixed only where the wrong word is not itself a trading term.
  *
  * "by" → "buy" is safe because "by" never begins an order. "soul"/"sole" →
@@ -84,6 +95,15 @@ function wordsToNumber(words: string[]): number | null {
   for (const w of words) {
     if (w === "point") {
       decimals = "";
+      /*
+       * A RUN MAY BEGIN AT "point". "point oh oh four" is how a memecoin price
+       * is said out loud, and `seen` stayed false through the decimal branch —
+       * so the whole run returned null, the word "point" survived untouched,
+       * and the digits after it were re-scanned as a separate whole number.
+       * "point zero zero four" came out "point 4": a stop at four dollars
+       * instead of four thousandths of one.
+       */
+      seen = true;
       continue;
     }
     if (decimals !== null) {
@@ -111,8 +131,14 @@ function wordsToNumber(words: string[]): number | null {
   }
 
   if (!seen) return null;
+  /* "point" with no digits after it is the English word, not a number. The
+     line above now counts it as seen, so without this "what's the point"
+     scores zero and renders as "what's the 0". */
+  if (decimals !== null && decimals.length === 0) return null;
   const whole = total + current;
-  return decimals ? Number(`${whole}.${decimals}`) : whole;
+  /* `decimals !== null`, not `decimals` — "" is falsy and so is "0", and
+     "point zero" is a real way to end a price. */
+  return decimals !== null ? Number(`${whole}.${decimals}`) : whole;
 }
 
 /**
@@ -127,13 +153,17 @@ function digitiseNumbers(text: string): string {
   const words = text.split(/\s+/);
   const out: string[] = [];
 
+  /** The word at an index, stripped to letters — "four," and "four" are one. */
+  const wordAt = (k: number) => (words[k] ?? "").replace(/[^a-z]/g, "");
+
   for (let i = 0; i < words.length; ) {
     const bare = words[i].replace(/[^a-z0-9.]/g, "");
-    const leadingArticle = (bare === "a" || bare === "an") && isNumberWord(
-      (words[i + 1] ?? "").replace(/[^a-z]/g, ""),
-    ) && (words[i + 1] ?? "").replace(/[^a-z]/g, "") in SCALES;
+    const leadingArticle = (bare === "a" || bare === "an") &&
+      isNumberWord(wordAt(i + 1)) && wordAt(i + 1) in SCALES;
+    /* "oh point oh oh four" opens on a zero that is not spelled "zero". */
+    const leadingZeroish = ZEROISH.test(bare) && wordAt(i + 1) === "point";
 
-    if (!isNumberWord(bare) && !leadingArticle) {
+    if (!isNumberWord(bare) && !leadingArticle && !leadingZeroish) {
       out.push(words[i]);
       i += 1;
       continue;
@@ -142,10 +172,15 @@ function digitiseNumbers(text: string): string {
     // Take the longest run of number words starting here.
     let j = leadingArticle ? i + 1 : i;
     const run: string[] = [];
+    let sawPoint = false;
     while (j < words.length) {
-      const w = words[j].replace(/[^a-z]/g, "");
-      if (!isNumberWord(w)) break;
-      run.push(w);
+      const w = wordAt(j);
+      /* A zero synonym counts once the run has reached its decimal point, or
+         when it is the digit immediately before one. Nowhere else. */
+      const zeroish = ZEROISH.test(w) && (sawPoint || wordAt(j + 1) === "point");
+      if (!isNumberWord(w) && !zeroish) break;
+      if (w === "point") sawPoint = true;
+      run.push(zeroish ? "zero" : w);
       j += 1;
     }
 
