@@ -260,10 +260,15 @@ test("exits priced on the same side of the entry are a ladder and must add to 10
     "buy $500 of pump at 0.0040 and sell at 0.0042 and target 0.0048",
   )!;
   const problems = validateOrder(spec, { cashUsd: 10_000, position: 0, price: 0.004152 });
-  const ladder = problems.find((p) => p.message.includes("add up to"));
-  assert.ok(ladder, "two whole-position targets above the entry must be flagged");
-  assert.equal(ladder.severity, "warning");
+  const ladder = problems.find((p) => p.message.includes("can never fire"));
+  assert.ok(ladder, "two whole-position targets above the entry must be refused");
+  /* An ERROR, not a warning — the user's call, 23 Sep 2026. A warning arms it
+     and mentions it afterwards, and what gets armed is an order that cannot do
+     what it says. */
+  assert.equal(ladder.severity, "error");
   assert.match(ladder.message, /200%/);
+  /* The refusal has to say what to type instead, in the user's own numbers. */
+  assert.match(ladder.message, /70% at \$0\.0042 and 30% at \$0\.0048/);
 });
 
 test("a stop and a target are alternatives, not a ladder", () => {
@@ -273,8 +278,24 @@ test("a stop and a target are alternatives, not a ladder", () => {
   const spec = parseWithGrammar("buy $500 of sol at 100 and stop at 90 and target 150")!;
   const problems = validateOrder(spec, { cashUsd: 10_000, position: 0, price: 100 });
   assert.equal(
-    problems.find((p) => p.message.includes("add up to")),
+    problems.find((p) => p.message.includes("can never fire")),
     undefined,
     "a stop below and a target above must not be summed together",
   );
+});
+
+test("a refusal names a memecoin price instead of rounding it to $0", () => {
+  /*
+   * money() used maximumFractionDigits: 2, so every level on the market cipher
+   * actually trades came out "$0" — a refusal that named a price named the
+   * wrong one. Found while writing the two-targets refusal, 23 Sep 2026.
+   */
+  const spec = parseWithGrammar(
+    "buy $500 of pump at 0.0040 and sell at 0.0042 and target 0.0048",
+  )!;
+  const problems = validateOrder(spec, { cashUsd: 10_000, position: 0, price: 0.004152 });
+  const msg = problems.find((p) => p.severity === "error")!.message;
+  /* A bare "$0" — not the "$0." that begins a real sub-dollar price. */
+  assert.doesNotMatch(msg, /\$0(?![.\d])/, "a sub-dollar price must not round to $0");
+  assert.match(msg, /0\.0042/);
 });

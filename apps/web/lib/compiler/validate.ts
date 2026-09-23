@@ -50,7 +50,18 @@ export interface ValidationContext {
 const SLIPPAGE_WARN_BPS = 1_000;
 const SLIPPAGE_MAX_BPS = 5_000;
 
-const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+/**
+ * A price or a size, inside a message.
+ *
+ * `maximumFractionDigits: 2` rendered every memecoin level as "$0" — 0.0042 is
+ * two decimal places of nothing — so a refusal that named a price named the
+ * wrong one on the entire market cipher exists to trade. Significant figures
+ * below a dollar, ordinary cents above it.
+ */
+const money = (n: number) =>
+  n !== 0 && Math.abs(n) < 1
+    ? `$${Number(n.toPrecision(3))}`
+    : `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
 /** The size an amount resolves to, in USD, or null when it cannot be known yet. */
 function usdValue(a: Amount, ctx: ValidationContext): number | null {
@@ -236,13 +247,37 @@ function checkExitSet(exits: ExitRule[], reference: number | null): Problem[] {
       );
       if (rungs.length < 2) continue;
       const total = rungs.reduce((sum, e) => sum + share(e), 0);
-      if (total > 100) {
-        out.push({
-          severity: "warning",
-          at: "exits",
-          message: `Your ${side} add up to ${total}% of the position. The first one to trigger sells everything it needs, and the rest wait for tokens you will not be holding.`,
-        });
-      }
+      if (total <= 100) continue;
+
+      /*
+       * AN ERROR, NOT A WARNING. The user's call, 23 Sep 2026: "you cannot
+       * have two target prices, because you cannot sell 100% two times, so
+       * tell one target price."
+       *
+       * A warning would arm it and mention it afterwards, and what gets armed
+       * is an order that cannot do what it says — the first rung takes the
+       * whole position and every later one waits forever for tokens that will
+       * never arrive. The card then shows an exit that is already dead. That
+       * is not a consequence to note after the fact; it is an order to refuse.
+       */
+      const levels = rungs
+        .map((e) => (e.trigger.kind === "priceAbsolute" ? e.trigger.value : 0))
+        .sort((a, b) => a - b);
+      const [first, last] = above
+        ? [levels[0], levels[levels.length - 1]]
+        : [levels[levels.length - 1], levels[0]];
+      const word = above ? "targets" : "stops";
+
+      out.push({
+        severity: "error",
+        at: "exits",
+        /* The split is spelled out in the user's own numbers, because "that
+           adds to 200%" tells them it is broken and this tells them what to
+           type instead. */
+        message:
+          `Two ${word} each selling ${share(rungs[0])}% is ${total}% of the position — the first to trigger sells all of it and the second can never fire. ` +
+          `Give me one ${word.slice(0, -1)}, or split them: 70% at ${money(first)} and 30% at ${money(last)}.`,
+      });
     }
   }
 
