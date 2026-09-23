@@ -135,7 +135,18 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * that goes with aping, and without it the token was never captured.
    */
   const buy = text.match(
-    /\b(buy|sell|ape|grab|cop|get\s+me|dump)\s+(?:me\s+)?(\$\s*[\d.,]+\s*[km]?)\s+(?:of\s+|worth\s+of\s+|into\s+|in\s+)?([a-z0-9]{2,15})\b/,
+    /*
+     * THE TOKEN IS NEVER A CONNECTIVE. `in` is an optional preposition here,
+     * so "put ten bucks in and cut me if it drops ten percent" — a sentence
+     * that names no token at all — captured "and" as the coin and armed a
+     * $10 buy of it. Adding `put` as a verb is what exposed this; the same
+     * hole was always there behind "buy $10 in and …".
+     *
+     * Failing to match is the right outcome: with no entry, compile.ts sees
+     * a dollar figure the parse did not use and hands the whole sentence to
+     * the model rather than answering with half an order.
+     */
+    /\b(buy|sell|ape|grab|cop|get\s+me|dump|put)\s+(?:me\s+)?(\$\s*[\d.,]+\s*[km]?)\s+(?:of\s+|worth\s+of\s+|into\s+|in\s+)?(?!(?:and|then|once|when|if|at|with|for|to|the|an|my|it|is|in|into|of|worth)\b)([a-z0-9]{2,15})\b/,
   );
   if (buy) {
     const amount = parseAmount(buy[2]);
@@ -294,14 +305,28 @@ export function parseWithGrammar(input: string): OrderSpec | null {
   }
 
   if (!entry) {
+    /*
+     * THE SAME VERBS AS THE DOLLAR BRANCH. This read `\b(buy|sell)\b` while
+     * the branch above took buy|sell|ape|grab|cop|get me|dump, so a token
+     * count said with any of the other five lost its entry — and only its
+     * entry. "grab 5 tokens of btc and sell at 150000" kept the exit and
+     * dropped the buy, arming a sell against a position nobody had opened.
+     * compile.ts' half-read guard could not see it either: that looks for a
+     * "$" amount the parse did not use, and "5 tokens" has no "$" in it.
+     *
+     * One list, said twice, and the second copy went stale. Found by the
+     * corpus, 23 Sep 2026 — it was the whole of the remaining 7.3%.
+     */
     const sized = text.match(
-      /\b(buy|sell)\s+(?:me\s+)?([\d.,]+)\s*(?:tokens?\s+of\s+|coins?\s+of\s+|of\s+)?(?!dollars?\b|usd\b|bucks?\b|worth\b|tokens?\b|coins?\b)([a-z][a-z0-9]{1,14})\b/,
+      /\b(buy|sell|ape|grab|cop|get\s+me|dump|put)\s+(?:me\s+)?([\d.,]+)\s*(?:tokens?\s+(?:worth\s+of\s+|of\s+|into\s+)?|coins?\s+of\s+|of\s+|into\s+)?(?!dollars?\b|usd\b|bucks?\b|worth\b|tokens?\b|coins?\b)([a-z][a-z0-9]{1,14})\b/,
     );
     if (sized && !/^[\d.,]+\s*[%x]/.test(sized[0].replace(/^\w+\s+(?:me\s+)?/, ""))) {
       const value = Number(sized[2].replace(/,/g, ""));
       if (value > 0) {
         entry = {
-          side: sized[1] as "buy" | "sell",
+          /* Every verb here opens a position except the two that close one —
+             the same test the dollar branch makes. */
+          side: /^(sell|dump)$/.test(sized[1]) ? "sell" : "buy",
           token: sized[3],
           mint: null,
           amount: { kind: "tokens", value },
@@ -309,7 +334,7 @@ export function parseWithGrammar(input: string): OrderSpec | null {
           privateSubmission: DEFAULTS.privateSubmission,
           priority: DEFAULTS.priority,
           tipSol: DEFAULTS.tipSol,
-      trigger: null,
+          trigger: null,
         };
       }
     }
@@ -617,7 +642,17 @@ export function parseWithGrammar(input: string): OrderSpec | null {
  * first clause break. Every single-clause order is its own entry clause.
  */
 function entryClause(text: string): string {
-  const verb = text.search(/\b(?:buy|sell|ape|grab|cop|get\s+me|dump|close|exit)\b/);
+  /*
+   * THE VERB LIST LIVES IN THREE PLACES and has now drifted twice in one day:
+   * here, the dollar entry, and the token entry. Keep them in step — a verb
+   * missing from THIS one is the worst of the three, because `search` then
+   * finds the first verb it does know, which is the EXIT's. "put $500 into
+   * sol and sell at 300" skipped to "sell at 300", read it as the entry
+   * clause, and armed a resting buy at the take-profit price — the order
+   * rested at 300 instead of filling now, and the same 300 was also its
+   * target. Found by the corpus, 23 Sep 2026.
+   */
+  const verb = text.search(/\b(?:buy|sell|ape|grab|cop|get\s+me|dump|put|close|exit)\b/);
   const from = verb < 0 ? text : text.slice(verb);
   return from.split(/,|;|\band\b|\bthen\b|\bonce\b/)[0];
 }

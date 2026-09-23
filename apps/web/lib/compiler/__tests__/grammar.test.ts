@@ -343,3 +343,56 @@ test('"the rest" counts what a resting sell already claimed', () => {
     { kind: "percentOfPosition", value: 30 },
   ]);
 });
+
+test("a token count is read after every opening verb, not just buy and sell", () => {
+  /*
+   * The dollar branch took buy|sell|ape|grab|cop|get me|dump; this one took
+   * buy|sell. So "grab 5 tokens of btc and sell at 150000" kept the exit and
+   * dropped the buy — arming a sell against a position nobody had opened —
+   * and compile.ts' half-read guard could not see it, because that looks for
+   * a "$" amount the parse did not use and "5 tokens" has none.
+   *
+   * One list, written three times, and two copies went stale. Found by the
+   * corpus, 23 Sep 2026: it was the whole of the remaining 7.3%.
+   */
+  for (const verb of ["buy", "grab", "get me", "ape", "put"]) {
+    const spec = parseWithGrammar(`${verb} 5 tokens of btc and sell at 150000`);
+    assert.deepEqual(
+      spec?.entry?.amount,
+      { kind: "tokens", value: 5 },
+      `"${verb}" must open a token-denominated position`,
+    );
+    assert.equal(spec?.entry?.side, "buy");
+    assert.equal(spec?.exits.length, 1);
+  }
+  assert.equal(parseWithGrammar("dump 5 tokens of btc")?.entry?.side, "sell");
+});
+
+test('"put" reads the entry clause, not the exit clause behind it', () => {
+  /*
+   * entryClause() holds a THIRD copy of the verb list, and a verb missing
+   * from it is the worst of the three: `search` finds the first verb it does
+   * know, which is the exit's. "put $500 into sol and sell at 300" skipped to
+   * "sell at 300", read that as the entry clause, and armed a resting buy at
+   * the take-profit price — so the order rested at 300 instead of filling
+   * now, and 300 was also its target.
+   */
+  const spec = parseWithGrammar("put $500 into sol and sell at 300")!;
+  assert.equal(spec.entry?.trigger, null, "a market buy must not inherit the target's price");
+  assert.deepEqual(spec.exits.map((e) => e.trigger), [{ kind: "priceAbsolute", value: 300 }]);
+  // And a real resting entry still rests.
+  assert.deepEqual(parseWithGrammar("put $500 into sol when it drops to 190")?.entry?.trigger, {
+    kind: "priceAbsolute",
+    value: 190,
+  });
+});
+
+test("a connective is never mistaken for a token", () => {
+  /* "put ten bucks in and cut me if it drops ten percent" names no token, and
+     `in` is an optional preposition — so the capture took "and", then "in",
+     and armed a $10 buy of a coin by that name. No entry is the right answer:
+     compile.ts then sees an unused dollar figure and hands the whole sentence
+     to the model instead of answering with half an order. */
+  assert.equal(parseWithGrammar("buy $10 in and cut me if it drops 10%")?.entry, null);
+  assert.equal(parseWithGrammar("put $10 in and stop at 5%")?.entry, null);
+});
