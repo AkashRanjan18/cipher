@@ -280,3 +280,29 @@ test("a stop after a sell rung is still a stop, not a rung", () => {
   const spec = parseWithGrammar("buy $100 of sol, sell 30% at $120 and stop at $80")!;
   assert.equal(spec.exits.length, 2);
 });
+
+test("a target at a bare price is read, not silently dropped", () => {
+  /*
+   * Found by the corpus, 23 Sep 2026: 486 of 5,085 rows. "sell at 300" needed
+   * a "$" that "stop at 180" and "target 300" — the two rules directly below
+   * it in grammar.ts — have never needed. So the buy armed, the target did
+   * not, and nothing on screen said half the sentence had been discarded.
+   */
+  const target = (text: string) =>
+    parseWithGrammar(text)?.exits.map((e) => e.trigger);
+
+  assert.deepEqual(target("buy $500 of sol and sell at 300"), [
+    { kind: "priceAbsolute", value: 300 },
+  ]);
+  assert.deepEqual(target("buy $500 of sol and take profit at 300"), [
+    { kind: "priceAbsolute", value: 300 },
+  ]);
+  // The multiple form still wins where it applies — "2x" is not the price 2.
+  assert.deepEqual(target("buy $500 of sol and take profit at 2x"), [
+    { kind: "priceMultiple", value: 2 },
+  ]);
+  // And a percentage after "at" is still not a price.
+  assert.deepEqual(target("buy $500 of sol and stop at -10%"), [
+    { kind: "drawdownFromEntry", percent: 10 },
+  ]);
+});

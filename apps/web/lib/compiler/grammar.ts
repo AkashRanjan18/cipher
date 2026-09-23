@@ -452,12 +452,24 @@ export function parseWithGrammar(input: string): OrderSpec | null {
   for (const m of text.matchAll(
     /\b(?:sell|take profit(?:\s+on)?)\s+(?:(a third|a half|half|third|quarter|a quarter|all|everything|the rest|rest|[\d.]+\s*%)\s+)?(?:at|@)\s*(\$)?\s*([\d.,]+)\b(?!\s*[x%.\d])/g,
   )) {
-    /* A BARE PRICE IS READ WHEN A SIZE CAME FIRST. "sell 30% at 100" can
-       only mean a price — x and % are excluded above, and a price wildly
-       off the market is caught by validate.ts. Found live, 19 Sep 2026:
-       requiring "$" dropped a typed "at 100" without a word. With no size
-       ("sell at 100") the $ is still required. */
-    if (!m[2] && !m[1]) continue;
+    /*
+     * A BARE PRICE IS A PRICE, with or without a size in front of it.
+     *
+     * "sell 30% at 100" has always been read. "sell at 100" was not — the $
+     * was required when no size came first — and the target was then dropped
+     * in SILENCE: "buy $500 of sol and sell at 300" armed the buy, armed no
+     * exit, and said nothing about the half of the sentence it discarded.
+     * 486 of 5,085 corpus rows, and every one of them a stated take-profit
+     * that never existed.
+     *
+     * The ambiguity that justified the $ is not there. `x` and `%` are both
+     * excluded by the lookahead on this same pattern, so a bare number after
+     * "at" has only one reading left, and the two rules below already read it
+     * that way for "stop at 180" and "target 300". A target was the only
+     * exit in the file that demanded a currency marker its siblings did not.
+     *
+     * A price far from the market is validate.ts' job, and it does it.
+     */
     const at = Number(m[3].replace(/,/g, ""));
     if (!(at > 0)) continue;
     const amount = m[1] ? parseAmount(m[1]) : { kind: "percentOfPosition" as const, value: 100 };
