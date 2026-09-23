@@ -20,10 +20,32 @@ import type { Registry, RegistryToken } from "./registry.ts";
  */
 let cached: Promise<Registry> | null = null;
 
+const empty: Registry = { generatedAt: "", tokens: [] };
+
+async function fetchJson(url: string): Promise<Registry | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const body = (await r.json()) as Registry;
+    return Array.isArray(body?.tokens) && body.tokens.length > 0 ? body : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The live registry first, the shipped seed second.
+ *
+ * /api/tokens rebuilds from Jupiter on an hourly cache window, so its prices
+ * are current — which is what `readScale` needs to tell a price from a market
+ * cap. public/tokens.json is whatever the market looked like when someone
+ * last ran the script; its NAMES are just as good, and names are what the
+ * spelling correction runs on. So a dead route degrades the scale reading and
+ * leaves the correction intact, which is the right thing to lose first.
+ */
 function load(): Promise<Registry> {
-  cached ??= fetch("/tokens.json")
-    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .catch(() => ({ generatedAt: "", tokens: [] }) satisfies Registry);
+  cached ??= (async () =>
+    (await fetchJson("/api/tokens")) ?? (await fetchJson("/tokens.json")) ?? empty)();
   return cached;
 }
 
