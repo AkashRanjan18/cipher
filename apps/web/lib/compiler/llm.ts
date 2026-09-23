@@ -31,6 +31,15 @@ export interface Provider {
   url: string;
   key: string;
   model: string;
+  /**
+   * Body fields only this provider understands.
+   *
+   * Sent to one provider and not the others because an OpenAI-compatible API
+   * is a family resemblance, not a contract — several 400 on a parameter they
+   * do not know rather than ignoring it, and a fallback that dies on the way
+   * in is worse than no fallback.
+   */
+  extra?: Record<string, unknown>;
 }
 
 export function providers(env: Record<string, string | undefined> = process.env): Provider[] {
@@ -41,6 +50,21 @@ export function providers(env: Record<string, string | undefined> = process.env)
       url: "https://api.groq.com/openai/v1/chat/completions",
       key: env.GROQ_API_KEY,
       model: env.GROQ_MODEL || "openai/gpt-oss-120b",
+      /*
+       * gpt-oss THINKS BEFORE IT ANSWERS, and filling a form does not need it.
+       *
+       * Measured against the real prompt, 23 Sep 2026: reasoning fell from
+       * 309-375 tokens to ~105, and the whole completion from 421 to ~185.
+       * That is most of a second off every order AND a third of the token
+       * cost — which matters more than it sounds, because Groq's free tier
+       * meters TOKENS a minute rather than requests, and this prompt is
+       * already 2,253 of them before the model says anything.
+       *
+       * The task is transcription into a closed schema. There is nothing here
+       * worth deliberating over; the deliberation was all in writing the
+       * schema.
+       */
+      extra: { reasoning_effort: "low" },
     });
   }
   if (env.OPENROUTER_API_KEY) {
@@ -214,8 +238,22 @@ export async function askModels(
           /* Zero: this is transcription into a schema, and the same sentence
              should compile the same way every time. */
           temperature: 0,
-          max_tokens: 800,
+          /*
+           * HEADROOM, NOT A BUDGET. An unused token costs nothing — providers
+           * meter what was generated — so the only thing this number does is
+           * decide when a reply gets cut off mid-object.
+           *
+           * It was 800 against a measured 421, which reads like double the room
+           * and is not: the completion is mostly REASONING, which is the most
+           * variable part of the whole call. A harder sentence pushed past the
+           * cap, the JSON arrived truncated, and Groq rejected it as
+           * `json_validate_failed` with an empty `failed_generation` — an
+           * error that looks like a broken prompt and is really a short
+           * buffer. Every model call in the corpus run failed this way.
+           */
+          max_tokens: 2_000,
           response_format: { type: "json_object" },
+          ...p.extra,
           messages: [
             {
               role: "system",
