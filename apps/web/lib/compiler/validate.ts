@@ -38,6 +38,20 @@ export interface ValidationContext {
   position: number;
   /** Live price. Null when unknown — checks that need it are skipped, not guessed. */
   price: number | null;
+  /**
+   * Is a buy already resting in this market, unfilled?
+   *
+   * Exits said in the SAME sentence as a buy have always been allowed against
+   * a position that does not exist yet — they bind to the entry's fill. Exits
+   * said a moment LATER were not, and that is the same order either way.
+   *
+   * Reported live, 23 Sep 2026: a resting buy was placed, and the very next
+   * sentence — "sell 70% of my PUMP at 0.0042 and the remaining 30% at
+   * 0.0048" — came back "You have nothing to sell in this market." Literally
+   * true and useless: the tokens were on their way, the exits would bind to
+   * the same fill, and the user was amending the order they had just placed.
+   */
+  restingBuy?: boolean;
 }
 
 /*
@@ -474,7 +488,7 @@ export function validateOrder(spec: OrderSpec, ctx: ValidationContext): Problem[
    * does not exist YET — it binds to the entry's fill — but with no entry and
    * no holding there is nothing for it to ever fire against.
    */
-  if (!entry && exits.length > 0 && ctx.position <= 0) {
+  if (!entry && exits.length > 0 && ctx.position <= 0 && !ctx.restingBuy) {
     out.push({
       severity: "error",
       at: "exits",

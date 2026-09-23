@@ -608,6 +608,21 @@ export function Sana({
       cashUsd: account.usdc,
       position: held.qty,
       price: price ?? null,
+      /*
+       * A BUY ALREADY RESTING IN THIS MARKET counts as a position for exits.
+       *
+       * Exits said in the same sentence as a buy have always been allowed
+       * against a holding that does not exist yet — they bind to the fill.
+       * Exits said a moment later were refused, and it is the same order
+       * either way. Reported live, 23 Sep 2026: a resting buy went in, and
+       * the next sentence amending its ladder came back "You have nothing to
+       * sell in this market."
+       *
+       * Matched on the MINT, not the label: the rule was armed with whatever
+       * `symbol` is here, and comparing against the chip would let a buy
+       * resting on another market answer for this one.
+       */
+      restingBuy: armed.some((r) => r.market === symbol && r.side === "buy"),
     });
 
     if (blocks(problems)) {

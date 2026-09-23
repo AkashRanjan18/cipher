@@ -299,3 +299,25 @@ test("a refusal names a memecoin price instead of rounding it to $0", () => {
   assert.doesNotMatch(msg, /\$0(?![.\d])/, "a sub-dollar price must not round to $0");
   assert.match(msg, /0\.0042/);
 });
+
+test("exits are allowed against a buy that is resting but not yet filled", () => {
+  /*
+   * Reported live, 23 Sep 2026. A resting buy went in, and the very next
+   * sentence — amending its ladder — came back "You have nothing to sell in
+   * this market." Literally true and useless: the tokens were on their way,
+   * the exits bind to the same fill, and exits said in the SAME sentence as
+   * the buy were already allowed. It is the same order either way.
+   */
+  const exits = [
+    { id: "a", trigger: { kind: "priceAbsolute" as const, value: 0.0042 }, amount: { kind: "percentOfPosition" as const, value: 70 } },
+    { id: "b", trigger: { kind: "priceAbsolute" as const, value: 0.0048 }, amount: { kind: "percentOfPosition" as const, value: 30 } },
+  ];
+  const flatCtx = { cashUsd: 10_000, position: 0, price: 0.004 };
+
+  assert.ok(blocks(validateOrder(spec({ exits }), flatCtx)), "still refused with nothing pending");
+  assert.deepEqual(
+    validateOrder(spec({ exits }), { ...flatCtx, restingBuy: true }),
+    [],
+    "a resting buy is a position these exits can bind to",
+  );
+});
