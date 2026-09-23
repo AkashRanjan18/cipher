@@ -294,3 +294,34 @@ test("two words never liquidate a position", () => {
   // "sell solana" was briefly a 100% market sell — no number, no question.
   assert.equal(kind("sell solana"), "clarify");
 });
+
+test("a token whose name is a condition word is still tradeable", () => {
+  /*
+   * Reported live, 23 Sep 2026. `pumps?` in the CONDITION pattern matched the
+   * TICKER, so "buy $500 of PUMP" read as a sentence stating a condition with
+   * no price: "What price should the buy trigger at?". Every order on a $3.7B
+   * token was unplaceable.
+   *
+   * And it was two bugs, not one. The question offers "Actually, fill it now",
+   * whose sentence still contains the word PUMP — so answering it asked the
+   * same question again and the button looked broken.
+   *
+   * DIP, DROP, HIT, BREAK, RISE and LIMIT are all names somebody has minted.
+   */
+  const ctx = { symbol: "PUMP", label: "PUMP", interval: "1h" as const, hasPosition: false };
+  assert.equal(compile("buy $500 of pump", ctx).intent.kind, "order");
+  assert.equal(compile("buy $500 of pump at market price", ctx).intent.kind, "order");
+  // The sentence the "Actually, fill it now" button sends.
+  assert.equal(compile("buy $500 of pump at the current price", ctx).intent.kind, "order");
+});
+
+test("masking the ticker does not deafen the real condition words", () => {
+  const ctx = { symbol: "PUMP", label: "PUMP", interval: "1h" as const, hasPosition: false };
+  // "when" still says wait, even though "pumps" was masked out of the sentence.
+  assert.equal(compile("buy $500 of pump when it pumps", ctx).intent.kind, "clarify");
+  const resting = compile("buy $500 of pump when it drops to 0.0040", ctx).intent;
+  assert.equal(resting.kind, "order");
+  if (resting.kind === "order") {
+    assert.deepEqual(resting.spec.entry?.trigger, { kind: "priceAbsolute", value: 0.004 });
+  }
+});

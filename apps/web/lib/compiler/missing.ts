@@ -55,6 +55,29 @@ const SELL = /\b(sell|selling|sold|dump|dumping|close|exit|offload|unload)\b/;
 const CONDITION =
   /\b(when|once|if|after|as\s+soon\s+as|dips?|drops?|falls?|hits?|reaches|rises?|pumps?|breaks?|limit|resting)\b/;
 
+/**
+ * The sentence with the coin's own name blanked out.
+ *
+ * A TOKEN NAME IS NOT A CONDITION, and several of them read as one. PUMP is
+ * the live case — reported 23 Sep 2026 — where `pumps?` in the pattern above
+ * matched the ticker, so "buy $500 of PUMP" was read as a sentence stating a
+ * condition with no price and came back "What price should the buy trigger
+ * at?". Every order on a $3.7B token was unplaceable.
+ *
+ * It was not one bug but two: the question offers "Actually, fill it now",
+ * whose sentence still contains the word PUMP, so answering it asked the same
+ * question again and the button appeared to do nothing.
+ *
+ * DIP, DROP, HIT, BREAK, RISE, LIMIT and ONCE are all names somebody has
+ * already minted. The condition has to be read from what the sentence says
+ * ABOUT the coin, never from the coin.
+ */
+function withoutTokenName(text: string, token: string | null | undefined): string {
+  if (!token) return text;
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`\\b${escaped}s?\\b`, "gi"), " ");
+}
+
 /*
  * `rest` is deliberately NOT in there, though "a resting order" is exactly the
  * thing this detects. "Sell the rest of my SOL" is a complete market order —
@@ -156,7 +179,8 @@ export function askForMissingTrigger(text: string, spec: OrderSpec): Compiled | 
   const e = spec.entry;
   if (!e || e.trigger !== null) return null;
   if (spec.exits.length > 0) return null;
-  if (!CONDITION.test(text)) return null;
+  /* Read the condition from the sentence, not from the coin's name. */
+  if (!CONDITION.test(withoutTokenName(text, e.token))) return null;
 
   const size = amountWords(e.amount);
   const of = e.amount.kind === "percentOfPosition" ? `my ${e.token}` : `of ${e.token}`;
@@ -260,7 +284,10 @@ export function askForMissing(text: string): Compiled | null {
      * price it still does not have.
      */
     const when = text.match(/\b(?:at|@)\s*\$?\s*([\d.,]+)\b(?!\s*[x%])/);
-    const cond = text.match(CONDITION);
+    /* Matched against the masked copy so a ticker cannot be read as the
+       condition, but sliced from the ORIGINAL so the tail carried into the
+       next question keeps the words the user actually said. */
+    const cond = withoutTokenName(text, token).match(CONDITION);
     const tail = when
       ? ` at $${when[1]}`
       : cond?.index != null
@@ -285,7 +312,7 @@ export function askForMissing(text: string): Compiled | null {
    * A SIZE AND A CONDITION AND NO PRICE. The sentence says it should not
    * happen yet, and does not say what it waits for.
    */
-  if (CONDITION.test(text)) {
+  if (CONDITION.test(withoutTokenName(text, token))) {
     const amount = withoutPrice.match(HAS_SIZE)?.[0]?.trim() ?? "";
     return ask(
       `What price should the ${side} trigger at?`,
