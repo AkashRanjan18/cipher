@@ -272,3 +272,30 @@ test("a sentence that mixes scales is left alone rather than half-converted", ()
   assert.deepEqual(out.intent.spec.entry?.trigger, { kind: "priceAbsolute", value: 0.99 });
   assert.equal(out.intent.spec.warnings.length, 0, "a mixed-scale sentence converts nothing");
 });
+
+test("a size with no verb is a buy only when a sell is impossible", () => {
+  /*
+   * "$100 of cash stop at 10% target at 30%" — reported live, 24 Sep 2026.
+   * The exits read and the $100 did not, because nothing says "buy".
+   *
+   * Inferring a side is guessing, and guessing direction is the one mistake
+   * cipher cannot make: buying when somebody meant to sell is the opposite
+   * trade, not a near miss. So it fires only with an EMPTY position, where a
+   * sell is impossible — every sell needs the tokens — and there is no second
+   * reading to choose between.
+   */
+  const base = { symbol: "CASH", label: "CASH", interval: "1h" as const, price: 1 };
+
+  const flat = compile("$100 of cash stop at 10% target at 30%", { ...base, hasPosition: false });
+  assert.equal(flat.intent.kind, "order");
+  if (flat.intent.kind === "order") {
+    assert.equal(flat.intent.spec.entry?.side, "buy");
+    assert.deepEqual(flat.intent.spec.entry?.amount, { kind: "usd", value: 100 });
+    assert.equal(flat.intent.spec.exits.length, 2);
+  }
+
+  /* Holding it makes the sentence genuinely ambiguous, and an ambiguous side
+     is never resolved by a coin flip. */
+  const holding = compile("$100 of cash stop at 10% target at 30%", { ...base, hasPosition: true });
+  assert.notEqual(holding.intent.kind, "order");
+});

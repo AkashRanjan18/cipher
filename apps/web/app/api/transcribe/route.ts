@@ -123,6 +123,17 @@ export async function POST(request: Request) {
   });
   for (const t of terms) params.append("keyterm", t);
 
+  /*
+   * TIMED, so the round trip can be taken apart.
+   *
+   * The bar reports one number and it hides two very different costs: the
+   * network trip from a browser in India to a function in Virginia and back,
+   * and Deepgram's own processing. Optimising the wrong one wastes a day —
+   * a faster vendor does nothing about 300ms of ocean, and a nearer region
+   * does nothing about a slow model. This is the split.
+   */
+  const began = Date.now();
+
   try {
     const res = await fetch(`${DEEPGRAM}?${params}`, {
       method: "POST",
@@ -134,9 +145,11 @@ export async function POST(request: Request) {
         "Content-Type": request.headers.get("content-type") || "audio/webm",
       },
       body: audio,
-      /* A spoken order that takes longer than this to transcribe is better
-         served by the browser's own text than by waiting. */
-      signal: AbortSignal.timeout(8000),
+      /* Nothing falls back any more — the browser's recogniser is gone — so a
+         timeout costs the whole sentence rather than some accuracy. Worth
+         waiting through a slow answer instead of discarding words somebody
+         already said. */
+      signal: AbortSignal.timeout(12_000),
     });
 
     if (!res.ok) {
@@ -151,9 +164,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       transcript: (alt?.transcript ?? "").trim(),
-      /* Returned so the client can prefer the browser's text when Deepgram
-         itself was unsure — not used yet, but free to carry. */
+      /* Kept for a confidence threshold that does not exist yet, and free to
+         carry. There is nothing to fall back TO any more, so it would gate a
+         refusal rather than a second opinion. */
       confidence: alt?.confidence ?? null,
+      /** Deepgram's share of the wait, in ms. The rest is the network. */
+      vendorMs: Date.now() - began,
     });
   } catch (e) {
     console.error("[cipher] deepgram unreachable:", e);

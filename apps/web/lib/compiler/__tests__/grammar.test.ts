@@ -433,3 +433,35 @@ test("a written resting entry still rests", () => {
   assert.deepEqual(spec.entry?.trigger, { kind: "priceAbsolute", value: 95 });
   assert.deepEqual(spec.exits.map((e) => e.trigger), [{ kind: "priceAbsolute", value: 90 }]);
 });
+
+test("a target percentage is the mirror of a stop percentage", () => {
+  /*
+   * Reported live, 24 Sep 2026: "$100 of cash stop at 10% target at 30%"
+   * placed the stop, could not place the 30%, and refused the whole order
+   * over the half it understood. A stop percentage is how far DOWN from the
+   * entry you will go and a target percentage is how far UP; reading one and
+   * not the other is arbitrary.
+   *
+   * It is a MULTIPLE, not a seventh member of the Trigger union: +30% from
+   * the fill is 1.3x from the fill, exactly, and priceMultiple already binds
+   * to the entry price the way drawdownFromEntry does.
+   */
+  const spec = parseWithGrammar("buy $500 of sol, stop at 20% and target at 50%")!;
+  assert.deepEqual(spec.exits.map((e) => e.trigger), [
+    { kind: "drawdownFromEntry", percent: 20 },
+    { kind: "priceMultiple", value: 1.5 },
+  ]);
+  assert.deepEqual(parseWithGrammar("buy $100 of sol and take profit at 25%")?.exits[0]?.trigger, {
+    kind: "priceMultiple",
+    value: 1.25,
+  });
+  // A price target and a multiple target are untouched by the new rule.
+  assert.deepEqual(parseWithGrammar("buy $500 of sol and target 130")?.exits[0]?.trigger, {
+    kind: "priceAbsolute",
+    value: 130,
+  });
+  assert.deepEqual(parseWithGrammar("buy $500 of sol and take profit at 2x")?.exits[0]?.trigger, {
+    kind: "priceMultiple",
+    value: 2,
+  });
+});

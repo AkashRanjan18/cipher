@@ -1418,6 +1418,8 @@ export function Sana({
       {speech.lastMs !== null && !speech.error && !speech.listening && (
         <p className="mt-1.5 px-2.5 font-sans text-[11px] text-mute">
           Deepgram nova-3 · {(speech.lastMs / 1000).toFixed(1)}s
+          {speech.lastVendorMs !== null &&
+            ` (${speech.lastVendorMs}ms vendor, ${Math.max(0, speech.lastMs - speech.lastVendorMs)}ms network)`}
         </p>
       )}
 

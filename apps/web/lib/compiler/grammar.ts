@@ -587,6 +587,44 @@ export function parseWithGrammar(input: string): OrderSpec | null {
   }
 
   /*
+   * A TARGET AS A PERCENTAGE — "target at 30%", "take profit at 25%".
+   *
+   * The mirror of the stop above, and it did not exist. Reported live, 24 Sep
+   * 2026: "$100 of cash stop at 10% target at 30%" placed the stop, could not
+   * place the 30%, and refused the whole order over the half it understood.
+   *
+   * A stop percentage is how far DOWN from the entry you will go; a target
+   * percentage is how far UP. People say both and mean the obvious thing —
+   * 10% of risk against 30% of profit — and reading one and not the other is
+   * arbitrary.
+   *
+   * IT IS A MULTIPLE, not a new kind of trigger. +30% from the fill is 1.3x
+   * from the fill, exactly, and `priceMultiple` already binds to the entry
+   * price the same way `drawdownFromEntry` does. A seventh member of the
+   * Trigger union would have to be taught to the engine, the readback, the
+   * validator and the positions card, to express something six already can.
+   */
+  const gain = text.match(
+    /\b(?:target|take\s+profit|tp|profit)(?:\s+price)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b|if\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@|of|to|if\s+it\s+(?:rises?|pumps?|gains?|runs?)(?:\s+by)?)\s*\+?\s*([\d.]+)\s*%/,
+  );
+  if (gain) {
+    const percent = Number(gain[2]);
+    if (percent > 0) {
+      const amount = gain[1] ? parseAmount(gain[1]) : { kind: "percentOfPosition" as const, value: 100 };
+      if (amount) {
+        exits.push({
+          id: nextId(),
+          /* Rounded to six places: 1 + 33/100 is 1.33, but floating point
+             writes some of these as 1.3299999999999998 and that lands in a
+             readback. */
+          trigger: { kind: "priceMultiple", value: Math.round((1 + percent / 100) * 1e6) / 1e6 },
+          amount,
+        });
+      }
+    }
+  }
+
+  /*
    * STOP AND TARGET AT A PRICE — "stop loss to 80", "stop at $80", "target
    * price 100", "target $100".
    *

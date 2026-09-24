@@ -340,6 +340,37 @@ function outOfScope(text: string): Compiled | null {
   return later ? refuse("notBuilt", later[1]) : null;
 }
 
+/* ────────────────────────────── the missing verb ───────────────────────── */
+
+/** Anything that already says which way the order goes. */
+const HAS_SIDE = /\b(buy|sell|ape|grab|cop|get\s+me|dump|put|close|exit|short|long)\b/;
+/** A dollar size naming a token — "$100 of cash", "$1.5k of bonk". */
+const SIZE_OF_TOKEN = /\$\s*[\d.,]+\s*[km]?\s+(?:of\s+|worth\s+of\s+)?[a-z][a-z0-9]{1,14}\b/;
+
+/**
+ * A sentence with a size and no verb, when only one direction is possible.
+ *
+ * Reported live, 24 Sep 2026: "$100 of cash stop at 10% target at 30%". The
+ * exits read fine and the $100 did not, because nothing in it says "buy" —
+ * so an order that a person would read without hesitating was refused.
+ *
+ * INFERRING A SIDE IS GUESSING, and guessing direction is the one mistake
+ * cipher cannot make: buying when somebody meant to sell is not a near miss,
+ * it is the opposite trade. So this fires in exactly one situation — when the
+ * user holds NONE of the token. A sell needs the tokens (the user's rule, 19
+ * Sep 2026), so with an empty position there is no second reading to choose
+ * between. It is not a guess; it is the only thing the sentence can mean.
+ *
+ * Holding the token makes it genuinely ambiguous, and the sentence falls
+ * through to be refused or asked about rather than resolved by a coin flip.
+ */
+function impliedBuy(text: string, ctx: CompileContext): string {
+  if (HAS_SIDE.test(text)) return text;
+  if (ctx.hasPosition) return text;
+  if (!SIZE_OF_TOKEN.test(text)) return text;
+  return `buy ${text}`;
+}
+
 /* ─────────────────────────── prices said as caps ───────────────────────── */
 
 /**
@@ -449,7 +480,7 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
    * other matcher is looser. "sell half at 2x" mentions a size and a market
    * and would be caught by three of the matchers below.
    */
-  const spec = onCapScale(parseWithGrammar(text), text, ctx);
+  const spec = onCapScale(parseWithGrammar(impliedBuy(text, ctx)), text, ctx);
 
   /*
    * A BUY WITH NO SIZE, INSIDE A LONGER ORDER — "buy sol and stop at -10% and

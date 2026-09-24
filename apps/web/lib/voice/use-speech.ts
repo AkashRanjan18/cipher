@@ -78,6 +78,15 @@ export interface Speech {
   error: string | null;
   /** How long the last transcription took, end of speech to text. */
   lastMs: number | null;
+  /**
+   * Deepgram's share of that, in ms. The remainder is the network.
+   *
+   * Two costs hide inside one number — the trip from a browser to the
+   * function and back, and the vendor's own processing — and they are fixed
+   * by completely different things. A faster model does nothing about the
+   * ocean; a nearer region does nothing about a slow model.
+   */
+  lastVendorMs: number | null;
   start(): void;
   stop(): void;
 }
@@ -96,7 +105,7 @@ const MIC_ERRORS: Record<string, string> = {
  * is a failure and the user has to be told — the old version swallowed every
  * one of these and handed back Chrome's guess.
  */
-async function transcribe(blob: Blob, keyterms: string[]): Promise<string> {
+async function transcribe(blob: Blob, keyterms: string[]): Promise<{ text: string; vendorMs: number | null }> {
   if (blob.size === 0) throw new Error("Nothing was recorded. Check the microphone and try again.");
 
   const q = keyterms.length ? `?keyterms=${encodeURIComponent(keyterms.join(","))}` : "";
@@ -116,10 +125,10 @@ async function transcribe(blob: Blob, keyterms: string[]): Promise<string> {
   if (res.status === 429) throw new Error("Too many voice requests. Wait a moment.");
   if (!res.ok) throw new Error("The transcriber failed. Type it instead.");
 
-  const body = (await res.json().catch(() => ({}))) as { transcript?: unknown };
+  const body = (await res.json().catch(() => ({}))) as { transcript?: unknown; vendorMs?: unknown };
   const text = typeof body.transcript === "string" ? body.transcript.trim() : "";
   if (!text) throw new Error("I didn't catch that. Say it again.");
-  return text;
+  return { text, vendorMs: typeof body.vendorMs === "number" ? body.vendorMs : null };
 }
 
 export function useSpeech(
@@ -137,6 +146,7 @@ export function useSpeech(
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [lastMs, setLastMs] = useState<number | null>(null);
+  const [lastVendorMs, setLastVendorMs] = useState<number | null>(null);
 
   /* Callbacks through refs: `start` and `stop` are handed to a button and must
      stay referentially stable, so what they read cannot be state. */
@@ -193,7 +203,13 @@ export function useSpeech(
         streamRef.current = stream;
         chunksRef.current = [];
 
-        const rec = new MediaRecorder(stream);
+        /*
+         * 24 kbps mono opus. The default is several times this and speech
+         * does not use it — the words are identical and the upload is a
+         * fraction of the size, which is the one part of the round trip that
+         * scales with how long somebody talked.
+         */
+        const rec = new MediaRecorder(stream, { audioBitsPerSecond: 24_000 });
         recorderRef.current = rec;
         rec.ondataavailable = (e) => {
           if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -209,11 +225,12 @@ export function useSpeech(
           setTranscribing(true);
           const began = performance.now();
           try {
-            const text = await transcribe(blob, keytermsRef.current?.() ?? []);
+            const { text, vendorMs } = await transcribe(blob, keytermsRef.current?.() ?? []);
             /* A newer session started while this one was in flight: drop it
                rather than fire an order nobody is currently speaking. */
             if (session !== sessionRef.current) return;
             setLastMs(Math.round(performance.now() - began));
+            setLastVendorMs(vendorMs);
             setTranscript(text);
             cbRef.current?.(text);
           } catch (e) {
@@ -248,6 +265,7 @@ export function useSpeech(
     interim: "",
     error,
     lastMs,
+    lastVendorMs,
     start,
     stop,
   };
