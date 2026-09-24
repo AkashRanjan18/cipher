@@ -448,12 +448,15 @@ function onCapScale(
     }
   }
 
-  /* Said out loud on the readback. The user typed a market cap and is about to
-     be shown a price, and a conversion nobody mentions is a conversion nobody
-     can catch. */
-  spec.warnings.push(
-    `Read ${levels.map((v) => compactWords(v)).join(", ")} as market cap, not price.`,
-  );
+  /* Said out loud on the readback, and recorded as a CONVERSION rather than a
+     warning. A warning means part of the sentence was not acted on, and an
+     order carrying one is refused; this was the bug that made the cap reading
+     compile and then fail in production, because the guard saw 128.8M said
+     and not in the order. */
+  (spec.conversions ??= []).push({
+    said: levels,
+    note: `Read ${levels.map((v) => compactWords(v)).join(", ")} as market cap, not price.`,
+  });
   return spec;
 }
 

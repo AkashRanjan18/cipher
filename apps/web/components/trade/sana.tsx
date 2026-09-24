@@ -750,7 +750,13 @@ export function Sana({
       return;
     }
 
-    const warnings = problems.map((p) => p.message);
+    /* Conversions go on the receipt with the warnings. "Read 128.8M as market
+       cap" is what makes a $0.9997 price on the card make sense — a
+       conversion nobody mentions is one nobody can catch. */
+    const warnings = [
+      ...(spec.conversions ?? []).map((c) => c.note),
+      ...problems.map((p) => p.message),
+    ];
     /*
      * The order goes out, and the receipt follows it.
      *
@@ -1453,7 +1459,7 @@ export function Sana({
               socket failed and the recording was uploaded instead — a slow
               clip answer is the fallback working, not the stream being slow,
               and the two need telling apart. */}
-          Deepgram nova-3 · {speech.lastPath === "clip" ? "clip (stream failed)" : "streamed"} ·{" "}
+          Deepgram nova-3 · {speech.lastPath === "clip" ? `clip — ${speech.lastFailure}` : "streamed"} ·{" "}
           {speech.lastMs < 1_000 ? `${speech.lastMs}ms` : `${(speech.lastMs / 1000).toFixed(1)}s`}
         </p>
       )}

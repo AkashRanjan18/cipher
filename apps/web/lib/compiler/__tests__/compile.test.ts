@@ -2,6 +2,7 @@ import { MARKETS } from "../../market/markets.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { compile } from "../compile.ts";
+import { choose } from "../choose.ts";
 import type { CompileContext } from "@cipher/shared";
 
 const CTX: CompileContext = { symbol: "SOLUSDT", interval: "1h", hasPosition: true };
@@ -245,7 +246,24 @@ test("a price said on the market-cap scale is read on it", () => {
     assert.ok(x.trigger.kind === "priceAbsolute" && x.trigger.value > 0.99 && x.trigger.value < 1.01);
   }
   /* Said out loud: a conversion nobody mentions is one nobody can catch. */
-  assert.ok(warnings.some((w) => /market cap/i.test(w)));
+  const spec = out.intent.spec;
+  assert.ok(spec.conversions?.some((c) => /market cap/i.test(c.note)));
+  /* A CONVERSION, NOT A WARNING. As a warning this compiled perfectly and was
+     then refused in production — choose() treats any warning as a lost part
+     of the sentence, and the half-read guard saw 128.8M said and absent from
+     the order. The test that mattered was never "does it compile", it was
+     "does the path the app runs accept it". */
+  assert.equal(warnings.length, 0);
+  const text = "buy me $100 of cash at 128.8 million and sell 70% at 128.7 million and 100% at 128.9 million";
+  assert.equal(choose(out, null, text).intent.kind, "order");
+});
+
+test("a target said as a percentage survives the half-read guard", () => {
+  /* +30% is stored as 1.3x, and the guard looked for "30" in the order and
+     refused it. A multiple and a percentage gain are the same statement. */
+  const ctx = { symbol: "SOL", label: "SOL", interval: "1h" as const, hasPosition: false, price: 150 };
+  const text = "buy $500 of sol, stop at 20% and target at 50%";
+  assert.equal(choose(compile(text, ctx), null, text).intent.kind, "order");
 });
 
 test("with no cap in context, every number stays a price", () => {

@@ -50,6 +50,14 @@ const MAX_CLIP_MS = 60_000;
  */
 const FINAL_TIMEOUT_MS = 2_500;
 
+/**
+ * How long a released sentence waits for a socket that is still opening.
+ *
+ * Opening measured ~830ms from Mumbai; a stale pass adds a mint on top. Three
+ * seconds covers both with room, and past it the clip is the faster answer.
+ */
+const OPEN_TIMEOUT_MS = 3_000;
+
 /** The fallback's ceiling. Nothing falls back from IT, so it may wait. */
 const TRANSCRIBE_TIMEOUT_MS = 15_000;
 
@@ -81,6 +89,15 @@ export interface Speech {
    * takes a second is the fallback working, not the stream being slow.
    */
   lastPath: "stream" | "clip" | null;
+  /**
+   * Why the stream did not answer the last sentence, when it did not.
+   *
+   * "Stream failed" alone was wrong in the one case that mattered: a socket
+   * still OPENING when the key was released is not a failure. The reason
+   * separates a slow handshake, a refused token and a dropped connection,
+   * which are fixed by three different things.
+   */
+  lastFailure: string | null;
   start(): void;
   stop(): void;
   /**
@@ -234,6 +251,19 @@ interface Session {
   interim: string;
   /** Set once the socket has failed; the clip answers instead. */
   streamFailed: boolean;
+  /** Why the stream did not answer, when it did not — shown under the bar. */
+  failure: string | null;
+  /**
+   * Resolves true when the socket opens, false if it never will.
+   *
+   * RELEASE CAN BEAT THE SOCKET. Opening takes ~830ms from Mumbai, plus a
+   * mint when the cached pass has gone stale, and a short order is often said
+   * and released faster than that. The first version treated a socket that was
+   * still CONNECTING as failed and uploaded the clip instead — reported live,
+   * 24 Sep 2026, as "clip (stream failed) · 547ms". Nothing had failed: every
+   * word was sitting in `queued`, waiting for a socket that was about to open.
+   */
+  ready: Promise<boolean>;
   /** Resolves when Deepgram closes the socket after its last words. */
   closed: Promise<void>;
   recorder: MediaRecorder | null;
@@ -258,6 +288,7 @@ export function useSpeech(
   const [error, setError] = useState<string | null>(null);
   const [lastMs, setLastMs] = useState<number | null>(null);
   const [lastPath, setLastPath] = useState<"stream" | "clip" | null>(null);
+  const [lastFailure, setLastFailure] = useState<string | null>(null);
 
   /* Refs, not state: start/stop/cancel are handed to key listeners bound once,
      and anything they read from state would be frozen at the first render. */
@@ -322,12 +353,22 @@ export function useSpeech(
       let text = "";
       let path: "stream" | "clip" = "stream";
 
-      if (!s.streamFailed && s.socket?.readyState === WebSocket.OPEN) {
+      /* Wait for the socket if it is still opening. `onopen` flushes the
+         queued audio the moment it connects, so nothing said before the
+         socket was ready is lost — it just arrives a little later. */
+      const open = await Promise.race([
+        s.ready,
+        new Promise<boolean>((r) => setTimeout(() => r(false), OPEN_TIMEOUT_MS)),
+      ]);
+      if (!open && !s.failure) s.failure = "socket did not open in time";
+
+      if (open && !s.streamFailed && s.socket?.readyState === WebSocket.OPEN) {
         /* Tell Deepgram the sentence is over. It flushes its last words as
            final results and then closes the socket itself. */
         s.socket.send(JSON.stringify({ type: "CloseStream" }));
         await Promise.race([s.closed, new Promise((r) => setTimeout(r, FINAL_TIMEOUT_MS))]);
         text = [...s.finals, s.interim].join(" ").replace(/\s+/g, " ").trim();
+        if (!text && !s.failure) s.failure = "stream heard no words";
       }
 
       /* THE FALLBACK. The socket never opened, dropped part-way, or heard
@@ -353,6 +394,7 @@ export function useSpeech(
 
       setLastMs(Math.round(performance.now() - releasedAt));
       setLastPath(path);
+      setLastFailure(path === "clip" ? (s.failure ?? "unknown") : null);
       setTranscribing(false);
       setInterim("");
       if (!text) {
@@ -379,8 +421,19 @@ export function useSpeech(
           return;
         }
 
+        /* The pass is fetched NOW, in parallel with loading the audio worklet
+           below, rather than after it. Both are on the path to an open socket,
+           and there is no reason for one to wait on the other. */
+        const tokenPromise = voiceToken();
+
         const audio = new AudioContext({ sampleRate: SAMPLE_RATE });
+        /* A context created after an await can start SUSPENDED under the
+           browser's autoplay rules, and a suspended context feeds the worklet
+           nothing — Deepgram would hear silence and the stream would come back
+           empty. Resuming is harmless when it is already running. */
+        if (audio.state === "suspended") await audio.resume().catch(() => {});
         let resolveClosed = () => {};
+        let resolveReady: (ok: boolean) => void = () => {};
         const s: Session = {
           id,
           stream,
@@ -390,6 +443,10 @@ export function useSpeech(
           finals: [],
           interim: "",
           streamFailed: false,
+          failure: null,
+          ready: new Promise<boolean>((r) => {
+            resolveReady = r;
+          }),
           closed: new Promise<void>((r) => {
             resolveClosed = r;
           }),
@@ -436,13 +493,18 @@ export function useSpeech(
            verified against the live API, 24 Sep 2026. */
         let token: string;
         try {
-          token = await voiceToken();
+          token = await tokenPromise;
         } catch {
           s.streamFailed = true;
+          s.failure = "voice token could not be fetched";
+          resolveReady(false);
           resolveClosed();
           return;
         }
-        if (id !== counterRef.current) return;
+        if (id !== counterRef.current) {
+          resolveReady(false);
+          return;
+        }
 
         const socket = new WebSocket(socketUrl(audio.sampleRate, keytermsRef.current?.() ?? []), [
           "bearer",
@@ -454,6 +516,7 @@ export function useSpeech(
         socket.onopen = () => {
           for (const chunk of s.queued) socket.send(chunk);
           s.queued = [];
+          resolveReady(true);
         };
 
         socket.onmessage = (m) => {
@@ -484,12 +547,19 @@ export function useSpeech(
 
         socket.onerror = () => {
           s.streamFailed = true;
+          s.failure ??= "socket error";
+          resolveReady(false);
         };
         socket.onclose = (e) => {
           /* 1000 is the clean close Deepgram sends after the last words.
              Anything else while we were still talking is a dropped stream,
-             and the clip has to answer. */
-          if (e.code !== 1000) s.streamFailed = true;
+             and the clip has to answer. The code is kept, because "1006" and
+             "1008" point at completely different causes. */
+          if (e.code !== 1000) {
+            s.streamFailed = true;
+            s.failure ??= `socket closed (${e.code}${e.reason ? `: ${e.reason}` : ""})`;
+          }
+          resolveReady(false);
           resolveClosed();
         };
       })
@@ -512,6 +582,7 @@ export function useSpeech(
     error,
     lastMs,
     lastPath,
+    lastFailure,
     start,
     stop,
     cancel,

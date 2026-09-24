@@ -162,7 +162,13 @@ export function unplacedNumbers(text: string, spec: OrderSpec): string[] {
     const t = x.trigger as { value?: number; percent?: number; seconds?: number };
     for (const v of [t.value, t.percent]) if (typeof v === "number") placed.push(v);
     if (typeof t.seconds === "number") placed.push(t.seconds / 60, t.seconds / 3600, t.seconds / 86400);
+    /* A multiple is also a percentage gain: "target +30%" is stored as 1.3x,
+       and the 30 somebody said is exactly what the 1.3 means. Without this the
+       guard found "30%" missing from an order that contained it and refused. */
+    if (x.trigger.kind === "priceMultiple") placed.push((x.trigger.value - 1) * 100);
   }
+  /* Numbers the compiler converted into something else, and said so. */
+  for (const c of spec.conversions ?? []) placed.push(...c.said);
   const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.01, Math.abs(b) * 0.005);
 
   const out: string[] = [];

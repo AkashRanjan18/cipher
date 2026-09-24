@@ -113,6 +113,27 @@ export interface OrderSpec {
   source: "grammar" | "model";
   /** Anything understood but not actionable, surfaced in the readback. */
   warnings: string[];
+  /**
+   * Numbers the compiler read on the user's behalf and turned into something
+   * else — a market cap into a price, "when it drops 10%" into a level.
+   *
+   * NOT WARNINGS, and the difference is load-bearing. A warning means part of
+   * the sentence was not acted on, and an order carrying one is refused rather
+   * than armed. A conversion means every part WAS acted on, just not in the
+   * form it was said — so the half-read guard has to count those numbers as
+   * placed, and the readback has to say what they became. Before this field
+   * existed, both conversions shipped on 24 Sep 2026 compiled correctly and
+   * were then refused in production: the guard saw "128.8M" and "10%" said,
+   * found neither in the order, and concluded half the sentence was lost.
+   */
+  conversions?: Conversion[];
+}
+
+export interface Conversion {
+  /** The numbers the user actually said that this conversion accounts for. */
+  said: number[];
+  /** What they became, in the user's own terms, for the readback. */
+  note: string;
 }
 
 /** Defaults applied when the sentence doesn't say. Every one is a decision. */
