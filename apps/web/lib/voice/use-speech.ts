@@ -32,17 +32,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * Requires a secure context. localhost counts; production is HTTPS anyway.
  */
 
-/** How long a pause ends the sentence. */
-const SILENCE_MS = 1_800;
-
 /**
- * Loud enough to be speech.
+ * NOTHING WAITS FOR SILENCE. The user's call, 24 Sep 2026: "as soon as we stop
+ * talking and hit Enter, directly Deepgram comes. There should not be any
+ * silence timer."
  *
- * RMS over the raw waveform, 0-1. Room tone on a laptop mic sits around
- * 0.002-0.008; speech clears 0.02 comfortably. The threshold has to sit above
- * a noisy room and below a quiet voice, and this is the middle of that gap.
+ * A pause detector cost 1.8 seconds on every sentence — longer than the
+ * transcription it was waiting to start — and it guessed. It cut people off
+ * mid-thought when they paused to think, and sat there when a room was noisy.
+ * Enter knows exactly when somebody has finished, because they pressed it.
+ *
+ * Enter now ends the clip and sends it. A second Enter places the order, once
+ * the words are on screen and have been read — which is the rule the bar
+ * already followed for speech.
  */
-const SPEECH_RMS = 0.015;
 
 /** A stuck microphone must not record until the tab is closed. */
 const MAX_CLIP_MS = 60_000;
@@ -145,8 +148,7 @@ export function useSpeech(
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const audioRef = useRef<AudioContext | null>(null);
-  const timersRef = useRef<{ poll?: number; cap?: number }>({});
+  const timersRef = useRef<{ cap?: number }>({});
   /** Bumped per session, so a late answer from an abandoned clip is dropped. */
   const sessionRef = useRef(0);
 
@@ -160,11 +162,8 @@ export function useSpeech(
 
   const teardown = useCallback(() => {
     const t = timersRef.current;
-    if (t.poll) window.clearInterval(t.poll);
     if (t.cap) window.clearTimeout(t.cap);
     timersRef.current = {};
-    audioRef.current?.close().catch(() => {});
-    audioRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
   }, []);
@@ -225,43 +224,6 @@ export function useSpeech(
             if (session === sessionRef.current) setTranscribing(false);
           }
         };
-
-        /*
-         * SILENCE ENDS THE SENTENCE, and it used to be the browser recogniser
-         * that noticed. Without it, the level of the audio is the only thing
-         * that knows whether anyone is still talking.
-         *
-         * Speech has to be heard FIRST. Otherwise the pause between tapping
-         * the microphone and starting to speak is silence, and the clip ends
-         * before a word is in it.
-         */
-        const audio = new AudioContext();
-        audioRef.current = audio;
-        const analyser = audio.createAnalyser();
-        analyser.fftSize = 1024;
-        audio.createMediaStreamSource(stream).connect(analyser);
-        const samples = new Uint8Array(analyser.fftSize);
-
-        let heardSpeech = false;
-        let quietSince = 0;
-        timersRef.current.poll = window.setInterval(() => {
-          analyser.getByteTimeDomainData(samples);
-          let sum = 0;
-          for (const s of samples) {
-            const v = (s - 128) / 128;
-            sum += v * v;
-          }
-          const rms = Math.sqrt(sum / samples.length);
-
-          if (rms > SPEECH_RMS) {
-            heardSpeech = true;
-            quietSince = 0;
-            return;
-          }
-          if (!heardSpeech) return;
-          if (quietSince === 0) quietSince = performance.now();
-          else if (performance.now() - quietSince > SILENCE_MS) stop();
-        }, 100);
 
         /* A stuck microphone must not record until the tab is closed. */
         timersRef.current.cap = window.setTimeout(stop, MAX_CLIP_MS);

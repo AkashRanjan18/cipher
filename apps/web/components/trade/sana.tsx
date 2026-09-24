@@ -308,23 +308,81 @@ export function Sana({
     () => [market, ...majors.map((m) => m.symbol)].filter(Boolean),
   );
 
+  /*
+   * A REF, not the object itself.
+   *
+   * The push-to-talk listener is bound once, on an empty dependency list, so
+   * anything it closes over is frozen at the first render — it would read
+   * `listening: false` forever and reopen the microphone on every keyup. The
+   * same trap that made `trade()` write every order to a browser nobody reads.
+   * State drives rendering; a listener bound once reads a ref.
+   */
+  const speechRef = useRef(speech);
+  speechRef.current = speech;
+
   // Newest turn should be visible without scrolling for it.
   useEffect(() => {
     streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight });
   }, [turns]);
 
-  // "/" anywhere focuses the bar, the way every terminal does it.
+  /*
+   * "/" focuses the bar. HOLD "S" TO TALK — S for Sana.
+   *
+   * The user's call, 24 Sep 2026, and the model is Wispr Flow: hold a key,
+   * speak, let go, and the words are there. Releasing the key is the signal —
+   * it is exact, it is instant, and it replaces a silence detector that cost
+   * 1.8 seconds on every sentence and still had to guess whether a pause was
+   * the end of a thought or the middle of one.
+   *
+   * Then ONE Enter sends it. Not two: the release already ended the recording,
+   * so Enter is left to mean the only thing it should mean here.
+   *
+   * ONLY WHILE NOTHING IS FOCUSED, because "s" is a letter. Holding it inside
+   * the bar has to type "sssss" — a hotkey that eats a character out of a
+   * sentence is worse than no hotkey. Submitting blurs the bar, so the loop
+   * closes: hold S, speak, release, Enter, and S is armed again.
+   *
+   * `e.repeat` is the one that bites. Holding a key fires keydown over and
+   * over, and without this the microphone reopens forty times a second.
+   */
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
-      if (tag === "input" || tag === "textarea") return;
+    const typing = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      return tag === "input" || tag === "textarea" || el?.isContentEditable === true;
+    };
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (typing(e)) return;
       if (e.key === "/") {
         e.preventDefault();
         inputRef.current?.focus();
+        return;
+      }
+      /* Modifiers are somebody else's shortcut — ⌘S, Ctrl+S, Alt+S. */
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        if (!speechRef.current.listening && !speechRef.current.transcribing) {
+          speechRef.current.start();
+        }
       }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key !== "s" && e.key !== "S") return;
+      /* NOT guarded by `typing`: the bar takes focus the moment a transcript
+         lands, and a keyup that arrives after that must still stop the
+         recording. A key held down and released is one event either way. */
+      if (speechRef.current.listening) speechRef.current.stop();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, []);
 
   function push(t: Omit<Turn, "id">) {
@@ -1260,6 +1318,10 @@ export function Sana({
                been sent it is describing nothing. */
             setHeardAs(null);
             setElsewhere(null);
+            /* Hand the keyboard back, so holding S speaks again straight away.
+               Without this the bar keeps focus, "s" types a letter, and the
+               second order of a session has to be started with the mouse. */
+            inputRef.current?.blur();
           }}
           className="flex items-center gap-2.5 rounded-xl bg-champagne py-2 pl-3 pr-2 shadow-lg shadow-black/30 ring-1 ring-black/10 focus-within:ring-4 focus-within:ring-accent"
         >
@@ -1293,8 +1355,8 @@ export function Sana({
               speech.transcribing
                 ? "Transcribing…"
                 : speech.listening
-                  ? "Listening — stop talking when you're done"
-                  : "Place a trade — e.g. buy $500 of SOL and set a stop loss of 10%"
+                  ? "Listening — let go of S when you're done"
+                  : "Hold S and talk, or type — buy $500 of SOL and stop at 10%"
             }
             aria-label="Place a trade"
             className="min-w-0 flex-1 bg-transparent font-sans text-sm text-ink placeholder:text-ink/45 focus:outline-none"
