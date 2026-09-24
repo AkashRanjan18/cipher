@@ -1363,7 +1363,15 @@ export function Sana({
           </span>
           <input
             ref={inputRef}
-            value={speech.listening || speech.transcribing ? "" : input}
+            value={
+              /* WHILE SPEAKING, THE WORDS APPEAR AS THEY ARE SAID — settled
+                 words first, then the ones Deepgram is still revising. That is
+                 the point of streaming: the bar keeps up with the sentence
+                 instead of staying blank until it is over. */
+              speech.listening || speech.transcribing
+                ? [speech.transcript, speech.interim].filter(Boolean).join(" ")
+                : input
+            }
             readOnly={speech.listening || speech.transcribing}
             onChange={(e) => {
               setInput(e.target.value);
@@ -1441,9 +1449,12 @@ export function Sana({
         */}
       {speech.lastMs !== null && !speech.error && !speech.listening && (
         <p className="mt-1.5 px-2.5 font-sans text-[11px] text-mute">
-          Deepgram nova-3 · {(speech.lastMs / 1000).toFixed(1)}s
-          {speech.lastVendorMs !== null &&
-            ` (${speech.lastVendorMs}ms vendor, ${Math.max(0, speech.lastMs - speech.lastVendorMs)}ms network)`}
+          {/* Which path answered, and how long after release. "clip" means the
+              socket failed and the recording was uploaded instead — a slow
+              clip answer is the fallback working, not the stream being slow,
+              and the two need telling apart. */}
+          Deepgram nova-3 · {speech.lastPath === "clip" ? "clip (stream failed)" : "streamed"} ·{" "}
+          {speech.lastMs < 1_000 ? `${speech.lastMs}ms` : `${(speech.lastMs / 1000).toFixed(1)}s`}
         </p>
       )}
 
