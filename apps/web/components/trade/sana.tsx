@@ -326,62 +326,84 @@ export function Sana({
   }, [turns]);
 
   /*
-   * "/" focuses the bar. HOLD "S" TO TALK — S for Sana.
+   * "/" focuses the bar. HOLD CONTROL TO TALK.
    *
    * The user's call, 24 Sep 2026, and the model is Wispr Flow: hold a key,
-   * speak, let go, and the words are there. Releasing the key is the signal —
-   * it is exact, it is instant, and it replaces a silence detector that cost
-   * 1.8 seconds on every sentence and still had to guess whether a pause was
-   * the end of a thought or the middle of one.
+   * speak, let go, and the words are there. Releasing is the signal — exact
+   * and instant, and it replaces a silence detector that cost 1.8s on every
+   * sentence and still had to guess whether a pause was the end of a thought.
+   * Then ONE Enter sends it; the release already ended the recording.
    *
-   * Then ONE Enter sends it. Not two: the release already ended the recording,
-   * so Enter is left to mean the only thing it should mean here.
+   * CONTROL RATHER THAN A LETTER, and the difference is not cosmetic. "S"
+   * could only work while nothing was focused, because holding it inside the
+   * bar has to type "sssss" — so speaking required clicking away first, and
+   * the second order of a session needed the mouse. A modifier types nothing,
+   * so this works everywhere including mid-sentence in the bar.
    *
-   * ONLY WHILE NOTHING IS FOCUSED, because "s" is a letter. Holding it inside
-   * the bar has to type "sssss" — a hotkey that eats a character out of a
-   * sentence is worse than no hotkey. Submitting blurs the bar, so the loop
-   * closes: hold S, speak, release, Enter, and S is armed again.
+   * THE PRICE IS THAT CONTROL BEGINS EVERY SHORTCUT. Ctrl+C, Ctrl+R, Ctrl+V
+   * all start by holding exactly this key, and a microphone that opens on the
+   * first half of "copy" is worse than no shortcut. So a second key arriving
+   * while the microphone is open means the intent was never to speak: the clip
+   * is CANCELLED, not transcribed. Nothing is sent, nothing is charged for,
+   * nothing lands in the bar.
    *
-   * `e.repeat` is the one that bites. Holding a key fires keydown over and
-   * over, and without this the microphone reopens forty times a second.
+   * `e.repeat` is the one that bites — holding a key fires keydown over and
+   * over, and without it the microphone reopens forty times a second.
    */
   useEffect(() => {
-    const typing = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      const tag = el?.tagName?.toLowerCase();
-      return tag === "input" || tag === "textarea" || el?.isContentEditable === true;
-    };
+    /** Control on every platform, and ⌘ on a Mac where it is the same gesture. */
+    const isTalkKey = (e: KeyboardEvent) => e.key === "Control" || e.key === "Meta";
 
     function onKeyDown(e: KeyboardEvent) {
-      if (typing(e)) return;
-      if (e.key === "/") {
-        e.preventDefault();
-        inputRef.current?.focus();
-        return;
-      }
-      /* Modifiers are somebody else's shortcut — ⌘S, Ctrl+S, Alt+S. */
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "s" || e.key === "S") {
-        e.preventDefault();
+      if (isTalkKey(e)) {
+        if (e.repeat || e.altKey || e.shiftKey) return;
         if (!speechRef.current.listening && !speechRef.current.transcribing) {
           speechRef.current.start();
         }
+        return;
+      }
+
+      /*
+       * ANY OTHER KEY WHILE THE MICROPHONE IS OPEN IS A SHORTCUT. The user is
+       * pressing Ctrl+something, not talking, and the recording so far is not
+       * a sentence anybody meant to say.
+       */
+      if (speechRef.current.listening) {
+        speechRef.current.cancel();
+        return;
+      }
+
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || el?.isContentEditable) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        inputRef.current?.focus();
       }
     }
 
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key !== "s" && e.key !== "S") return;
-      /* NOT guarded by `typing`: the bar takes focus the moment a transcript
-         lands, and a keyup that arrives after that must still stop the
-         recording. A key held down and released is one event either way. */
+      if (!isTalkKey(e)) return;
       if (speechRef.current.listening) speechRef.current.stop();
+    }
+
+    /*
+     * ALT-TAB NEVER SENDS A KEYUP. Switching window or tab while holding
+     * Control leaves the browser believing the key is still down, so the
+     * microphone would stay open until the sixty-second cap — recording a
+     * room the user has walked away from. Losing focus ends it.
+     */
+    function onBlur() {
+      if (speechRef.current.listening) speechRef.current.cancel();
     }
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
     };
   }, []);
 
@@ -1318,10 +1340,12 @@ export function Sana({
                been sent it is describing nothing. */
             setHeardAs(null);
             setElsewhere(null);
-            /* Hand the keyboard back, so holding S speaks again straight away.
-               Without this the bar keeps focus, "s" types a letter, and the
-               second order of a session has to be started with the mouse. */
-            inputRef.current?.blur();
+            /* Focus STAYS in the bar. It used to blur here, because the
+               push-to-talk key was "s" and a focused bar swallowed it — so
+               speaking a second order meant clicking away first. Control is a
+               modifier and types nothing, so holding it works with the bar
+               focused, and keeping focus means the next order can be typed
+               without reaching for the mouse either. */
           }}
           className="flex items-center gap-2.5 rounded-xl bg-champagne py-2 pl-3 pr-2 shadow-lg shadow-black/30 ring-1 ring-black/10 focus-within:ring-4 focus-within:ring-accent"
         >
@@ -1355,8 +1379,8 @@ export function Sana({
               speech.transcribing
                 ? "Transcribing…"
                 : speech.listening
-                  ? "Listening — let go of S when you're done"
-                  : "Hold S and talk, or type — buy $500 of SOL and stop at 10%"
+                  ? "Listening — let go of Ctrl when you're done"
+                  : "Hold Ctrl and talk, or type — buy $500 of SOL and stop at 10%"
             }
             aria-label="Place a trade"
             className="min-w-0 flex-1 bg-transparent font-sans text-sm text-ink placeholder:text-ink/45 focus:outline-none"

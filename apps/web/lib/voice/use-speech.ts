@@ -76,6 +76,16 @@ export interface Speech {
    */
   interim: string;
   error: string | null;
+  /**
+   * Stop recording and throw the clip away.
+   *
+   * `stop` finishes a sentence; this abandons one. Holding Control starts the
+   * microphone, and Control is also the first half of Ctrl+C, Ctrl+R and every
+   * other shortcut — so the moment a second key joins it, the intent was never
+   * to speak and the audio must not be transcribed, charged for, or dropped
+   * into the bar.
+   */
+  cancel(): void;
   /** How long the last transcription took, end of speech to text. */
   lastMs: number | null;
   /**
@@ -187,6 +197,22 @@ export function useSpeech(
     }
   }, [teardown]);
 
+  const cancel = useCallback(() => {
+    /*
+     * Bumping the session is what discards it. The recorder's `onstop` checks
+     * the session it was started under and returns early when a newer one has
+     * begun, so the clip is assembled, found to be orphaned, and dropped
+     * before it can be sent. One mechanism for "abandon this", already tested
+     * by the case where somebody speaks twice in a row.
+     */
+    sessionRef.current += 1;
+    const rec = recorderRef.current;
+    if (rec && rec.state !== "inactive") rec.stop();
+    teardown();
+    setListening(false);
+    setTranscribing(false);
+  }, [teardown]);
+
   const start = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state !== "inactive") return;
     setError(null);
@@ -283,5 +309,6 @@ export function useSpeech(
     lastVendorMs,
     start,
     stop,
+    cancel,
   };
 }
