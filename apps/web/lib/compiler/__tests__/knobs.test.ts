@@ -115,9 +115,20 @@ test("a knob that was asked for and not honoured is said out loud", () => {
    */
   assert.ok(warnings("buy $500 of bonk with a tip").some((w) => /tip/i.test(w)));
   assert.ok(warnings("buy $500 of bonk and stop it").some((w) => /stop/i.test(w)));
-  assert.ok(
-    warnings("buy $500 of bonk with a trailing stop").some((w) => /trailing/i.test(w)),
-  );
+});
+
+test("a trailing stop with no distance is asked about, not armed without one", () => {
+  /* It used to arm the buy and warn. Now it asks, with the sentence kept, so
+     the answer arms the buy AND the trail — the buy alone was never what was
+     asked for. */
+  const out = compile("buy $500 of bonk with a trailing stop", ctx).intent;
+  assert.equal(out.kind, "clarify");
+  if (out.kind !== "clarify") return;
+  assert.match(out.question, /trailing stop/i);
+  const filled = compile(out.fill!.template.replace("{}", "20%"), ctx).intent;
+  assert.equal(filled.kind, "order");
+  if (filled.kind !== "order") return;
+  assert.ok(filled.spec.exits.some((e) => e.trigger.kind === "trailingStop" && e.trigger.percent === 20));
 });
 
 test("the guard stays quiet when the knob DID take", () => {
@@ -131,8 +142,9 @@ test("the guard stays quiet when the knob DID take", () => {
 
 test("a trailing stop warns once, not twice", () => {
   // "A trailing stop" is one instruction. Both checks match it and only the
-  // specific message helps.
-  const w = warnings("buy $500 of bonk with a trailing stop");
+  // specific message helps. "trail" with no "stop" after it still reaches the
+  // warning path rather than the question.
+  const w = warnings("buy $500 of bonk and trail it");
   assert.equal(w.filter((x) => /stop/i.test(x)).length, 1);
 });
 

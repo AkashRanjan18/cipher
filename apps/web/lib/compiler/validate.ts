@@ -227,14 +227,26 @@ function checkExitSet(exits: ExitRule[], reference: number | null): Problem[] {
   const share = (e: ExitRule) =>
     e.amount.kind === "percentOfPosition" ? e.amount.value : 0;
 
-  const laddered = exits
-    .filter((e) => e.trigger.kind === "priceMultiple")
-    .reduce((sum, e) => sum + share(e), 0);
-  if (laddered > 100) {
+  /*
+   * AN ERROR, like the price ladder below, and for the user's reason: you
+   * cannot sell 100% twice. It was a warning, which was harmless while the
+   * grammar read one percentage target per sentence. "Take profit 1 at +20%,
+   * take profit 2 at +50%" now reads both, each selling everything, and the
+   * second is dead the moment it is armed.
+   */
+  const multiples = exits.filter((e) => e.trigger.kind === "priceMultiple");
+  const laddered = multiples.reduce((sum, e) => sum + share(e), 0);
+  if (laddered > 100 && multiples.length > 1) {
+    const gains = multiples
+      .map((e) => (e.trigger.kind === "priceMultiple" ? Math.round((e.trigger.value - 1) * 1000) / 10 : 0))
+      .sort((a, b) => a - b);
+    const signed = (g: number) => (g >= 0 ? `+${g}%` : `${g}%`);
     out.push({
-      severity: "warning",
+      severity: "error",
       at: "exits",
-      message: `Your targets add up to ${laddered}% of the position, so the last one needs more than you will hold and waits until you do.`,
+      message:
+        `Your targets add up to ${laddered}% of the position — the first to trigger sells all of it and the rest can never fire. ` +
+        `Give me one target, or split them: 70% at ${signed(gains[0])} and 30% at ${signed(gains[gains.length - 1])}.`,
     });
   }
 

@@ -110,11 +110,13 @@ test("a stop of 100% or more is refused", () => {
 });
 
 /*
- * A LADDER OF THREE HALVES IS NOW 150%. Percentages freeze into tokens when
- * the order is placed (the user's rule, 19 Sep 2026), so each half is half of
- * the ORIGINAL position. It still arms — the last rung waits — but says so.
+ * A LADDER OF THREE HALVES IS 150%. Percentages freeze into tokens when the
+ * order is placed (the user's rule, 19 Sep 2026), so each half is half of the
+ * ORIGINAL position. It used to arm with a warning; since the user's rule for
+ * price ladders (23 Sep 2026: "you cannot sell 100% two times") the same sum
+ * said as percentages is refused the same way.
  */
-test("a ladder of three halves arms, and warns that the last rung will wait", () => {
+test("a ladder of three halves is refused, with the split spelled out", () => {
   const p = validateOrder(
     spec({
       exits: [2, 3, 4].map((x, i) => ({
@@ -125,8 +127,8 @@ test("a ladder of three halves arms, and warns that the last rung will wait", ()
     }),
     holding,
   );
-  assert.ok(!blocks(p));
-  assert.ok(p.some((x) => x.severity === "warning" && /150%/.test(x.message)));
+  assert.ok(blocks(p));
+  assert.ok(p.some((x) => x.severity === "error" && /150%/.test(x.message) && /\+100%/.test(x.message)));
 });
 
 test("a single exit over 100% is refused", () => {

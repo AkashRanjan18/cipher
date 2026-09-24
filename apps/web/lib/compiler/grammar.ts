@@ -149,8 +149,8 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      */
     new RegExp(
       `\\b(${SIDES})\\s+(?:me\\s+)?(\\$\\s*[\\d.,]+\\s*[km]?)\\s+` +
-        `(?:of\\s+|worth\\s+of\\s+|into\\s+|in\\s+)?` +
-        `(?!(?:and|then|once|when|if|at|with|for|to|the|an|my|it|is|in|into|of|worth)\\b)` +
+        `(?:of\\s+|worth\\s+of\\s+|into\\s+|in\\s+|on\\s+)?` +
+        `(?!(?:and|then|once|when|if|at|with|for|to|the|an|my|it|is|in|into|of|on|worth)\\b)` +
         `([a-z0-9]{2,15})\\b`,
     ),
   );
@@ -224,7 +224,8 @@ export function parseWithGrammar(input: string): OrderSpec | null {
       new RegExp(
         `\\b(?:${CLOSES}|close|exit)\\s+(?:(?:a|the)\\s+)?` +
           `(?:(half|third|quarter|rest|all|everything)|([\\d.]+)\\s*%)\\s+` +
-          `(?:of\\s+)?(?:my\\s+)?(?:(?:entire|whole)\\s+)?([a-z][a-z0-9]{1,14})\\b`,
+          /* "sell everything ON solana" — of, on and in all name the holding. */
+          `(?:(?:of|on|in)\\s+)?(?:my\\s+)?(?:(?:entire|whole)\\s+)?([a-z][a-z0-9]{1,14})\\b`,
       ),
     );
 
@@ -580,7 +581,9 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * at 10%"). It excludes "at" explicitly, or that word would be eaten as the
    * token and the trigger would never be found.
    */
-  const stop = text.match(
+  /* EVERY stop, not the first: "stop 70% at 10% … stop the rest at 5%" is
+     two, and reading one dropped the other in silence. */
+  for (const stop of text.matchAll(
     /*
      * "Cut my losses at -15%" and "stop me out if it drops 25%" are stops.
      * Both refused, and a refused stop is the one refusal that costs money —
@@ -589,9 +592,8 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      * `my` and `me out` are allowed between the verb and the level, and `if
      * it drops` joins `at` as a way of naming one.
      */
-    /(?<!\btrail\s)(?<!\btrailing\s)\b(?:stop|cut)(?:\s+my)?(?:\s+losses?)?(?:\s+loss)?(?:\s+me\s+out)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b|if\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@|of|to|if\s+it\s+(?:drops?|falls?)(?:\s+by)?)\s*-?\s*([\d.]+)\s*%/,
-  );
-  if (stop) {
+    /(?<!\btrail\s)(?<!\btrailing\s)\b(?:stop|cut)(?:\s+my)?(?:\s+losses?)?(?:\s+loss)?(?:\s+me\s+out)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b|if\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@|of|to|if\s+it\s+(?:drops?|falls?)(?:\s+by)?)\s*-?\s*([\d.]+)\s*%/g,
+  )) {
     const percent = Number(stop[2]);
     if (percent > 0 && percent < 100) {
       const amount = stop[1] ? parseAmount(stop[1]) : { kind: "percentOfPosition" as const, value: 100 };
@@ -623,10 +625,11 @@ export function parseWithGrammar(input: string): OrderSpec | null {
    * Trigger union would have to be taught to the engine, the readback, the
    * validator and the positions card, to express something six already can.
    */
-  const gain = text.match(
-    /\b(?:target|take\s+profit|tp|profit)(?:\s+price)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b|if\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@|of|to|if\s+it\s+(?:rises?|pumps?|gains?|runs?)(?:\s+by)?)\s*\+?\s*([\d.]+)\s*%/,
-  );
-  if (gain) {
+  /* Every one: "take profit 50% at 10%, take profit 25% at 20%" is a ladder,
+     and the first version of this read only its first rung. */
+  for (const gain of text.matchAll(
+    /\b(?:target|take\s+profit|tp|profit)(?:\s+price)?(?:\s+(?:on\s+)?(the rest|rest|everything|all|a third|a half|half|[\d.]+\s*%))?(?:\s+(?:on\s+)?(?!at\b|if\b)[a-z][a-z0-9]{1,14})?\s*(?:at|@|of|to|if\s+it\s+(?:rises?|pumps?|gains?|runs?)(?:\s+by)?)\s*\+?\s*([\d.]+)\s*%/g,
+  )) {
     const percent = Number(gain[2]);
     if (percent > 0) {
       const amount = gain[1] ? parseAmount(gain[1]) : { kind: "percentOfPosition" as const, value: 100 };

@@ -133,6 +133,7 @@ export interface Conversion {
   /** The numbers the user actually said that this conversion accounts for. */
   said: number[];
   /** What they became, in the user's own terms, for the readback. */
+  /** Empty when there is nothing worth saying — "take profit 1" is a label. */
   note: string;
 }
 

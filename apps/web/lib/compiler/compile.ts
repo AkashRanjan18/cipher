@@ -13,6 +13,7 @@ import { compactWords } from "../format.ts";
 import { parseWithGrammar } from "./grammar.ts";
 import { askForMissing, askForMissingTrigger } from "./missing.ts";
 import { unconsumed } from "./unconsumed.ts";
+import { rephrase, leftOpen } from "./rephrase.ts";
 import { normaliseSpeech } from "../voice/normalise.ts";
 import { resolveMarket, namesToken } from "../market/markets.ts";
 
@@ -484,7 +485,16 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
    * other matcher is looser. "sell half at 2x" mentions a size and a market
    * and would be caught by three of the matchers below.
    */
-  const spec = onCapScale(parseWithGrammar(impliedBuy(text, ctx)), text, ctx);
+  /*
+   * The user's words, rewritten into the grammar's — "+15%" into "target at
+   * 15%", "panic buy SOL for $300" into "buy $300 of sol". Everything after
+   * this line reads the rewrite, including the templates of any question,
+   * so an answer recompiles the sentence the parse actually saw.
+   */
+  const said = rephrase(impliedBuy(text, ctx), ctx);
+  const spec = onCapScale(parseWithGrammar(said.text), said.text, ctx);
+  if (spec && said.conversions.length) (spec.conversions ??= []).push(...said.conversions);
+  const order = said.text;
 
   /*
    * A BUY WITH NO SIZE, INSIDE A LONGER ORDER — "buy sol and stop at -10% and
@@ -493,14 +503,14 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
    * the answer INTO the whole sentence: the stop and target are part of the
    * same order and must survive the question (the user's rule, 19 Sep 2026).
    */
-  const sizeless = text.match(/\bbuy\s+(?:me\s+)?(?:some\s+)?([a-z][a-z0-9]{1,14})\b/);
+  const sizeless = order.match(/\bbuy\s+(?:me\s+)?(?:some\s+)?([a-z][a-z0-9]{1,14})\b/);
   if (spec && !spec.entry && sizeless && spec.exits.length > 0) {
     return ok({
       kind: "clarify",
       question: `How much ${sizeless[1].toUpperCase()} do you want to buy?`,
       options: [],
       fill: {
-        template: text.replace(sizeless[0], `buy {} of ${sizeless[1]}`),
+        template: order.replace(sizeless[0], `buy {} of ${sizeless[1]}`),
         expects: "size",
         example: "$500",
       },
@@ -525,18 +535,31 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
   const lostMoney =
     spec !== null &&
     !spec.entry &&
-    [...text.matchAll(/\$\s*([\d.,]+)/g)].some((m) => !used.has(Number(m[1].replace(/,/g, ""))));
+    [...order.matchAll(/\$\s*([\d.,]+)/g)].some((m) => !used.has(Number(m[1].replace(/,/g, ""))));
   if (spec && !lostMoney) {
     /* A parse can succeed and still be wrong: a stated condition with no price
        becomes `trigger: null`, which fills NOW. Ask rather than trade. */
-    const noPrice = askForMissingTrigger(text, spec);
+    const noPrice = askForMissingTrigger(order, spec);
     if (noPrice) return noPrice;
+    /* Said, and not armable without a number nobody gave — "with a trailing
+       stop", "scale out at +10% and +25%". Asked, never filled in. */
+    const open = leftOpen(order);
+    if (open) {
+      return ok({
+        kind: "clarify",
+        question: open.question,
+        options: [],
+        ...(open.template && open.expects
+          ? { fill: { template: open.template, expects: open.expects, example: "20%" } }
+          : {}),
+      });
+    }
     /*
      * Anything the sentence asked for that the spec does not carry, said out
      * loud on the readback. A dropped modifier is a warning rather than a
      * refusal: the buy is still wanted, the tip just did not take.
      */
-    return ok({ kind: "order", spec }, [...spec.warnings, ...unconsumed(text, spec)]);
+    return ok({ kind: "order", spec }, [...spec.warnings, ...unconsumed(order, spec)]);
   }
 
   for (const matcher of [rules, screen, query, ui]) {
@@ -554,7 +577,7 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
    * if this ran any earlier. Everything with a better claim on the sentence
    * has already had it.
    */
-  const incomplete = askForMissing(text);
+  const incomplete = askForMissing(order);
   if (incomplete) return incomplete;
 
   return refuse(

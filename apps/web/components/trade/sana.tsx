@@ -754,7 +754,7 @@ export function Sana({
        cap" is what makes a $0.9997 price on the card make sense — a
        conversion nobody mentions is one nobody can catch. */
     const warnings = [
-      ...(spec.conversions ?? []).map((c) => c.note),
+      ...(spec.conversions ?? []).map((c) => c.note).filter(Boolean),
       ...problems.map((p) => p.message),
     ];
     /*
@@ -1461,6 +1461,11 @@ export function Sana({
               and the two need telling apart. */}
           Deepgram nova-3 · {speech.lastPath === "clip" ? `clip — ${speech.lastFailure}` : "streamed"} ·{" "}
           {speech.lastMs < 1_000 ? `${speech.lastMs}ms` : `${(speech.lastMs / 1000).toFixed(1)}s`}
+          {/* The split only when it is slow enough to be worth reading: a late
+              socket and a slow flush are fixed by different things. */}
+          {speech.lastSplit && speech.lastMs >= 700
+            ? ` (socket ${speech.lastSplit.openMs}ms, last words ${speech.lastSplit.wordsMs}ms)`
+            : ""}
         </p>
       )}
 

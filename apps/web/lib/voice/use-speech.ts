@@ -98,6 +98,12 @@ export interface Speech {
    * which are fixed by three different things.
    */
   lastFailure: string | null;
+  /**
+   * Where a streamed answer's time went: waiting for the socket to open, then
+   * waiting for the last words. A slow total is two different problems — a
+   * late socket or a slow flush — and this says which.
+   */
+  lastSplit: { openMs: number; wordsMs: number } | null;
   start(): void;
   stop(): void;
   /**
@@ -266,6 +272,17 @@ interface Session {
   ready: Promise<boolean>;
   /** Resolves when Deepgram closes the socket after its last words. */
   closed: Promise<void>;
+  /**
+   * Resolves when the result answering our Finalize arrives.
+   *
+   * WAITING FOR THE CLOSE WAS THE LAG. Reported live, 24 Sep 2026: "streamed
+   * · 2.8s" — the 2.5s ceiling on waiting for Deepgram to close the socket,
+   * plus the rest. The words were already here; the bar was waiting on a
+   * goodbye. Finalize flushes the last words as a result flagged
+   * `from_finalize`, and that result is the end of the sentence.
+   */
+  finalized: Promise<void>;
+  resolveFinalized: () => void;
   recorder: MediaRecorder | null;
   chunks: Blob[];
   cap: number;
@@ -289,6 +306,7 @@ export function useSpeech(
   const [lastMs, setLastMs] = useState<number | null>(null);
   const [lastPath, setLastPath] = useState<"stream" | "clip" | null>(null);
   const [lastFailure, setLastFailure] = useState<string | null>(null);
+  const [lastSplit, setLastSplit] = useState<{ openMs: number; wordsMs: number } | null>(null);
 
   /* Refs, not state: start/stop/cancel are handed to key listeners bound once,
      and anything they read from state would be frozen at the first render. */
@@ -361,12 +379,16 @@ export function useSpeech(
         new Promise<boolean>((r) => setTimeout(() => r(false), OPEN_TIMEOUT_MS)),
       ]);
       if (!open && !s.failure) s.failure = "socket did not open in time";
+      const openedAt = performance.now();
+      let split: { openMs: number; wordsMs: number } | null = null;
 
       if (open && !s.streamFailed && s.socket?.readyState === WebSocket.OPEN) {
-        /* Tell Deepgram the sentence is over. It flushes its last words as
-           final results and then closes the socket itself. */
-        s.socket.send(JSON.stringify({ type: "CloseStream" }));
-        await Promise.race([s.closed, new Promise((r) => setTimeout(r, FINAL_TIMEOUT_MS))]);
+        /* Tell Deepgram the sentence is over: Finalize flushes the last words
+           at once. The close comes after, and nobody waits for it. */
+        s.socket.send(JSON.stringify({ type: "Finalize" }));
+        await Promise.race([s.finalized, s.closed, new Promise((r) => setTimeout(r, FINAL_TIMEOUT_MS))]);
+        split = { openMs: Math.round(openedAt - releasedAt), wordsMs: Math.round(performance.now() - openedAt) };
+        if (s.socket.readyState === WebSocket.OPEN) s.socket.send(JSON.stringify({ type: "CloseStream" }));
         text = [...s.finals, s.interim].join(" ").replace(/\s+/g, " ").trim();
         if (!text && !s.failure) s.failure = "stream heard no words";
       }
@@ -395,6 +417,7 @@ export function useSpeech(
       setLastMs(Math.round(performance.now() - releasedAt));
       setLastPath(path);
       setLastFailure(path === "clip" ? (s.failure ?? "unknown") : null);
+      setLastSplit(path === "stream" ? split : null);
       setTranscribing(false);
       setInterim("");
       if (!text) {
@@ -434,6 +457,7 @@ export function useSpeech(
         if (audio.state === "suspended") await audio.resume().catch(() => {});
         let resolveClosed = () => {};
         let resolveReady: (ok: boolean) => void = () => {};
+        let resolveFinalized = () => {};
         const s: Session = {
           id,
           stream,
@@ -450,6 +474,10 @@ export function useSpeech(
           closed: new Promise<void>((r) => {
             resolveClosed = r;
           }),
+          finalized: new Promise<void>((r) => {
+            resolveFinalized = r;
+          }),
+          resolveFinalized: () => resolveFinalized(),
           recorder: null,
           chunks: [],
           cap: window.setTimeout(() => stop(), MAX_CLIP_MS),
@@ -523,6 +551,7 @@ export function useSpeech(
           let msg: {
             type?: string;
             is_final?: boolean;
+            from_finalize?: boolean;
             channel?: { alternatives?: { transcript?: string }[] };
           };
           try {
@@ -538,6 +567,7 @@ export function useSpeech(
           } else {
             s.interim = words;
           }
+          if (msg.from_finalize) s.resolveFinalized();
           /* Only the live session paints the bar; a closing one is quiet. */
           if (sessionRef.current === s) {
             setTranscript(s.finals.join(" "));
@@ -583,6 +613,7 @@ export function useSpeech(
     lastMs,
     lastPath,
     lastFailure,
+    lastSplit,
     start,
     stop,
     cancel,
