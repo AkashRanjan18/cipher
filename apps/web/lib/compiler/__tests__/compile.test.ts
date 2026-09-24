@@ -210,3 +210,65 @@ test("a dollar figure used as a target price counts as read", () => {
   assert.equal(compile("sell half at $250", { ...CTX, hasPosition: true }).intent.kind, "order");
   assert.equal(compile("sell half at two fifty dollars", { ...CTX, hasPosition: true }).intent.kind, "order");
 });
+
+test("a price said on the market-cap scale is read on it", () => {
+  /*
+   * Reported live, 24 Sep 2026:
+   *
+   *   "buy me $100 of CASH at 128.8 million and sell 70% at 128.7 million
+   *    and 100% at 128.9 million"
+   *
+   * 128.8M is CASH's market cap to four figures. Read as a price against a $1
+   * token it is 12,886,134,811% above the market, so cipher refused it four
+   * times in one breath — once for the entry and once per exit — for a
+   * sentence that said nothing wrong.
+   */
+  const CASH = {
+    symbol: "CASH",
+    label: "CASH",
+    interval: "1h" as const,
+    hasPosition: true,
+    price: 0.9996055159131537,
+    cap: 128_781_635.88,
+    heldQty: 1e6,
+  };
+  const out = compile(
+    "buy me $100 of cash at 128.8 million and sell 70% at 128.7 million and 100% at 128.9 million",
+    CASH,
+  );
+  assert.equal(out.intent.kind, "order");
+  if (out.intent.kind !== "order") return;
+  const { entry, exits, warnings } = out.intent.spec;
+  assert.ok(entry?.trigger?.kind === "priceAbsolute" && Math.abs(entry.trigger.value - 0.9997) < 1e-3);
+  assert.equal(exits.length, 2);
+  for (const x of exits) {
+    assert.ok(x.trigger.kind === "priceAbsolute" && x.trigger.value > 0.99 && x.trigger.value < 1.01);
+  }
+  /* Said out loud: a conversion nobody mentions is one nobody can catch. */
+  assert.ok(warnings.some((w) => /market cap/i.test(w)));
+});
+
+test("with no cap in context, every number stays a price", () => {
+  /* A market with no cap figure behaves exactly as it did before — the
+     conversion is additive, never a reinterpretation of what already worked. */
+  const noCap = { symbol: "SOL", label: "SOL", interval: "1h" as const, hasPosition: true, price: 118 };
+  const out = compile("buy $500 of sol at 100", noCap);
+  assert.equal(out.intent.kind, "order");
+  if (out.intent.kind !== "order") return;
+  assert.deepEqual(out.intent.spec.entry?.trigger, { kind: "priceAbsolute", value: 100 });
+  assert.equal(out.intent.spec.warnings.length, 0);
+});
+
+test("a sentence that mixes scales is left alone rather than half-converted", () => {
+  /* One number reading as a cap and another as a price is likelier a typo than
+     a genuine mix, and converting half a ladder would reorder it — turning a
+     stop into a target by arithmetic nobody asked for. */
+  const CASH = {
+    symbol: "CASH", label: "CASH", interval: "1h" as const, hasPosition: true,
+    price: 0.9996, cap: 128_781_635.88, heldQty: 1e6,
+  };
+  const out = compile("buy $100 of cash at 0.99 and sell at 128.8 million", CASH);
+  if (out.intent.kind !== "order") return;
+  assert.deepEqual(out.intent.spec.entry?.trigger, { kind: "priceAbsolute", value: 0.99 });
+  assert.equal(out.intent.spec.warnings.length, 0, "a mixed-scale sentence converts nothing");
+});

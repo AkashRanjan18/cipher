@@ -1,3 +1,4 @@
+import { compactWords } from "../format.ts";
 import type { Amount, ExitRule, OrderSpec, Trigger } from "@cipher/shared";
 
 /**
@@ -73,8 +74,8 @@ const SLIPPAGE_MAX_BPS = 5_000;
  * below a dollar, ordinary cents above it.
  */
 const money = (n: number) =>
-  n !== 0 && Math.abs(n) < 1
-    ? `$${Number(n.toPrecision(3))}`
+  n !== 0 && Math.abs(n) < 1_000
+    ? `$${Number(n.toPrecision(5))}`
     : `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
 /** The size an amount resolves to, in USD, or null when it cannot be known yet. */
@@ -337,7 +338,16 @@ function checkPricesNearMarket(spec: OrderSpec, ctx: ValidationContext): Problem
   const out: Problem[] = [];
   const market = ctx.price;
   const far = (p: number) => Math.abs(p - market) / market > FAR_FROM_MARKET;
-  const pct = (p: number) => `${Math.round((Math.abs(p - market) / market) * 100)}%`;
+  /*
+   * A PERCENTAGE STOPS BEING READABLE LONG BEFORE IT STOPS BEING CORRECT.
+   * "128.8 million" read against a $1 token produced "12886134811% above the
+   * price" — a figure nobody parses, in a refusal whose whole job is to be
+   * understood. Past about twenty times the price a multiple says it better.
+   */
+  const pct = (p: number) => {
+    const ratio = Math.abs(p - market) / market;
+    return ratio > 20 ? `${compactWords(p / market)}×` : `${Math.round(ratio * 100)}%`;
+  };
   const side = (p: number) => (p < market ? "below" : "above");
 
   const limit = spec.entry?.trigger?.kind === "priceAbsolute" ? spec.entry.trigger.value : null;

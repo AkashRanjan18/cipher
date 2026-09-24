@@ -5,7 +5,10 @@ import {
   type Intent,
   type Interval,
   type NavigateIntent,
+  type OrderSpec,
 } from "@cipher/shared";
+import { readScale, statedScale, type RegistryToken } from "../market/registry.ts";
+import { compactWords } from "../format.ts";
 import { parseWithGrammar } from "./grammar.ts";
 import { askForMissing, askForMissingTrigger } from "./missing.ts";
 import { unconsumed } from "./unconsumed.ts";
@@ -337,6 +340,91 @@ function outOfScope(text: string): Compiled | null {
   return later ? refuse("notBuilt", later[1]) : null;
 }
 
+/* ─────────────────────────── prices said as caps ───────────────────────── */
+
+/**
+ * A number said on the market-cap scale becomes the price it implies.
+ *
+ * A trader watching a memecoin says both scales and means both, usually
+ * without noticing which one they used. Reported live, 24 Sep 2026:
+ *
+ *   "buy me $100 of CASH at 128.8 million and sell 70% at 128.7 million
+ *    and 100% at 128.9 million"
+ *
+ * 128.8M is CASH's market cap to four figures. Read as a price against a $1
+ * token it is 12,886,134,811% above the market, so cipher refused it four
+ * times in one breath — once for the entry and once per exit — for a sentence
+ * that was exactly right and said nothing wrong.
+ *
+ * HERE RATHER THAN IN validate.ts, because this is a READING and not a
+ * judgement. The validator's job is to ask whether a price is sane; it cannot
+ * do that until it knows which scale the price is on. Converting first means
+ * every check downstream — the buy-stop rule, the ladder sums, the distance
+ * warnings — sees the number the user actually meant.
+ *
+ * EVERY LEVEL OR NONE. A sentence mixes scales about as often as a person
+ * mixes currencies mid-sentence, and converting some levels and not others
+ * would silently reorder a ladder — turning a stop into a target by arithmetic
+ * nobody asked for. So the scale is decided once for the whole sentence.
+ */
+function onCapScale(
+  spec: OrderSpec | null,
+  text: string,
+  ctx: CompileContext,
+): OrderSpec | null {
+  if (!spec || !ctx.price || !ctx.cap) return spec;
+
+  const token: RegistryToken = {
+    mint: ctx.symbol,
+    symbol: ctx.label ?? ctx.symbol,
+    name: ctx.label ?? ctx.symbol,
+    price: ctx.price,
+    cap: ctx.cap,
+    decimals: 9,
+    verified: true,
+  };
+
+  /* Said out loud beats guessed. "at 3.4 million market cap" is unambiguous
+     however far 3.4M sits from anything. */
+  const stated = statedScale(text);
+  if (stated === "price") return spec;
+
+  const levels: number[] = [];
+  if (spec.entry?.trigger?.kind === "priceAbsolute") levels.push(spec.entry.trigger.value);
+  for (const x of spec.exits) {
+    if (x.trigger.kind === "priceAbsolute") levels.push(x.trigger.value);
+  }
+  if (levels.length === 0) return spec;
+
+  /* Unanimity, for the same reason the scale is decided once: a sentence where
+     one number reads as a cap and another as a price is far likelier to be a
+     typo than a genuine mix, and refusing beats converting half of it. */
+  const reads = levels.map((v) => readScale(v, token, stated));
+  if (!reads.every((r) => r.kind === "cap")) return spec;
+
+  const convert = (v: number): number => {
+    const r = readScale(v, token, stated);
+    return r.kind === "cap" ? r.price : v;
+  };
+
+  if (spec.entry?.trigger?.kind === "priceAbsolute") {
+    spec.entry.trigger = { kind: "priceAbsolute", value: convert(spec.entry.trigger.value) };
+  }
+  for (const x of spec.exits) {
+    if (x.trigger.kind === "priceAbsolute") {
+      x.trigger = { kind: "priceAbsolute", value: convert(x.trigger.value) };
+    }
+  }
+
+  /* Said out loud on the readback. The user typed a market cap and is about to
+     be shown a price, and a conversion nobody mentions is a conversion nobody
+     can catch. */
+  spec.warnings.push(
+    `Read ${levels.map((v) => compactWords(v)).join(", ")} as market cap, not price.`,
+  );
+  return spec;
+}
+
 /* ──────────────────────────────── the router ───────────────────────────── */
 
 export function compile(raw: string, ctx: CompileContext): Compiled {
@@ -361,7 +449,7 @@ export function compile(raw: string, ctx: CompileContext): Compiled {
    * other matcher is looser. "sell half at 2x" mentions a size and a market
    * and would be caught by three of the matchers below.
    */
-  const spec = parseWithGrammar(text);
+  const spec = onCapScale(parseWithGrammar(text), text, ctx);
 
   /*
    * A BUY WITH NO SIZE, INSIDE A LONGER ORDER — "buy sol and stop at -10% and

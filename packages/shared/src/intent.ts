@@ -284,6 +284,19 @@ export interface CompileContext {
   label?: string;
   /** The live price, so the model can tell a stop from a target. */
   price?: number;
+  /**
+   * The open market's market cap, so a number said on that scale is read on it.
+   *
+   * A trader watching a memecoin says both and means both, usually without
+   * noticing which: "buy CASH at 128.8 million" is a MARKET CAP, and against a
+   * $1 price it looks like an order 12,886,134,811% above the market. Without
+   * the cap there is no way to tell that from a fat finger, so cipher refused
+   * four times in one breath for a sentence that was exactly right.
+   *
+   * Optional: a market with no cap figure simply reads every number as a price,
+   * which is what it did before.
+   */
+  cap?: number | null;
   /** How much of the open market is held — "30% of my SOL" is 30% of this. */
   heldQty?: number;
   /** The interval currently shown, so "zoom out" has a reference point. */

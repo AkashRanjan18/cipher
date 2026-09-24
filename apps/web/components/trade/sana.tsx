@@ -344,6 +344,32 @@ export function Sana({
      * the render that created it — the trap that made `trade()` write every
      * order to a browser nobody reads.
      */
+    /*
+     * ONE CONTEXT FOR EVERY PATH THROUGH THIS FUNCTION.
+     *
+     * The answer-to-a-question branch below built its own, and it was thinner:
+     * no price, no label, no held quantity — and after the market-cap reading
+     * landed, no cap either. So the SAME sentence compiled differently
+     * depending on whether it was typed or given as an answer, and the answer
+     * path was the one missing the numbers every scale decision depends on.
+     */
+    const ctx: CompileContext = {
+      symbol,
+      label: market,
+      interval,
+      hasPosition: held.qty > 0,
+      price: price ?? undefined,
+      /*
+       * The cap, so a number said on that scale is read on it. From the
+       * registry, the only place both figures sit together and agree. Without
+       * it "buy CASH at 128.8 million" — CASH's market cap to four figures —
+       * is read against a $1 price and refused four times in one breath as an
+       * order 12,886,134,811% above the market.
+       */
+      cap: openToken?.cap ?? undefined,
+      heldQty: held.qty,
+    };
+
     const awaiting = pendingFill.current;
     if (awaiting && isAnswer(text, awaiting.expects)) {
       pendingFill.current = null;
@@ -357,7 +383,7 @@ export function Sana({
          through the same grammar, validation and readback as anything typed
          by hand. Nothing patches a half-built spec with a value. */
       const sentence = awaiting.template.replace("{}", normaliseAnswer(text, awaiting.expects));
-      dispatch(compile(sentence, { symbol, interval, hasPosition: held.qty > 0 }));
+      dispatch(compile(sentence, ctx));
       return;
     }
     pendingFill.current = null;
@@ -411,14 +437,6 @@ export function Sana({
      * union stops this file compiling until it is handled, which is the point
      * of the union existing at all.
      */
-    const ctx: CompileContext = {
-      symbol,
-      label: market,
-      interval,
-      hasPosition: held.qty > 0,
-      price: price ?? undefined,
-      heldQty: held.qty,
-    };
     const compiled = compile(text.replace(/^\/(buy|sell)\s*/i, "$1 "), ctx);
 
     /*
