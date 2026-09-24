@@ -193,6 +193,21 @@ export function useSpeech(
     setTranscript("");
     const session = ++sessionRef.current;
 
+    /*
+     * WARM THE CONNECTION WHILE THEY TALK.
+     *
+     * The clip is not ready until they let go, but the socket to carry it can
+     * be. An idle HTTP/2 connection is closed after a minute or two, so the
+     * first order of a session — and every one after a pause — paid for DNS,
+     * TCP and TLS before a byte of audio moved. Measured from Mumbai that
+     * handshake alone is around 300ms, which is a third of the whole wait and
+     * is spent doing nothing.
+     *
+     * Fired and forgotten on purpose: it exists for its side effect on the
+     * connection pool, and a failure here must never reach the microphone.
+     */
+    void fetch("/api/transcribe", { method: "HEAD" }).catch(() => {});
+
     navigator.mediaDevices
       .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
       .then((stream) => {

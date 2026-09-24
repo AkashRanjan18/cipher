@@ -3,20 +3,30 @@ import { NextResponse } from "next/server";
 /**
  * Spoken order → text, via Deepgram.
  *
- * The browser's own recogniser (Web Speech) still runs for the live words you
- * see while talking; this is the AUTHORITATIVE pass. Chrome's recogniser has
- * never heard of BONK and writes "bunk". Deepgram, told which words to expect,
- * gets it right — and the only thing a trading prompt cannot survive is the
- * right grammar applied to the wrong coin.
+ * THE ONLY ENGINE. Chrome's Web Speech API used to run alongside and was
+ * removed on 24 Sep 2026 — it has never heard of BONK and writes "bunk", it
+ * shipped the audio to Google, and its silent fallback meant nobody could tell
+ * which engine had answered. Deepgram, told which words to expect, gets the
+ * coin right, and the only thing a trading prompt cannot survive is the right
+ * grammar applied to the wrong one.
  *
  * SERVER-SIDE BECAUSE OF THE KEY. A Deepgram key in the browser is readable
  * by anyone who opens DevTools, and a leaked speech key gets found and drained.
  * This route is the only code that ever sees it.
  *
- * PRE-RECORDED, NOT STREAMING. A spoken order is about four seconds long.
- * Streaming exists for live audio that never ends; for a clip that is over
- * before a socket would finish handshaking it costs ~1.8x ($0.0077/min against
- * $0.0043) and buys nothing.
+ * PRE-RECORDED, AND THAT IS THE LATENCY. This argued that a four-second clip
+ * is over before a socket would finish handshaking, and it was right about the
+ * handshake and wrong about the cost. Nothing can start until the speaker
+ * stops, so the whole clip crosses the network and is processed in a wait the
+ * user sits through — about a second, all of it after they have finished
+ * talking. The streaming socket removes that by doing the work WHILE they
+ * talk, and the ~1.8x per minute ($0.0077 against $0.0043) buys the only thing
+ * that matters here.
+ *
+ * It needs a Deepgram key with `keys:write` so the server can mint a
+ * short-lived browser token; the current key has neither that nor grant
+ * permission. Until then this route is as fast as it can be made: on the edge,
+ * with the connection warmed while the microphone is open.
  *
  * cipher: no rate limit. Anyone can POST audio here and spend the credit. The
  * size cap below bounds any single request, not the number of them — put a
@@ -67,6 +77,20 @@ const VOCABULARY = [
  * on the chain dilutes the hint rather than strengthening it.
  */
 const MAX_KEYTERMS = 60;
+
+/**
+ * The edge, not a Node function.
+ *
+ * A Node serverless function runs in one region — iad1 by default, Virginia —
+ * so a trader in Mumbai uploads their audio across an ocean before anything
+ * begins, and a cold start adds a few hundred milliseconds on top. On the edge
+ * the browser's connection terminates at the nearest point of presence, the
+ * handshake is local, and there is no cold start to pay.
+ *
+ * The long leg to Deepgram remains, and it is why this is a step rather than
+ * the answer. The answer is the streaming socket.
+ */
+export const runtime = "edge";
 
 export async function POST(request: Request) {
   const key = process.env.DEEPGRAM_API_KEY;
@@ -175,4 +199,15 @@ export async function POST(request: Request) {
     console.error("[cipher] deepgram unreachable:", e);
     return NextResponse.json({ error: "transcription unreachable" }, { status: 502 });
   }
+}
+
+/**
+ * Nothing to serve — this exists to open the connection.
+ *
+ * The client calls it the moment the microphone opens, so DNS, TCP and TLS
+ * are already paid for by the time there is a clip to send. Around 300ms from
+ * Mumbai, spent while somebody is still talking rather than while they wait.
+ */
+export function HEAD() {
+  return new Response(null, { status: 204 });
 }
