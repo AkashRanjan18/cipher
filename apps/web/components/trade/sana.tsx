@@ -1261,8 +1261,8 @@ export function Sana({
           </span>
           <input
             ref={inputRef}
-            value={speech.listening ? speech.transcript + speech.interim : input}
-            readOnly={speech.listening}
+            value={speech.listening || speech.transcribing ? "" : input}
+            readOnly={speech.listening || speech.transcribing}
             onChange={(e) => {
               setInput(e.target.value);
               setSlashOpen(e.target.value.startsWith("/") && !e.target.value.includes(" "));
@@ -1274,7 +1274,11 @@ export function Sana({
             }}
             onKeyDown={(e) => e.key === "Escape" && setSlashOpen(false)}
             placeholder={
-              speech.listening ? "Listening…" : "Place a trade — e.g. buy $500 of SOL and set a stop loss of 10%"
+              speech.transcribing
+                ? "Transcribing…"
+                : speech.listening
+                  ? "Listening — stop talking when you're done"
+                  : "Place a trade — e.g. buy $500 of SOL and set a stop loss of 10%"
             }
             aria-label="Place a trade"
             className="min-w-0 flex-1 bg-transparent font-sans text-sm text-ink placeholder:text-ink/45 focus:outline-none"
@@ -1286,6 +1290,7 @@ export function Sana({
           {speech.supported && (
             <button
               type="button"
+              disabled={speech.transcribing}
               onClick={() => (speech.listening ? speech.stop() : speech.start())}
               aria-pressed={speech.listening}
               aria-label={speech.listening ? "Stop listening" : "Speak your order"}
@@ -1318,6 +1323,23 @@ export function Sana({
       {speech.error && (
         <p className="mt-1.5 rounded-lg border border-down/40 bg-down/10 px-2.5 py-1.5 font-sans text-[11px] text-champagne">
           {speech.error}
+        </p>
+      )}
+
+      {/*
+        * WHO ANSWERED, AND HOW LONG IT TOOK.
+        *
+        * There is only one engine now, so this is not about telling them
+        * apart — it is about being able to judge the one that is left. Voice
+        * quality was argued about for weeks on the strength of an impression,
+        * because two engines took turns and neither was named. A number under
+        * the bar is the difference between "Deepgram is bad" as a feeling and
+        * as a measurement, and it is the same reason the compiler has a
+        * corpus.
+        */}
+      {speech.lastMs !== null && !speech.error && !speech.listening && (
+        <p className="mt-1.5 px-2.5 font-sans text-[11px] text-mute">
+          Deepgram nova-3 · {(speech.lastMs / 1000).toFixed(1)}s
         </p>
       )}
 

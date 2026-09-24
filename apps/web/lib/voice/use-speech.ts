@@ -3,126 +3,120 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Dictation, via the browser's own recogniser.
+ * Dictation, via Deepgram and nothing else.
  *
- * cipher: the Web Speech API. It costs nothing, needs no server and no key,
- * and ships today — Chrome, Edge and Safari all have it. The price is that
- * Chrome streams the audio to Google, Firefox has none of it, and accuracy on
- * ticker symbols is mediocre (which lib/voice/normalise.ts exists to absorb).
+ * THE BROWSER'S RECOGNISER IS GONE. The user's call, 24 Sep 2026: "only
+ * Deepgram". It used to run alongside — Chrome's Web Speech API live as you
+ * spoke, a recorded clip to Deepgram when you stopped, and `authoritative ||
+ * heard` picking whichever answered. That had one virtue and two faults.
  *
- * The upgrade, when voice earns it, is a /api/transcribe route in front of
- * Whisper or Deepgram: better accuracy, one vendor, ~$0.006/min, and it works
- * in every browser. Nothing outside this file has to change — the hook's
- * shape is the contract.
+ * The virtue: words appeared while you talked. They no longer do; the bar says
+ * it is listening, then the finished sentence arrives. Deepgram has a
+ * streaming socket that would give the live text back, and that is the upgrade
+ * when it earns one. It is deliberately not this change.
+ *
+ * The faults were worse. Chrome ships the audio to Google, which is a second
+ * vendor nobody chose and a privacy claim cipher cannot make. And the fallback
+ * was SILENT — a Deepgram timeout, a 401, a slow network, and you quietly got
+ * Chrome's transcript instead, with nothing on screen to say so. Two engines
+ * and no way to tell which answered means no way to judge either. cipher spent
+ * weeks blaming Deepgram for text Chrome produced.
+ *
+ * ONE ENGINE MEANS FAILURES ARE LOUD. Nothing falls back, so anything that
+ * goes wrong says so. That is the point: a voice bar that silently degrades is
+ * a voice bar you cannot improve.
+ *
+ * It also works in Firefox now, which never had the Web Speech API at all —
+ * MediaRecorder and getUserMedia are everywhere.
  *
  * Requires a secure context. localhost counts; production is HTTPS anyway.
  */
 
-/*
- * The Web Speech API is not in lib.dom, so the shapes it returns are declared
- * here. Deliberately minimal: only the members actually read below, so this
- * cannot drift into claiming support for things that were never tested.
- */
-interface SpeechAlternative {
-  transcript: string;
-}
-interface SpeechResult {
-  readonly length: number;
-  isFinal: boolean;
-  [index: number]: SpeechAlternative;
-}
-interface SpeechResultList {
-  readonly length: number;
-  [index: number]: SpeechResult;
-}
-interface SpeechEvent extends Event {
-  resultIndex: number;
-  results: SpeechResultList;
-}
-interface SpeechErrorEvent extends Event {
-  error: string;
-}
-interface Recognition extends EventTarget {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  maxAlternatives: number;
-  start(): void;
-  stop(): void;
-  abort(): void;
-  onresult: ((e: SpeechEvent) => void) | null;
-  onerror: ((e: SpeechErrorEvent) => void) | null;
-  onend: (() => void) | null;
-}
-type RecognitionCtor = new () => Recognition;
-
-function ctor(): RecognitionCtor | null {
-  if (typeof window === "undefined") return null;
-  const w = window as unknown as {
-    SpeechRecognition?: RecognitionCtor;
-    webkitSpeechRecognition?: RecognitionCtor;
-  };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
-}
+/** How long a pause ends the sentence. */
+const SILENCE_MS = 1_800;
 
 /**
- * Every way this fails, in words a person can act on.
+ * Loud enough to be speech.
  *
- * A microphone button that goes dead and says nothing is worse than no
- * microphone button, because the user cannot tell whether it is broken, they
- * are muted, or it simply did not hear them.
+ * RMS over the raw waveform, 0-1. Room tone on a laptop mic sits around
+ * 0.002-0.008; speech clears 0.02 comfortably. The threshold has to sit above
+ * a noisy room and below a quiet voice, and this is the middle of that gap.
  */
-const MESSAGES: Record<string, string> = {
-  "not-allowed":
-    "Your browser is blocking the microphone. Allow it in the address bar and tap again.",
-  "service-not-allowed":
-    "Your browser is blocking the microphone. Allow it in the address bar and tap again.",
-  "audio-capture": "No microphone found. Plug one in or check your input device.",
-  network: "Speech recognition needs the network and could not reach it.",
-  "no-speech": "I didn't hear anything.",
-  aborted: "",
-};
+const SPEECH_RMS = 0.015;
 
-/** How long a pause ends the sentence. */
-const SILENCE_MS = 2_500;
+/** A stuck microphone must not record until the tab is closed. */
+const MAX_CLIP_MS = 60_000;
+
+/**
+ * Longer than the old six seconds, because there is nothing behind it now.
+ *
+ * With a fallback, a timeout cost you accuracy. Without one it costs you the
+ * whole sentence, so it is worth waiting through a slow response rather than
+ * throwing away words somebody already said.
+ */
+const TRANSCRIBE_TIMEOUT_MS = 15_000;
 
 export interface Speech {
-  /** False in Firefox, in insecure contexts, and during SSR. */
+  /** False without a microphone API, in insecure contexts, and during SSR. */
   supported: boolean;
+  /** The microphone is open and recording. */
   listening: boolean;
-  /** Words heard so far this session, growing as they are confirmed. */
+  /** The clip has been sent and the answer has not come back. */
+  transcribing: boolean;
+  /** The finished sentence. Empty until Deepgram answers. */
   transcript: string;
-  /** The unconfirmed tail. Shown greyed so the user sees it working. */
+  /**
+   * Always empty.
+   *
+   * Kept so the bar's contract does not change while the live-text question is
+   * open. Deepgram's streaming socket would fill it; the clip API cannot.
+   */
   interim: string;
   error: string | null;
+  /** How long the last transcription took, end of speech to text. */
+  lastMs: number | null;
   start(): void;
   stop(): void;
 }
 
+const MIC_ERRORS: Record<string, string> = {
+  NotAllowedError: "Your browser is blocking the microphone. Allow it in the address bar and tap again.",
+  SecurityError: "Your browser is blocking the microphone. Allow it in the address bar and tap again.",
+  NotFoundError: "No microphone found.",
+  NotReadableError: "Something else is using the microphone.",
+};
+
 /**
- * Send the recorded clip for the authoritative transcript.
+ * Send the clip and return what Deepgram heard.
  *
- * Returns "" on ANY failure — no key configured, network down, slow vendor —
- * and the caller falls back to what the browser already heard. Voice can only
- * ever get better than it was before this existed, never worse.
+ * THROWS rather than returning "". Nothing falls back any more, so a failure
+ * is a failure and the user has to be told — the old version swallowed every
+ * one of these and handed back Chrome's guess.
  */
 async function transcribe(blob: Blob, keyterms: string[]): Promise<string> {
-  if (blob.size === 0) return "";
+  if (blob.size === 0) throw new Error("Nothing was recorded. Check the microphone and try again.");
+
+  const q = keyterms.length ? `?keyterms=${encodeURIComponent(keyterms.join(","))}` : "";
+  let res: Response;
   try {
-    const q = keyterms.length ? `?keyterms=${encodeURIComponent(keyterms.join(","))}` : "";
-    const res = await fetch(`/api/transcribe${q}`, {
+    res = await fetch(`/api/transcribe${q}`, {
       method: "POST",
       headers: { "Content-Type": blob.type || "audio/webm" },
       body: blob,
-      /* Past this the browser's own text is the better answer than waiting. */
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
     });
-    if (!res.ok) return "";
-    const body = (await res.json()) as { transcript?: unknown };
-    return typeof body.transcript === "string" ? body.transcript.trim() : "";
   } catch {
-    return "";
+    throw new Error("Couldn't reach the transcriber. Type it instead.");
   }
+
+  if (res.status === 401 || res.status === 403) throw new Error("Voice isn't configured. Type it instead.");
+  if (res.status === 429) throw new Error("Too many voice requests. Wait a moment.");
+  if (!res.ok) throw new Error("The transcriber failed. Type it instead.");
+
+  const body = (await res.json().catch(() => ({}))) as { transcript?: unknown };
+  const text = typeof body.transcript === "string" ? body.transcript.trim() : "";
+  if (!text) throw new Error("I didn't catch that. Say it again.");
+  return text;
 }
 
 export function useSpeech(
@@ -136,187 +130,163 @@ export function useSpeech(
 ): Speech {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [lastMs, setLastMs] = useState<number | null>(null);
 
-  const recRef = useRef<Recognition | null>(null);
-  const silenceRef = useRef<number | null>(null);
-  const finalRef = useRef("");
-  /* Held in a ref so changing the callback does not tear down a live
-     recognition session mid-sentence. */
+  /* Callbacks through refs: `start` and `stop` are handed to a button and must
+     stay referentially stable, so what they read cannot be state. */
   const cbRef = useRef(onFinal);
   cbRef.current = onFinal;
   const keytermsRef = useRef(getKeyterms);
   keytermsRef.current = getKeyterms;
 
-  /*
-   * The recording that runs alongside the browser recogniser.
-   *
-   * SESSION, because the Deepgram reply is asynchronous and can arrive after
-   * the user has already tapped the mic again. Without it a stale transcript
-   * from the abandoned session would fire onFinal into the new one — an order
-   * nobody is currently speaking.
-   */
-  const mediaRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const audioRef = useRef<AudioContext | null>(null);
+  const timersRef = useRef<{ poll?: number; cap?: number }>({});
+  /** Bumped per session, so a late answer from an abandoned clip is dropped. */
   const sessionRef = useRef(0);
 
-  const releaseMic = () => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+  useEffect(() => {
+    setSupported(
+      typeof window !== "undefined" &&
+        typeof MediaRecorder !== "undefined" &&
+        Boolean(navigator.mediaDevices?.getUserMedia),
+    );
+  }, []);
+
+  const teardown = useCallback(() => {
+    const t = timersRef.current;
+    if (t.poll) window.clearInterval(t.poll);
+    if (t.cap) window.clearTimeout(t.cap);
+    timersRef.current = {};
+    audioRef.current?.close().catch(() => {});
+    audioRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-  };
-
-  /* Support is checked after mount: the server has no window, and rendering a
-     mic button that vanishes on hydration is a layout shift on every load. */
-  useEffect(() => setSupported(ctor() !== null), []);
-
-  const clearSilence = () => {
-    if (silenceRef.current !== null) {
-      window.clearTimeout(silenceRef.current);
-      silenceRef.current = null;
-    }
-  };
+  }, []);
 
   const stop = useCallback(() => {
-    clearSilence();
-    recRef.current?.stop();
-  }, []);
-
-  const start = useCallback(() => {
-    const Ctor = ctor();
-    if (!Ctor) return;
-
-    // Tapping twice must not open a second session against the same mic.
-    recRef.current?.abort();
-
-    const rec = new Ctor();
-    rec.lang = "en-US";
-    /*
-     * continuous, not one-shot.
-     *
-     * A trading sentence has pauses in it — "buy $500 of sol… sell a third at
-     * 2x… stop the rest at -50%". One-shot recognition ends at the first
-     * pause and silently truncates the order to its first clause, which is
-     * the most dangerous possible failure: a valid, parseable, WRONG order.
-     * So it listens through the gaps and ends on a real silence instead.
-     */
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-
-    finalRef.current = "";
-    setTranscript("");
-    setInterim("");
-    setError(null);
-
-    rec.onresult = (e) => {
-      let live = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) finalRef.current += r[0].transcript;
-        else live += r[0].transcript;
-      }
-      setTranscript(finalRef.current);
-      setInterim(live);
-
-      // Any speech resets the clock; the pause has to be a real one.
-      clearSilence();
-      silenceRef.current = window.setTimeout(stop, SILENCE_MS);
-    };
-
-    rec.onerror = (e) => {
-      const msg = MESSAGES[e.error];
-      // "aborted" is what our own stop() looks like. Not an error.
-      if (msg) setError(msg);
-      else if (msg !== "") setError("The microphone stopped unexpectedly.");
-    };
-
-    rec.onend = () => {
-      clearSilence();
-      setListening(false);
-      setInterim("");
-      const heard = finalRef.current.trim();
-      const session = sessionRef.current;
-      const mr = mediaRef.current;
-
-      /* No recording — unsupported browser, or the mic was refused. The
-         browser's text is used exactly as it always was. */
-      if (!mr || mr.state === "inactive") {
-        releaseMic();
-        if (heard) cbRef.current?.(heard);
-        return;
-      }
-
-      mr.onstop = async () => {
-        releaseMic();
-        const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
-        chunksRef.current = [];
-        const authoritative = await transcribe(blob, keytermsRef.current?.() ?? []);
-        /* A newer session has started while this one was being transcribed:
-           drop it rather than fire an order nobody is speaking. */
-        if (session !== sessionRef.current) return;
-        const text = authoritative || heard;
-        if (!text) return;
-        setTranscript(text);
-        cbRef.current?.(text);
-      };
-      mr.stop();
-    };
-
-    recRef.current = rec;
-    sessionRef.current += 1;
-    /* A previous session's recorder must not keep the mic open. */
-    if (mediaRef.current && mediaRef.current.state !== "inactive") mediaRef.current.stop();
-    mediaRef.current = null;
-    releaseMic();
-
-    /*
-     * Record the same audio in parallel. The browser recogniser keeps running
-     * for the live words on screen — instant, free, already written — and this
-     * clip is what gets the authoritative transcript when speech ends.
-     *
-     * Fire-and-forget: if getUserMedia is slow or refused, the session simply
-     * has no recording and falls back to the browser's text in onend.
-     */
-    void (async () => {
-      try {
-        if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return;
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        streamRef.current = stream;
-        const mr = new MediaRecorder(stream);
-        chunksRef.current = [];
-        mr.ondataavailable = (e) => {
-          if (e.data.size) chunksRef.current.push(e.data);
-        };
-        mediaRef.current = mr;
-        mr.start();
-      } catch {
-        /* No recorder: the browser's text is used, exactly as before. */
-      }
-    })();
-
-    try {
-      rec.start();
-      setListening(true);
-    } catch {
-      /* start() throws if a session is already running — rare, and abort()
-         above usually prevents it. Nothing useful to say to the user. */
+    const rec = recorderRef.current;
+    if (rec && rec.state !== "inactive") rec.stop();
+    else {
+      teardown();
       setListening(false);
     }
-  }, [stop]);
+  }, [teardown]);
 
-  // Never leave a microphone open behind a navigation.
-  useEffect(() => {
-    return () => {
-      clearSilence();
-      recRef.current?.abort();
-      sessionRef.current += 1;
-      if (mediaRef.current && mediaRef.current.state !== "inactive") mediaRef.current.stop();
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
+  const start = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") return;
+    setError(null);
+    setTranscript("");
+    const session = ++sessionRef.current;
 
-  return { supported, listening, transcript, interim, error, start, stop };
+    navigator.mediaDevices
+      .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+      .then((stream) => {
+        if (session !== sessionRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        chunksRef.current = [];
+
+        const rec = new MediaRecorder(stream);
+        recorderRef.current = rec;
+        rec.ondataavailable = (e) => {
+          if (e.data.size > 0) chunksRef.current.push(e.data);
+        };
+
+        rec.onstop = async () => {
+          teardown();
+          setListening(false);
+          const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+          chunksRef.current = [];
+          if (session !== sessionRef.current) return;
+
+          setTranscribing(true);
+          const began = performance.now();
+          try {
+            const text = await transcribe(blob, keytermsRef.current?.() ?? []);
+            /* A newer session started while this one was in flight: drop it
+               rather than fire an order nobody is currently speaking. */
+            if (session !== sessionRef.current) return;
+            setLastMs(Math.round(performance.now() - began));
+            setTranscript(text);
+            cbRef.current?.(text);
+          } catch (e) {
+            if (session !== sessionRef.current) return;
+            setLastMs(Math.round(performance.now() - began));
+            setError((e as Error).message);
+          } finally {
+            if (session === sessionRef.current) setTranscribing(false);
+          }
+        };
+
+        /*
+         * SILENCE ENDS THE SENTENCE, and it used to be the browser recogniser
+         * that noticed. Without it, the level of the audio is the only thing
+         * that knows whether anyone is still talking.
+         *
+         * Speech has to be heard FIRST. Otherwise the pause between tapping
+         * the microphone and starting to speak is silence, and the clip ends
+         * before a word is in it.
+         */
+        const audio = new AudioContext();
+        audioRef.current = audio;
+        const analyser = audio.createAnalyser();
+        analyser.fftSize = 1024;
+        audio.createMediaStreamSource(stream).connect(analyser);
+        const samples = new Uint8Array(analyser.fftSize);
+
+        let heardSpeech = false;
+        let quietSince = 0;
+        timersRef.current.poll = window.setInterval(() => {
+          analyser.getByteTimeDomainData(samples);
+          let sum = 0;
+          for (const s of samples) {
+            const v = (s - 128) / 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / samples.length);
+
+          if (rms > SPEECH_RMS) {
+            heardSpeech = true;
+            quietSince = 0;
+            return;
+          }
+          if (!heardSpeech) return;
+          if (quietSince === 0) quietSince = performance.now();
+          else if (performance.now() - quietSince > SILENCE_MS) stop();
+        }, 100);
+
+        /* A stuck microphone must not record until the tab is closed. */
+        timersRef.current.cap = window.setTimeout(stop, MAX_CLIP_MS);
+
+        rec.start();
+        setListening(true);
+      })
+      .catch((e: DOMException) => {
+        teardown();
+        setListening(false);
+        setError(MIC_ERRORS[e.name] ?? "The microphone could not be opened.");
+      });
+  }, [stop, teardown]);
+
+  useEffect(() => teardown, [teardown]);
+
+  return {
+    supported,
+    listening,
+    transcribing,
+    transcript,
+    interim: "",
+    error,
+    lastMs,
+    start,
+    stop,
+  };
 }
