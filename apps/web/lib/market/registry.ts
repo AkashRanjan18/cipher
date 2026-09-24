@@ -22,6 +22,8 @@
  * which number the one they said is closer to, and refused when it is neither.
  */
 
+import { SIDES } from "../compiler/verbs.ts";
+
 export interface RegistryToken {
   mint: string;
   /** "SOL" */
@@ -318,8 +320,12 @@ export function against(said: string, open: RegistryToken, tokens: RegistryToken
  * for it — a near-miss anywhere else is left alone and refused later, which
  * costs a retype instead of a position.
  */
-const TOKEN_SLOT =
-  /\b(?:buy|sell|ape|grab|cop|get\s+me|dump|put)\s+(?:me\s+)?(?:\$?\s*[\d.,]+\s*%?\s*[km]?\s*(?:tokens?|coins?)?\s*)?(?:half|a\s+third|a\s+quarter|all|everything|the\s+rest\s+)?\s*(?:worth\s+of\s+|of\s+|into\s+|in\s+)?(?:my\s+|the\s+)?([a-z][a-z0-9]{1,14})\b/i;
+const TOKEN_SLOT = new RegExp(
+  `\\b(?:${SIDES})\\s+(?:me\\s+)?(?:\\$?\\s*[\\d.,]+\\s*%?\\s*[km]?\\s*(?:tokens?|coins?)?\\s*)?` +
+    `(?:half|a\\s+third|a\\s+quarter|all|everything|the\\s+rest\\s+)?\\s*` +
+    `(?:worth\\s+of\\s+|of\\s+|into\\s+|in\\s+)?(?:my\\s+|the\\s+)?([a-z][a-z0-9]{1,14})\\b`,
+  "i",
+);
 
 export interface Correction {
   /** The sentence to show, corrected. */

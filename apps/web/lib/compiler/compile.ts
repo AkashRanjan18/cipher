@@ -8,6 +8,7 @@ import {
   type OrderSpec,
 } from "@cipher/shared";
 import { readScale, statedScale, type RegistryToken } from "../market/registry.ts";
+import { SIDES } from "./verbs.ts";
 import { compactWords } from "../format.ts";
 import { parseWithGrammar } from "./grammar.ts";
 import { askForMissing, askForMissingTrigger } from "./missing.ts";
@@ -343,7 +344,7 @@ function outOfScope(text: string): Compiled | null {
 /* ────────────────────────────── the missing verb ───────────────────────── */
 
 /** Anything that already says which way the order goes. */
-const HAS_SIDE = /\b(buy|sell|ape|grab|cop|get\s+me|dump|put|close|exit|short|long)\b/;
+const HAS_SIDE = new RegExp(`\\b(?:${SIDES}|close|exit|short|long)\\b`);
 /** A dollar size naming a token — "$100 of cash", "$1.5k of bonk". */
 const SIZE_OF_TOKEN = /\$\s*[\d.,]+\s*[km]?\s+(?:of\s+|worth\s+of\s+)?[a-z][a-z0-9]{1,14}\b/;
 

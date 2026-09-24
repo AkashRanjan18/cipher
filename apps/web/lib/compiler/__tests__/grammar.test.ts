@@ -465,3 +465,53 @@ test("a target percentage is the mirror of a stop percentage", () => {
     value: 2,
   });
 });
+
+test("the way people narrate their own action parses too", () => {
+  /*
+   * From the microphone, 24 Sep 2026: "BUYING $100 of solana and set a stop
+   * loss at $114 and a target price of 118" was refused outright. Deepgram
+   * heard it perfectly.
+   *
+   * No copy of the verb list had ever held an inflected form. Typed, people
+   * write "buy"; spoken, they say "buying this" and "selling half" as readily
+   * as the bare imperative — and a voice-first prompt bar that only knows the
+   * imperative understands half of what it is told.
+   */
+  for (const s of [
+    "buying $100 of solana and set a stop loss at $114 and a target price of 118",
+    "buy $100 of solana and set a stop loss at $114 and a target price of 118",
+  ]) {
+    const spec = parseWithGrammar(s)!;
+    assert.deepEqual(spec.entry?.amount, { kind: "usd", value: 100 }, s);
+    assert.equal(spec.entry?.side, "buy", s);
+    assert.equal(spec.exits.length, 2, s);
+  }
+  assert.equal(parseWithGrammar("purchasing $200 of sol")?.entry?.side, "buy");
+  assert.equal(parseWithGrammar("i bought $50 of sol")?.entry?.side, "buy");
+  assert.equal(parseWithGrammar("selling half of my sol")?.entry?.side, "sell");
+  assert.equal(parseWithGrammar("dumping all my sol")?.entry?.side, "sell");
+});
+
+test("every copy of the verb list is the same list", () => {
+  /*
+   * It was written out six times — two entry branches, entryClause, HAS_SIDE
+   * in compile.ts, the token slot in the registry, and the position-share
+   * branch — and four separate bugs on 23 and 24 Sep 2026 were copies that had
+   * fallen behind. They all read verbs.ts now, and this fails if one stops.
+   */
+  const opens = ["buy", "buying", "bought", "purchase", "ape", "grab", "put"];
+  for (const verb of opens) {
+    assert.equal(
+      parseWithGrammar(`${verb} $100 of sol`)?.entry?.side,
+      "buy",
+      `"${verb}" must open a position`,
+    );
+  }
+  for (const verb of ["sell", "selling", "sold", "dump"]) {
+    assert.equal(
+      parseWithGrammar(`${verb} $100 of sol`)?.entry?.side,
+      "sell",
+      `"${verb}" must close one`,
+    );
+  }
+});

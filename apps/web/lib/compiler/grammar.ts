@@ -7,6 +7,7 @@ import {
   type Trigger,
   newId,
 } from "@cipher/shared";
+import { SIDES, CLOSES, closesPosition } from "./verbs.ts";
 
 /**
  * The deterministic parser.
@@ -146,13 +147,18 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      * a dollar figure the parse did not use and hands the whole sentence to
      * the model rather than answering with half an order.
      */
-    /\b(buy|sell|ape|grab|cop|get\s+me|dump|put)\s+(?:me\s+)?(\$\s*[\d.,]+\s*[km]?)\s+(?:of\s+|worth\s+of\s+|into\s+|in\s+)?(?!(?:and|then|once|when|if|at|with|for|to|the|an|my|it|is|in|into|of|worth)\b)([a-z0-9]{2,15})\b/,
+    new RegExp(
+      `\\b(${SIDES})\\s+(?:me\\s+)?(\\$\\s*[\\d.,]+\\s*[km]?)\\s+` +
+        `(?:of\\s+|worth\\s+of\\s+|into\\s+|in\\s+)?` +
+        `(?!(?:and|then|once|when|if|at|with|for|to|the|an|my|it|is|in|into|of|worth)\\b)` +
+        `([a-z0-9]{2,15})\\b`,
+    ),
   );
   if (buy) {
     const amount = parseAmount(buy[2]);
     if (!amount) return null;
     /* Every verb here opens a position except the two that close one. */
-    const closes = /^(sell|dump)$/.test(buy[1]);
+    const closes = closesPosition(buy[1]);
     entry = {
       side: closes ? "sell" : "buy",
       token: buy[3],
@@ -212,8 +218,14 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      * named fraction now REQUIRES an "of" or a "my" between it and the token,
      * which every real phrasing has and no stray match does.
      */
+    /* CLOSES, not a hand-written "sell|close|dump|exit": the sixth copy of the
+       list, and the one that still refused "SELLING half of my sol". */
     const frac = text.match(
-      /\b(?:sell|close|dump|exit)\s+(?:(?:a|the)\s+)?(?:(half|third|quarter|rest|all|everything)|([\d.]+)\s*%)\s+(?:of\s+)?(?:my\s+)?(?:(?:entire|whole)\s+)?([a-z][a-z0-9]{1,14})\b/,
+      new RegExp(
+        `\\b(?:${CLOSES}|close|exit)\\s+(?:(?:a|the)\\s+)?` +
+          `(?:(half|third|quarter|rest|all|everything)|([\\d.]+)\\s*%)\\s+` +
+          `(?:of\\s+)?(?:my\\s+)?(?:(?:entire|whole)\\s+)?([a-z][a-z0-9]{1,14})\\b`,
+      ),
     );
 
     /*
@@ -234,12 +246,15 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      * something the user holds and the other names a market.
      */
     const closing =
-      /\b(close|dump|exit)\b/.test(text) ||
+      /\b(close|dump|dumping|exit)\b/.test(text) ||
       /\b(my\s+position|entire|whole)\b/.test(text) ||
-      /\b(?:sell|close|dump|exit)\s+my\s+[a-z]/.test(text);
+      new RegExp(`\\b(?:${CLOSES}|close|exit)\\s+my\\s+[a-z]`).test(text);
     const whole = closing
       ? text.match(
-          /\b(?:sell|close|dump|exit)\s+(?:my\s+)?(?:(?:entire|whole)\s+)?(?:position\s+(?:on|in)\s+)?(?:my\s+)?([a-z][a-z0-9]{1,14})\b/,
+          new RegExp(
+            `\\b(?:${CLOSES}|close|exit)\\s+(?:my\\s+)?(?:(?:entire|whole)\\s+)?` +
+              `(?:position\\s+(?:on|in)\\s+)?(?:my\\s+)?([a-z][a-z0-9]{1,14})\\b`,
+          ),
         )
       : null;
 
@@ -318,7 +333,11 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      * corpus, 23 Sep 2026 — it was the whole of the remaining 7.3%.
      */
     const sized = text.match(
-      /\b(buy|sell|ape|grab|cop|get\s+me|dump|put)\s+(?:me\s+)?([\d.,]+)\s*(?:tokens?\s+(?:worth\s+of\s+|of\s+|into\s+)?|coins?\s+of\s+|of\s+|into\s+)?(?!dollars?\b|usd\b|bucks?\b|worth\b|tokens?\b|coins?\b)([a-z][a-z0-9]{1,14})\b/,
+      new RegExp(
+      `\\b(${SIDES})\\s+(?:me\\s+)?([\\d.,]+)\\s*` +
+        `(?:tokens?\\s+(?:worth\\s+of\\s+|of\\s+|into\\s+)?|coins?\\s+of\\s+|of\\s+|into\\s+)?` +
+        `(?!dollars?\\b|usd\\b|bucks?\\b|worth\\b|tokens?\\b|coins?\\b)([a-z][a-z0-9]{1,14})\\b`,
+    ),
     );
     if (sized && !/^[\d.,]+\s*[%x]/.test(sized[0].replace(/^\w+\s+(?:me\s+)?/, ""))) {
       const value = Number(sized[2].replace(/,/g, ""));
@@ -326,7 +345,7 @@ export function parseWithGrammar(input: string): OrderSpec | null {
         entry = {
           /* Every verb here opens a position except the two that close one —
              the same test the dollar branch makes. */
-          side: /^(sell|dump)$/.test(sized[1]) ? "sell" : "buy",
+          side: closesPosition(sized[1]) ? "sell" : "buy",
           token: sized[3],
           mint: null,
           amount: { kind: "tokens", value },
@@ -694,7 +713,7 @@ function entryClause(text: string): string {
    * rested at 300 instead of filling now, and the same 300 was also its
    * target. Found by the corpus, 23 Sep 2026.
    */
-  const verb = text.search(/\b(?:buy|sell|ape|grab|cop|get\s+me|dump|put|close|exit)\b/);
+  const verb = text.search(new RegExp(`\\b(?:${SIDES}|close|exit)\\b`));
   const from = verb < 0 ? text : text.slice(verb);
 
   /*
