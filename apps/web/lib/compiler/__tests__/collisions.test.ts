@@ -54,9 +54,17 @@ test("reserved words that would break if somebody minted them", () => {
    * LONGER shows up in a diff, and so the day one of these is minted there is
    * something to check against.
    */
+  /*
+   * It grew on 24 Sep 2026, and the growth is the thing this test is for.
+   * Teaching entryClause that an exit word ends the entry clause — so a spoken
+   * "buy $5 of pump set a stop loss at 0.0038" stops handing the stop's price
+   * to the buy — made `sell`, `target`, `trail` and `trailing` structural too.
+   * None is a live ticker, and the check above is what would say so.
+   */
   const affected = [...new Set(collisions(RESERVED).map((c) => c.ticker))].sort();
   assert.deepEqual(affected, [
     "all", "and", "at", "everything", "exit", "for", "half", "into", "of",
-    "once", "quarter", "rest", "stop", "then", "third", "when", "with", "worth",
+    "once", "quarter", "rest", "sell", "stop", "target", "then", "third",
+    "trail", "trailing", "when", "with", "worth",
   ]);
 });

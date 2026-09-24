@@ -130,3 +130,29 @@ export function since(unix: number | null, nowMs: number | null): string {
   if (s < 2_592_000) return `${Math.floor(s / 86400)}d`;
   return `${Math.floor(s / 2_592_000)}mo`;
 }
+
+/**
+ * Rewrite the big numbers in a sentence as K and M.
+ *
+ * For the PROMPT BAR, not for the compiler. "buy at 3400000" is a number
+ * nobody says and nobody can check at a glance; "buy at 3.4M" is how it was
+ * spoken in the first place. The user's rule, 24 Sep 2026.
+ *
+ * Under a thousand nothing is touched, so prices like 0.0038 and sizes like
+ * $500 come through exactly as they are — and a memecoin price must never be
+ * rounded into a K.
+ *
+ * SAFE TO RE-PARSE, and that is a constraint rather than a nicety: whatever
+ * this writes into the bar is what gets compiled when the user presses Enter.
+ * normaliseSpeech expands "3.4M" back to 3400000 before the grammar sees it,
+ * so the round trip is lossless. It was not until 24 Sep 2026 — millions were
+ * left alone because "m" also means minutes — and compacting without fixing
+ * that would have silently dropped every number it prettified.
+ */
+export function compactNumbers(text: string): string {
+  return text.replace(/(\$?)(\d[\d,]*(?:\.\d+)?)/g, (whole, dollar: string, digits: string) => {
+    const value = Number(digits.replace(/,/g, ""));
+    if (!Number.isFinite(value) || value < 1_000) return whole;
+    return dollar + compactWords(value);
+  });
+}

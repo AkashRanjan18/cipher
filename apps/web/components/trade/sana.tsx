@@ -21,7 +21,7 @@ import { resolveQty, allInPrice,
   positionOf,
   heldMints,
 } from "@/lib/account/paper";
-import { usd, compactUsd, pct } from "@/lib/format";
+import { usd, compactUsd, pct, compactNumbers } from "@/lib/format";
 import { equity, unrealised } from "@/lib/account/paper";
 
 /**
@@ -273,7 +273,23 @@ export function Sana({
        * to the coin on screen is only defensible because the corrected
        * sentence is read before it runs.
        */
-      const fixed = correctSentence(said, openToken, registry);
+      /*
+       * NUMBERS AS NUMBERS, IN THE BAR. The user's rule, 24 Sep 2026: "$" for
+       * dollars, K for thousands, M for millions, and everything else in
+       * digits.
+       *
+       * normaliseSpeech already did all of this — it turns "five dollars" into
+       * "$5" and "zero point zero zero three eight" into "0.0038" — but it ran
+       * inside compile(), so the COMPILER saw the digits and the BAR still
+       * showed the words. The person checking the sentence before they send it
+       * was reading the one version nobody had cleaned up.
+       *
+       * Then compacted, because "3400000" is not how anybody says or checks a
+       * market cap. The compiler reads "3.4M" straight back — which is why
+       * normalise.ts had to learn to expand millions first, or the round trip
+       * would have quietly dropped the number it just prettified.
+       */
+      const fixed = correctSentence(compactNumbers(normaliseSpeech(said)), openToken, registry);
       setInput(fixed.text);
       setHeardAs(fixed.changed);
       setElsewhere(fixed.elsewhere);

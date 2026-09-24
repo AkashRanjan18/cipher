@@ -396,3 +396,40 @@ test("a connective is never mistaken for a token", () => {
   assert.equal(parseWithGrammar("buy $10 in and cut me if it drops 10%")?.entry, null);
   assert.equal(parseWithGrammar("put $10 in and stop at 5%")?.entry, null);
 });
+
+test("a spoken order without commas keeps its clauses apart", () => {
+  /*
+   * From the microphone, 24 Sep 2026:
+   *
+   *   "buy me $5 of pump set a stop loss at 0.0038 and sell it all at 0.0042"
+   *
+   * entryClause split only on written punctuation — commas, "and", "then" —
+   * and speech has none of it. The first "and" sits in front of "sell", so the
+   * entry clause ran through the stop and the BUY took 0.0038 as its own limit
+   * price: a market buy became a resting order at the stop level, the stop
+   * armed at the same price, and the target disappeared. Three errors from one
+   * missing comma.
+   *
+   * "sell IT all" was the second half of it — nothing in the exit pattern
+   * could consume "it" before the size, so the 0.0042 target never matched.
+   */
+  const spec = parseWithGrammar(
+    "buy me $5 of pump set a stop loss at 0.0038 and sell it all at 0.0042",
+  )!;
+  assert.deepEqual(spec.entry?.amount, { kind: "usd", value: 5 });
+  assert.equal(spec.entry?.trigger, null, "a market buy must not take the stop's price");
+  assert.deepEqual(
+    spec.exits.map((e) => e.trigger).sort((a, b) => (a as never as { value: number }).value - (b as never as { value: number }).value),
+    [
+      { kind: "priceAbsolute", value: 0.0038 },
+      { kind: "priceAbsolute", value: 0.0042 },
+    ],
+  );
+});
+
+test("a written resting entry still rests", () => {
+  /* The clause split must not cost the case it was protecting. */
+  const spec = parseWithGrammar("buy $500 of sol at 95 and stop at 90")!;
+  assert.deepEqual(spec.entry?.trigger, { kind: "priceAbsolute", value: 95 });
+  assert.deepEqual(spec.exits.map((e) => e.trigger), [{ kind: "priceAbsolute", value: 90 }]);
+});

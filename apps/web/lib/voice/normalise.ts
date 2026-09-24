@@ -308,11 +308,43 @@ export function normaliseSpeech(raw: string): string {
   /*
    * "81.5k" → "81500". Found live, 19 Sep 2026: "buy 0.001 btc when it
    * reaches 81.5k" read the price as $81 — the rules that read a price stopped
-   * at the "k". Written out here, once, no price pattern can miss it. Only
-   * "k": "m" also means minutes ("in 5m"), so millions stay as they are.
+   * at the "k". Written out here, once, no price pattern can miss it.
    */
   t = t.replace(/\b(\d[\d,]*(?:\.\d+)?)\s*k\b/g, (_, n: string) =>
     String(Math.round(Number(n.replace(/,/g, "")) * 1_000 * 1e6) / 1e6),
+  );
+
+  /*
+   * "3.4m" → "3400000", but ONLY where it cannot be a duration.
+   *
+   * "m" means minutes as readily as millions — "show me the 5m chart" — which
+   * is why this rule did not exist and millions were left alone. The cost of
+   * leaving them was silent: "sell at 3.4m" parsed the price as 3.4 and
+   * dropped the exit, because the patterns that read a price stop at the "m"
+   * exactly as they stopped at the "k".
+   *
+   * So it expands only where a duration cannot be meant:
+   *   after a "$"          — "$3.4m" is money, never four minutes
+   *   after at / to / @    — the words that introduce a price
+   *   with a decimal point — intervals are 1m, 5m, 15m, never 3.4m
+   *
+   * "show me the 5m chart" matches none of those and survives untouched.
+   */
+  const scale = (n: string, by: number) =>
+    String(Math.round(Number(n.replace(/,/g, "")) * by * 1e6) / 1e6);
+
+  t = t.replace(/(\$\s*)(\d[\d,]*(?:\.\d+)?)\s*([mb])\b/g, (_, sign: string, n: string, unit: string) =>
+    `${sign}${scale(n, unit === "b" ? 1e9 : 1e6)}`,
+  );
+  /* "to" introduces a price AND an interval — "switch to 15m" is fifteen
+     minutes, not fifteen million. The navigation verbs are the tell, and
+     excluding them leaves "when it drops to 3.4m" working. */
+  t = t.replace(
+    /(?<!\b(?:switch|go|change|move|jump|flip|back)\s)\b(at|to|@)\s+(\d[\d,]*(?:\.\d+)?)\s*([mb])\b/g,
+    (_, word: string, n: string, unit: string) => `${word} ${scale(n, unit === "b" ? 1e9 : 1e6)}`,
+  );
+  t = t.replace(/\b(\d[\d,]*\.\d+)\s*([mb])\b/g, (_, n: string, unit: string) =>
+    scale(n, unit === "b" ? 1e9 : 1e6),
   );
   t = t.replace(/\btriples?\b/g, "3x");
 

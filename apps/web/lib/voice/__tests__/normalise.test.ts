@@ -176,3 +176,20 @@ test("a digit multiplied by a spoken scale word", () => {
     "buy me $100 of zdc at 1500 and sell 70% of it at 1300",
   );
 });
+
+test("millions expand where a duration cannot be meant, and nowhere else", () => {
+  /*
+   * "m" means minutes as readily as millions, which is why this rule did not
+   * exist. The cost of leaving it out was silent: "sell at 3.4m" read the
+   * price as 3.4 and the exit was dropped, exactly as "81.5k" once read as 81.
+   */
+  assert.equal(normaliseSpeech("sell at 3.4m"), "sell at 3400000");
+  assert.equal(normaliseSpeech("buy $3.4m of sol"), "buy $3400000 of sol");
+  assert.equal(normaliseSpeech("buy $2b of sol"), "buy $2000000000 of sol");
+  assert.equal(normaliseSpeech("when it drops to 3.4m"), "when it drops to 3400000");
+
+  // A duration survives: no "$", no "at", and an interval is never a decimal.
+  assert.equal(normaliseSpeech("show me the 5m chart"), "show me the 5m chart");
+  assert.equal(normaliseSpeech("switch to 15m"), "switch to 15m");
+  assert.equal(normaliseSpeech("go to 5m"), "go to 5m");
+});

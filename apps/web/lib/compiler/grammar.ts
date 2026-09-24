@@ -489,7 +489,11 @@ export function parseWithGrammar(input: string): OrderSpec | null {
      * resting sell AND a duplicate exit at the same price, selling 50% twice.
      * Caught by the corpus, which went from 100% on exits to 97.9%.
      */
-    /\b(?:sell|take profit(?:\s+on)?)\s+(?:(a third|a half|half|third|quarter|a quarter|all|everything|the rest|rest|[\d.]+\s*%)\s+)?(?:of\s+(?:it|them|that|these|those)\s+)?(?:at|@)\s*(\$)?\s*([\d.,]+)\b(?!\s*[x%.\d])/g,
+    /* `it` may lead the size — "sell IT ALL at 0.0042", which is how it is
+       said out loud and how the microphone delivered it on 24 Sep 2026. The
+       exit was dropped outright: nothing in the pattern could consume "it"
+       before the size, so the match failed and the target never existed. */
+    /\b(?:sell|take profit(?:\s+on)?)\s+(?:it\s+)?(?:(a third|a half|half|third|quarter|a quarter|all|everything|the rest|rest|[\d.]+\s*%)\s+)?(?:of\s+(?:it|them|that|these|those)\s+)?(?:at|@)\s*(\$)?\s*([\d.,]+)\b(?!\s*[x%.\d])/g,
   )) {
     /*
      * A BARE PRICE IS A PRICE, with or without a size in front of it.
@@ -654,7 +658,29 @@ function entryClause(text: string): string {
    */
   const verb = text.search(/\b(?:buy|sell|ape|grab|cop|get\s+me|dump|put|close|exit)\b/);
   const from = verb < 0 ? text : text.slice(verb);
-  return from.split(/,|;|\band\b|\bthen\b|\bonce\b/)[0];
+
+  /*
+   * AN EXIT WORD ENDS THE ENTRY CLAUSE, PUNCTUATION OR NOT.
+   *
+   * This split on commas, semicolons, "and", "then" and "once" — all the marks
+   * of a written sentence. Spoken ones have none of them. Reported live, 24
+   * Sep 2026, from the microphone:
+   *
+   *   "buy me $5 of pump set a stop loss at 0.0038 and sell it all at 0.0042"
+   *
+   * The first "and" is in front of "sell", so the entry clause ran all the way
+   * through the stop — and the buy took 0.0038 as its own limit price. A
+   * market buy became a resting order at the stop level, the stop armed at the
+   * same price, and the 0.0042 target disappeared. Three errors from one
+   * missing comma.
+   *
+   * Searched from index 1 so a sentence that OPENS with "sell" is not cut at
+   * its own first word.
+   */
+  const cut = from
+    .slice(1)
+    .search(/,|;|\band\b|\bthen\b|\bonce\b|\bset\s+a\b|\bstop\b|\btarget\b|\btake\s+profit\b|\bsell\b|\btrail/);
+  return cut < 0 ? from : from.slice(0, cut + 1);
 }
 
 /**
