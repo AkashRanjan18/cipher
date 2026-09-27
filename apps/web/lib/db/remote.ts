@@ -115,14 +115,21 @@ export async function tradeRemote(
     slippageBps?: number;
   },
 ): Promise<{ fill: Fill; account: Account } | { refusal: string } | null> {
-  if (!token) return null;
+  if (!token) return { refusal: "You're signed out. Sign in again — nothing happened." };
   try {
     const res = await fetch("/api/trade", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(input),
     });
-    if (!res.ok) return null;
+    /*
+     * SAY WHICH FAILURE IT WAS. Every non-2xx came back as "couldn't reach the
+     * server" — including the 401 from an expired sign-in on 27 Sep 2026, when
+     * the server was up and answering. Only a request that never got an answer
+     * (the catch below) is "couldn't reach".
+     */
+    if (res.status === 401) return { refusal: "Your sign-in expired. Sign in again — nothing happened." };
+    if (!res.ok) return { refusal: `The server refused that (error ${res.status}). Nothing happened.` };
     const body = (await res.json()) as
       | { fill: Fill; account: Account }
       | { refusal: string; account: Account };

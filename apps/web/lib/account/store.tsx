@@ -150,6 +150,32 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
   const token = useRef<string | null>(null);
 
   /*
+   * A LIVE TOKEN FOR EVERY REQUEST, never the one from sign-in.
+   *
+   * Reported live, 27 Sep 2026: "buy $4K of JUP" came back "Couldn't reach
+   * the server". The server was fine; it answered 401. The token was read once
+   * at sign-in and reused, and Privy's access tokens expire about an hour after
+   * they are issued — so an hour into a session every trade, poll and reset
+   * was refused as signed out. getAccessToken() hands back the cached token
+   * while it is valid and refreshes it when it is not, so asking before each
+   * call costs nothing on the normal path.
+   *
+   * Held in a ref because `trade` has to stay referentially stable (see the
+   * useCallback trap in CLAUDE.md), and a stable callback must read a ref.
+   */
+  const getToken = useRef(getAccessToken);
+  getToken.current = getAccessToken;
+  const liveToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const t = await getToken.current();
+      if (t) token.current = t;
+    } catch {
+      /* Privy unreachable: fall back to what we have; the server will say. */
+    }
+    return token.current;
+  }, []);
+
+  /*
    * THE ACCOUNT, READABLE SYNCHRONOUSLY.
    *
    * `trade` and `fire` have to return what happened, and a setState updater
@@ -253,12 +279,12 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!server) return;
     const id = window.setInterval(() => {
-      void fetchSnapshot(token.current).then((snap) => {
+      void liveToken().then(fetchSnapshot).then((snap) => {
         if (snap?.account) commit(snap.account);
       });
     }, 5_000);
     return () => window.clearInterval(id);
-  }, [server]);
+  }, [server, liveToken]);
 
   // Read stored state after mount. Reading it during render breaks SSR.
   useEffect(() => {
@@ -290,7 +316,7 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
      * signature had to tell the truth.
      */
     if (serverRef.current) {
-      const r = await tradeRemote(token.current, input);
+      const r = await tradeRemote(await liveToken(), input);
       if (!r) return { refusal: "Couldn't reach the server. Nothing happened." };
       if ("refusal" in r) return r;
       commit(r.account);
@@ -301,7 +327,7 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
     if ("refusal" in r) return r;
     commit(r.account);
     return { fill: r.fill };
-  }, [commit]);
+  }, [commit, liveToken]);
 
   const fire = useCallback<Ctx["fire"]>((rule, ctx) => {
     const r = fireRule(latest.current, rule, { ...ctx, ts: Math.floor(Date.now() / 1000) });
@@ -311,13 +337,13 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
 
   const reset = useCallback(() => {
     if (server) {
-      void resetRemote(token.current).then((a) => {
+      void liveToken().then(resetRemote).then((a) => {
         if (a) commit(a);
       });
       return;
     }
     commit(openAccount(OPENING_DEPOSIT));
-  }, [server, commit]);
+  }, [server, commit, liveToken]);
 
   const value = useMemo(
     () => ({ account, hydrated, server, trade, fire, reset }),

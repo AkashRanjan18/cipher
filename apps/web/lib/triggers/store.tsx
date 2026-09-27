@@ -242,13 +242,28 @@ export function TriggerProvider({
   const [watching, setWatching] = useState(false);
 
   /*
-   * The access token, held rather than fetched per call.
+   * The access token, ASKED FOR BEFORE EVERY REQUEST.
    *
-   * getAccessToken() refreshes the token when it is close to expiring, so it
-   * is the right thing to call — but calling it inside a poll that runs every
-   * few seconds turns a cheap loop into a chatty one.
+   * It was fetched once and held, on the worry that calling getAccessToken()
+   * in a five-second poll would be chatty. It is not: Privy returns the cached
+   * token while it is valid and only goes to the network to refresh it. What
+   * holding it cost was real — the token expires about an hour after sign-in,
+   * and from then on every poll, arm and cancel was a 401 (333 of them in two
+   * hours of production logs, 27 Sep 2026), which this store reads as "no
+   * server" and quietly drops to local mode.
    */
   const token = useRef<string | null>(null);
+  const getToken = useRef(getAccessToken);
+  getToken.current = getAccessToken;
+  const liveToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const t = await getToken.current();
+      if (t) token.current = t;
+    } catch {
+      /* Privy unreachable: fall back to what we have; the server will say. */
+    }
+    return token.current;
+  }, []);
   useEffect(() => {
     if (!authenticated) {
       token.current = null;
@@ -284,7 +299,7 @@ export function TriggerProvider({
   const unconfigured = useRef(false);
 
   const pull = useCallback(async () => {
-    const r = await fetchSnapshotResult(token.current);
+    const r = await fetchSnapshotResult(await liveToken());
     if (r.kind === "unconfigured") {
       unconfigured.current = true;
       setServer(false);
@@ -299,7 +314,7 @@ export function TriggerProvider({
     const engine = emptyEngine();
     for (const rule of r.snapshot.rules) engine.rules[rule.id] = rule;
     setState({ engine, transitions: r.snapshot.transitions });
-  }, []);
+  }, [liveToken]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -540,7 +555,7 @@ export function TriggerProvider({
         highWater: r.trigger.kind === "trailingStop" ? (entryPrice ?? null) : null,
         attempts: 0,
       }));
-      const ok = await armRemote(token.current, built);
+      const ok = await armRemote(await liveToken(), built);
       if (ok) void pull();
       return ok;
     }
@@ -559,13 +574,13 @@ export function TriggerProvider({
     });
     /* Local mode cannot fail — the engine is right here, not over a network. */
     return true;
-  }, [server, pull]);
+  }, [server, pull, liveToken]);
 
   const armEntry = useCallback<Ctx["armEntry"]>(async ({ rule, market: raw, referencePrice, side }) => {
     const m = key(raw);
     if (server) {
       const now = Date.now();
-      const ok = await armRemote(token.current, [
+      const ok = await armRemote(await liveToken(), [
         {
           version: 1,
           id: rule.id,
@@ -601,7 +616,7 @@ export function TriggerProvider({
       };
     });
     return true;
-  }, [server, pull]);
+  }, [server, pull, liveToken]);
 
   const bindEntry = useCallback<Ctx["bindEntry"]>((raw, entryPrice) => {
     const m = key(raw);
@@ -622,7 +637,7 @@ export function TriggerProvider({
 
   const cancelRule = useCallback<Ctx["cancelRule"]>((id) => {
     if (server) {
-      void cancelRemote(token.current, id).then((ok) => {
+      void liveToken().then((t) => cancelRemote(t, id)).then((ok) => {
         if (ok) void pull();
       });
       return;
@@ -637,7 +652,10 @@ export function TriggerProvider({
         transitions: [...prev.transitions, ...step.transitions].slice(-MAX_TRANSITIONS),
       };
     });
-  }, []);
+    /* `server` and `pull` belong in here. With [] this read the first
+       render's `server` — false — forever, so cancelling a rule the server
+       held only removed it from the screen and the worker still fired it. */
+  }, [server, pull, liveToken]);
 
   const clearAll = useCallback(() => {
     setState({ engine: emptyEngine(), transitions: [] });
