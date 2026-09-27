@@ -148,6 +148,31 @@ body {
 }
 
 /*
+ * A WALLPAPER BEHIND THE TERMINAL (settings-menu.tsx, use-wallpaper.ts).
+ *
+ * The panels are opaque, and they cover all but the 8px gutters between them,
+ * so a wallpaper on the shell alone would be a picture nobody can see. With
+ * one chosen, the panel colour goes translucent and each panel blurs what is
+ * behind it — the wallpaper reads as light through frosted glass, and the
+ * numbers on top keep a dark, even ground.
+ *
+ * THE CHART STAYS SOLID. Its canvas paints its own ground (price-chart.tsx),
+ * and that is right: candles are read by the pixel, and a picture moving
+ * behind them is the one place a wallpaper would cost the trader something.
+ *
+ * Unlayered, so it outranks Tailwind's `bg-ink` utility and the @theme value.
+ */
+:root[data-wallpaper] {
+  --color-panel: rgb(10 11 15 / 0.55);
+}
+:root[data-wallpaper] .terminal-shell {
+  background: var(--wallpaper);
+}
+:root[data-wallpaper] .bg-panel {
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+/*
  * Wide tracking pushes trailing space onto the right of the last letter, so a
  * centred wordmark reads as sitting left of centre. Compensating with an
  * equal indent puts the optical centre back where the eye expects it.

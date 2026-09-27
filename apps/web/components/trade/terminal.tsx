@@ -18,6 +18,7 @@ import { StatusBar } from "./status-bar";
 import { useMajors } from "./use-majors";
 import { Scroller } from "@/components/ui/scroller";
 import { AccountMenu } from "@/components/auth/account-menu";
+import { SettingsMenu } from "./settings-menu";
 import { TokenTabs } from "./token-tabs";
 import { Ticket } from "./ticket";
 import { AboutToken } from "./about-token";
@@ -573,7 +574,7 @@ function TerminalBody({
      * layout must not have — the header and the ticker are meant to be fixed
      * points, and the three columns are meant to move independently.
      */}
-    <div className="relative flex h-dvh flex-col gap-2 overflow-hidden bg-ink p-2">
+    <div className="terminal-shell relative flex h-dvh flex-col gap-2 overflow-hidden bg-ink p-2">
       {/* ---------------- header ---------------- */}
       {/*
         * Sticky, and wrapped.
@@ -595,7 +596,10 @@ function TerminalBody({
         * columns put the middle one on the true centre whatever either side
         * holds.
         */}
-      <header className="grid shrink-0 grid-cols-[1fr_minmax(0,28rem)_1fr] items-center gap-3 rounded-2xl border border-line bg-panel px-3 py-2">
+      {/* z-30: with a wallpaper on, the frosted blur makes the header its own
+          stacking layer, and the settings and account menus that drop out of
+          it were painted UNDER the columns below. */}
+      <header className="relative z-30 grid shrink-0 grid-cols-[1fr_minmax(0,28rem)_1fr] items-center gap-3 rounded-2xl border border-line bg-panel px-3 py-2">
         <div className="flex items-center gap-3">
           <a href="/" className="shrink-0 font-display text-xl lowercase text-champagne">
             cipher
@@ -615,6 +619,8 @@ function TerminalBody({
           </span>
 
           <Cash />
+
+          <SettingsMenu />
 
           {/* Was a hardcoded "AR" — a placeholder indistinguishable from a
               working account menu, which is the worst kind. */}
