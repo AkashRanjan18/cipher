@@ -256,13 +256,39 @@ test("going flat never cancels a resting BUY", () => {
   assert.equal(s.rules.b.state, "armed");
 });
 
-test("going flat also clears exits still waiting on an entry", () => {
-  // An unbound exit belongs to an order on a position that is now gone.
+test("going flat leaves exits that are waiting on a resting entry", () => {
+  /*
+   * An unbound exit is waiting for a resting buy to fill — it belongs to the
+   * NEXT position, not the one that just closed. Cancelling it here (as this
+   * test used to require) let that buy fill later with no stop behind it
+   * (review, 27 Sep 2026).
+   */
   const s = emptyEngine();
   arm(s, { rule: exit("u", { kind: "priceMultiple", value: 2 }), market: MKT, at: T0 });
   assert.equal(s.rules.u.state, "unbound");
   onFlat(s, MKT, T0 + 1);
-  assert.equal(s.rules.u.state, "cancelled");
+  assert.equal(s.rules.u.state, "unbound");
+});
+
+test("a retried trailing stop keeps its high, and a retried timed exit keeps its deadline", () => {
+  const s = emptyEngine();
+  arm(s, { rule: exit("t", { kind: "trailingStop", percent: 10 }), market: MKT, at: T0, entryPrice: 100 });
+  arm(s, { rule: exit("d", { kind: "duration", seconds: 3600 }), market: MKT, at: T0, entryPrice: 100 });
+
+  /* The trail rides to 200, so its stop sits at 180; then it fires at 179 and the fill fails. */
+  onPrice(s, MKT, 200, T0 + 1);
+  const fired = onPrice(s, MKT, 179, T0 + 2).fire.map((r) => r.id);
+  assert.deepEqual(fired, ["t"]);
+  onResult(s, "t", { ok: false, reason: "reverted" }, T0 + 3);
+  /* Back at 180, not at the entry's 90: 170 fires it again. */
+  assert.deepEqual(onPrice(s, MKT, 170, T0 + 4).fire.map((r) => r.id), ["t"]);
+
+  /* The hour exit fires at T0+1h. A failure retries a minute later — not
+     the next second (a loop), and not at T0+2h (a whole extra duration). */
+  assert.deepEqual(onClock(s, T0 + 3_600_000).fire.map((r) => r.id), ["d"]);
+  onResult(s, "d", { ok: false, reason: "reverted" }, T0 + 3_600_001);
+  assert.equal(onClock(s, T0 + 3_600_002).fire.length, 0);
+  assert.deepEqual(onClock(s, T0 + 3_660_001).fire.map((r) => r.id), ["d"]);
 });
 
 /* ──────────────────────────────── clock ────────────────────────────────── */

@@ -158,6 +158,40 @@ test("the same fill id cannot be written twice", async () => {
   assert.equal((await loadFills(USER)).length, 1);
 });
 
+test("two trades priced from the same balance: the second writes nothing", async () => {
+  /*
+   * The lost update. Both start from the same loaded balance, as a
+   * double-clicked Buy or a stop firing mid-trade would. Before the
+   * compare-and-set, the second write replaced the first and one trade's cost
+   * disappeared.
+   */
+  const start = (await loadAccount(USER))!;
+  const fill = (id: string, usdc: number) => ({
+    account: { ...start, usdc },
+    fill: {
+      id,
+      mint: SOL,
+      ts: 1_700_000_002,
+      side: "buy" as const,
+      qty: 1,
+      price: 100,
+      feeUsd: 0.95,
+      realisedUsd: 0,
+      squawk: "",
+      source: "ticket" as const,
+    },
+  });
+  const first = fill("race-1", start.usdc - 100.95);
+  const second = fill("race-2", start.usdc - 200.95);
+
+  assert.equal(await saveFill(USER, first.account, first.fill, start.usdc), true);
+  assert.equal(await saveFill(USER, second.account, second.fill, start.usdc), false);
+
+  const after = (await loadAccount(USER))!;
+  assert.equal(after.usdc, start.usdc - 100.95);
+  assert.deepEqual(after.fills.map((f) => f.id), ["race-1"]);
+});
+
 test("fills come back oldest first however they were written", async () => {
   const a = (await loadAccount(USER))!;
   for (const ts of [300, 100, 200]) {
@@ -310,6 +344,25 @@ test("setState with nothing extra leaves every number where it was", async () =>
 
 /* ──────────────────────────────── trailing ─────────────────────────────── */
 
+test("a stale copy cannot re-arm a rule another tick already fired", async () => {
+  /*
+   * The double execution. Tick A reads a trailing stop to raise its high;
+   * tick B claims and fills it; tick A then writes its stale copy back. The
+   * write used to set state = 'armed' unconditionally and the stop fired a
+   * second time.
+   */
+  const t = rule({ id: "twice", trigger: { kind: "trailingStop", percent: 20 }, highWater: 100 });
+  await insertRule(USER, t);
+  const stale = (await newHighs(SOL, 200)).find((o) => o.rule.id === "twice")!.rule;
+
+  assert.equal(await claim("twice"), true);
+  await setState("twice", "filled", undefined, ["firing"]);
+  await replace({ ...stale, highWater: 200 }, "armed");
+
+  const rows = await h.pg.query<{ state: string }>("select state from rules where id='twice'");
+  assert.equal(rows.rows[0].state, "filled");
+});
+
 test("a new high moves a trailing stop's threshold up and never back down", async () => {
   const t = rule({ trigger: { kind: "trailingStop", percent: 20 }, highWater: 100 });
   await insertRule(USER, t);
@@ -318,7 +371,7 @@ test("a new high moves a trailing stop's threshold up and never back down", asyn
     (await newHighs(SOL, 200)).map((o) => o.rule.id),
     ["r1"],
   );
-  await replace({ ...t, highWater: 200 });
+  await replace({ ...t, highWater: 200 }, "armed");
 
   const rows = await h.pg.query<{ threshold: string }>("select threshold from rules where id='r1'");
   assert.equal(Number(rows.rows[0].threshold), 160);
@@ -373,15 +426,17 @@ test("only the markets someone is watching get a price fetched", async () => {
   assert.deepEqual((await watchedMarkets()).sort(), [BONK, SOL].sort());
 });
 
-test("exits on a market are that user's sells only, and a resting buy survives", async () => {
+test("exits on a market are that user's armed sells only; a resting buy and its waiting exits survive", async () => {
   await insertRule(USER, rule({ id: "sell", side: "sell" }));
   await insertRule(USER, rule({ id: "buy", side: "buy" }));
+  /* Waiting on the resting buy above. Closing today's position must not
+     cancel it, or that buy fills later with no stop behind it. */
   await insertRule(USER, rule({ id: "waiting", side: "sell", state: "unbound", entryPrice: null }));
   await insertRule(OTHER, rule({ id: "theirs", side: "sell" }));
 
   assert.deepEqual(
     (await exitsOn(SOL, USER)).map((o) => o.rule.id).sort(),
-    ["sell", "waiting"],
+    ["sell"],
   );
 });
 
@@ -419,7 +474,7 @@ test("binding a child writes its threshold from the price actually paid", async 
     }),
   );
   const [child] = await childrenOf("e");
-  await replace({ ...child.rule, entryPrice: 102.51, highWater: 102.51, state: "armed" });
+  await replace({ ...child.rule, entryPrice: 102.51, highWater: 102.51, state: "armed" }, "unbound");
 
   assert.deepEqual(
     (await crossed(SOL, 205.02)).map((o) => o.rule.id),

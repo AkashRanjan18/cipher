@@ -15,6 +15,20 @@
 
 /** Free and keyless. `api.jup.ag` is the same surface with a key and higher limits. */
 const BASE = "https://lite-api.jup.ag";
+const PRO = "https://api.jup.ag";
+
+/*
+ * THE KEY IS USED WHEN THERE IS ONE, as prices.ts already does. Quotes went
+ * to the keyless host regardless, so every stop the worker fired spent two
+ * calls from the same small shared allowance as the public /api/quote — and
+ * in a sell-off, the one minute that matters, the 429s arrived first.
+ */
+function host(): { base: string; headers: Record<string, string> } {
+  const key = process.env.JUPITER_API_KEY;
+  return key
+    ? { base: PRO, headers: { Accept: "application/json", "x-api-key": key } }
+    : { base: BASE, headers: { Accept: "application/json" } };
+}
 
 /** Wrapped SOL. The mint every route is priced against. */
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
@@ -91,10 +105,8 @@ export async function quote(req: QuoteRequest, signal?: AbortSignal): Promise<Qu
   });
   if (req.platformFeeBps) params.set("platformFeeBps", String(req.platformFeeBps));
 
-  const res = await fetch(`${BASE}/swap/v1/quote?${params}`, {
-    headers: { Accept: "application/json" },
-    signal,
-  });
+  const { base, headers } = host();
+  const res = await fetch(`${base}/swap/v1/quote?${params}`, { headers, signal });
 
   if (!res.ok) {
     /*

@@ -158,35 +158,57 @@ export async function claim(ruleId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+/**
+ * Move a rule to `state` — ONLY from the states in `from`, when given.
+ *
+ * Unguarded, an overlapping tick (a cron retry, a slow run past its minute)
+ * could write a stale state over a newer one: expire a rule another tick was
+ * firing, or arm one it had already filled. The guard makes every transition
+ * conditional on the state the caller believes the rule is in, the same way
+ * claim() does for the one that matters most.
+ */
 export async function setState(
   ruleId: string,
   state: Rule["state"],
   extra?: { attempts?: number; highWater?: number; entryPrice?: number },
-): Promise<void> {
+  from?: Rule["state"][],
+): Promise<boolean> {
   const sql = db();
-  await sql`
+  const guard = from ?? null;
+  const rows = await sql`
     update rules set
       state = ${state},
       attempts = coalesce(${extra?.attempts ?? null}, attempts),
       high_water = coalesce(${extra?.highWater ?? null}, high_water),
       entry_price = coalesce(${extra?.entryPrice ?? null}, entry_price)
     where id = ${ruleId}
+      and (${guard}::text[] is null or state = any(${guard}::text[]))
+    returning id
   `;
+  /* Whether it happened — so the audit trail records only moves that did. */
+  return rows.length > 0;
 }
 
-/** Re-place a rule in the index after its reference price moved. */
-export async function replace(rule: Rule): Promise<void> {
+/**
+ * Re-place a rule in the index after its reference price moved — only if it
+ * is still in `expected`. Two callers, two different expectations: a trailing
+ * stop's new high applies to an ARMED rule, and a child exit binds from
+ * UNBOUND. Unguarded, a tick holding a stale copy re-armed a rule another tick
+ * had just fired, and it fired twice (review, 27 Sep 2026).
+ */
+export async function replace(rule: Rule, expected: Rule["state"]): Promise<void> {
   const p = placement(rule);
   await db()`
     update rules set
       amount = ${JSON.stringify(rule.amount)},
       entry_price = ${rule.entryPrice},
       high_water = ${rule.highWater},
+      armed_at = ${rule.armedAt},
       threshold = ${p.threshold},
       direction = ${p.direction},
       deadline = ${p.deadline},
       state = ${rule.state}
-    where id = ${rule.id}
+    where id = ${rule.id} and state = ${expected}
   `;
 }
 
@@ -262,10 +284,43 @@ export async function exitsOn(market: string, userId: string): Promise<Owned[]> 
     where user_id = ${userId}
       and market = ${market}
       and side = 'sell'
-      and state in ('unbound', 'armed')
+      /* ARMED only. An unbound exit is waiting for a resting buy that has
+         not filled — it belongs to the NEXT position, and closing this one
+         must not cancel the stop the user set for that. */
+      and state = 'armed'
     limit 200
   `) as Row[];
   return rows.map(owned);
+}
+
+/**
+ * A position just went flat: cancel every exit still armed on it.
+ *
+ * They all measure from an entry that no longer exists, and the damage lands
+ * on the re-entry — a stop at $71 from a $102 entry, still armed, sells a
+ * position bought back at $60 on the next tick. The worker did this when a
+ * RULE emptied the position; a manual "sell all" through /api/trade did not,
+ * so the old stop stayed live. One function, both callers.
+ *
+ * Returns the transitions for the caller's audit write. `except` skips the
+ * rule that did the closing, which records its own transition.
+ */
+export async function cancelExitsOnClose(
+  userId: string,
+  market: string,
+  at: number,
+  except?: string,
+): Promise<Transition[]> {
+  const out: Transition[] = [];
+  for (const { rule } of await exitsOn(market, userId)) {
+    if (rule.id === except) continue;
+    /* Only recorded if it moved: a rule the worker claimed a moment ago is
+       `firing`, the guard skips it, and the trail must not say otherwise. */
+    if (await setState(rule.id, "cancelled", undefined, ["armed"])) {
+      out.push({ ruleId: rule.id, from: rule.state, to: "cancelled", at, reason: "position closed" });
+    }
+  }
+  return out;
 }
 
 /** Exits waiting on a resting entry that has now filled. */

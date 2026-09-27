@@ -42,12 +42,18 @@ export async function compileWithModel(
   text: string,
   ctx: CompileContext,
   signal?: AbortSignal,
+  /* A live token (lib/auth/use-live-token.ts). The cookie alone goes stale
+     with the token, and the model then drops out with nobody noticing. */
+  token?: string | null,
 ): Promise<ModelAnswer> {
   let res: Response;
   try {
     res = await fetch("/api/compile", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({
         text,
         symbol: ctx.symbol,

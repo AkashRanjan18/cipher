@@ -28,6 +28,7 @@ import {
   type Transition,
 } from "@cipher/shared";
 import { usePrivy } from "@privy-io/react-auth";
+import { useLiveToken } from "../auth/use-live-token";
 import { usePaperAccount } from "../account/store";
 import { positionOf } from "../account/paper";
 import { allInPrice } from "../account/paper";
@@ -232,7 +233,7 @@ export function TriggerProvider({
   prices?: Record<string, number>;
 }) {
   const { account, fire } = usePaperAccount();
-  const { authenticated, getAccessToken } = usePrivy();
+  const { authenticated } = usePrivy();
   const [state, setState] = useState<Stored>(() => ({
     engine: emptyEngine(),
     transitions: [],
@@ -241,43 +242,41 @@ export function TriggerProvider({
   const [server, setServer] = useState(false);
   const [watching, setWatching] = useState(false);
 
+  /* Asked for before every request, never reused from sign-in — see
+     lib/auth/use-live-token.ts for the 401s that taught this. */
+  const liveToken = useLiveToken();
   /*
-   * The access token, ASKED FOR BEFORE EVERY REQUEST.
+   * Set once the server has said it has no database. Stops the poll.
    *
-   * It was fetched once and held, on the worry that calling getAccessToken()
-   * in a five-second poll would be chatty. It is not: Privy returns the cached
-   * token while it is valid and only goes to the network to refresh it. What
-   * holding it cost was real — the token expires about an hour after sign-in,
-   * and from then on every poll, arm and cancel was a 401 (333 of them in two
-   * hours of production logs, 27 Sep 2026), which this store reads as "no
-   * server" and quietly drops to local mode.
+   * A ref rather than state: it must not cause a render, and the interval
+   * below reads it on every tick without needing to be rebuilt.
    */
-  const token = useRef<string | null>(null);
-  const getToken = useRef(getAccessToken);
-  getToken.current = getAccessToken;
-  const liveToken = useCallback(async (): Promise<string | null> => {
-    try {
-      const t = await getToken.current();
-      if (t) token.current = t;
-    } catch {
-      /* Privy unreachable: fall back to what we have; the server will say. */
-    }
-    return token.current;
-  }, []);
+  const unconfigured = useRef(false);
+
+  /* Read by pull() after its await, so an answer that lands after a sign-out
+     is dropped rather than switching a signed-out tab into server mode. */
+  const signedIn = useRef(authenticated);
+  signedIn.current = authenticated;
+
   useEffect(() => {
-    if (!authenticated) {
-      token.current = null;
-      setServer(false);
+    if (authenticated) {
+      /* A new session gets a fresh answer. Without this one "no database"
+         answer — or, before the 401 fix, one expired token — kept the tab
+         local for its whole life, sign in again or not. */
+      unconfigured.current = false;
       return;
     }
-    let alive = true;
-    void getAccessToken().then((t) => {
-      if (alive) token.current = t;
-    });
-    return () => {
-      alive = false;
-    };
-  }, [authenticated, getAccessToken]);
+    /*
+     * SIGNED OUT: the server's rules leave with the session.
+     *
+     * Only `server` was cleared, so the state still held the account's
+     * server-side rules — and in local mode this store FIRES what it holds,
+     * and the persist effect saves it to this browser. A signed-out tab would
+     * have executed the account's stops against the local ledger.
+     */
+    setServer(false);
+    setState(load() ?? { engine: emptyEngine(), transitions: [] });
+  }, [authenticated]);
 
   /*
    * Ask the server what it knows, and keep asking.
@@ -290,16 +289,9 @@ export function TriggerProvider({
    * A failure means local mode, not an error. No database configured and no
    * session are the same answer from here: the server is not the owner.
    */
-  /*
-   * Set once the server has said it has no database. Stops the poll.
-   *
-   * A ref rather than state: it must not cause a render, and the interval
-   * below reads it on every tick without needing to be rebuilt.
-   */
-  const unconfigured = useRef(false);
-
   const pull = useCallback(async () => {
     const r = await fetchSnapshotResult(await liveToken());
+    if (!signedIn.current) return;
     if (r.kind === "unconfigured") {
       unconfigured.current = true;
       setServer(false);
@@ -366,12 +358,26 @@ export function TriggerProvider({
    * moves — which is the property that makes the audit trail trustworthy.
    */
   const applyStep = useCallback(
-    (next: EngineState, fired: Rule[], transitions: Transition[], mark: number) => {
+    (
+      next: EngineState,
+      fired: Rule[],
+      transitions: Transition[],
+      /* PER RULE: one step can fire rules on several markets, and each must
+         fill at its own market's price. */
+      markFor: (rule: Rule) => number | null,
+    ) => {
       const log = [...transitions];
 
       for (const rule of fired) {
-        const outcome = fire(rule, { mark });
         const at = Date.now();
+        const mark = markFor(rule);
+        if (mark === null) {
+          /* No price for this market right now. Back to watching, attempts
+             untouched — never left in `firing`, which nothing ever revisits. */
+          log.push(...onResult(next, rule.id, { ok: false, reason: "no price yet", hold: true }, at).transitions);
+          continue;
+        }
+        const outcome = fire(rule, { mark });
 
         if (outcome.kind === "filled") {
           log.push(...onResult(next, rule.id, { ok: true }, at).transitions);
@@ -481,7 +487,7 @@ export function TriggerProvider({
     if (server || !hydrated || live === null) return;
     const step = onPrice(state.engine, market, live, Date.now());
     if (step.fire.length === 0 && step.transitions.length === 0) return;
-    applyStep(step.state, step.fire, step.transitions, live);
+    applyStep(step.state, step.fire, step.transitions, () => live);
     // `state.engine` is deliberately excluded: onPrice mutates the state
     // object in place and applyStep writes it back, so depending on it here
     // would re-run this effect for its own result.
@@ -494,7 +500,7 @@ export function TriggerProvider({
       if (symbol === market) continue; // the socket already covers this one
       const step = onPrice(state.engine, symbol, price, Date.now());
       if (step.fire.length === 0 && step.transitions.length === 0) continue;
-      applyStep(step.state, step.fire, step.transitions, price);
+      applyStep(step.state, step.fire, step.transitions, () => price);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [server, prices, market, hydrated, applyStep]);
@@ -513,16 +519,16 @@ export function TriggerProvider({
       const step = onClock(state.engine, Date.now());
       if (step.fire.length === 0 && step.transitions.length === 0) return;
       /*
-       * A timed exit fires at the last price we have. The open market's live
-       * price is right; anything else falls back to the poll. With neither,
-       * there is no price to fill at and the rule waits for the next tick
-       * rather than executing against a number we invented.
+       * A timed exit fires at ITS OWN market's last price: the live one for
+       * the market on screen, the poll for the rest. This used one mark for
+       * the whole step, so a BONK exit and a WIF exit due in the same second
+       * both filled at BONK's price — and a missing price returned early
+       * after onClock had already moved them to `firing`, stranding them
+       * there for good (review, 27 Sep 2026).
        */
-      const mark = step.fire.every((r) => r.market === market)
-        ? live
-        : (prices?.[step.fire[0].market] ?? null);
-      if (mark === null) return;
-      applyStep(step.state, step.fire, step.transitions, mark);
+      applyStep(step.state, step.fire, step.transitions, (r) =>
+        r.market === market ? (live ?? prices?.[r.market] ?? null) : (prices?.[r.market] ?? null),
+      );
     }, 1_000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps

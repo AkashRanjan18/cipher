@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { usePrivy } from "@privy-io/react-auth";
+import { useLiveToken } from "../auth/use-live-token";
 import { openAccount, execute, type Account, type Fill } from "./paper";
 import { fireRule, type Outcome } from "../triggers/execute";
 import { fetchSnapshot, fetchSnapshotResult, resetRemote, tradeRemote } from "../db/remote";
@@ -143,37 +144,14 @@ function load(): Account | null {
 }
 
 export function PaperAccountProvider({ children }: { children: ReactNode }) {
-  const { authenticated, getAccessToken } = usePrivy();
+  const { authenticated } = usePrivy();
   const [account, setAccount] = useState<Account>(() => openAccount(OPENING_DEPOSIT));
   const [hydrated, setHydrated] = useState(false);
   const [server, setServer] = useState(false);
-  const token = useRef<string | null>(null);
 
-  /*
-   * A LIVE TOKEN FOR EVERY REQUEST, never the one from sign-in.
-   *
-   * Reported live, 27 Sep 2026: "buy $4K of JUP" came back "Couldn't reach
-   * the server". The server was fine; it answered 401. The token was read once
-   * at sign-in and reused, and Privy's access tokens expire about an hour after
-   * they are issued — so an hour into a session every trade, poll and reset
-   * was refused as signed out. getAccessToken() hands back the cached token
-   * while it is valid and refreshes it when it is not, so asking before each
-   * call costs nothing on the normal path.
-   *
-   * Held in a ref because `trade` has to stay referentially stable (see the
-   * useCallback trap in CLAUDE.md), and a stable callback must read a ref.
-   */
-  const getToken = useRef(getAccessToken);
-  getToken.current = getAccessToken;
-  const liveToken = useCallback(async (): Promise<string | null> => {
-    try {
-      const t = await getToken.current();
-      if (t) token.current = t;
-    } catch {
-      /* Privy unreachable: fall back to what we have; the server will say. */
-    }
-    return token.current;
-  }, []);
+  /* Asked for before every request, never reused from sign-in — see
+     lib/auth/use-live-token.ts for the 401s that taught this. */
+  const liveToken = useLiveToken();
 
   /*
    * THE ACCOUNT, READABLE SYNCHRONOUSLY.
@@ -233,24 +211,22 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
    */
   useEffect(() => {
     if (!authenticated) {
-      token.current = null;
       serverRef.current = false;
       setServer(false);
       return;
     }
     let alive = true;
     void (async () => {
-      const t = await getAccessToken();
-      if (!alive) return;
-      token.current = t;
-
       /* Backing off rather than hammering: a server that is starting up wants
          a second, and a server that is down is not helped by five requests. */
       for (const wait of [0, 400, 1200, 3000, 6000]) {
         if (wait) await new Promise((r) => setTimeout(r, wait));
         if (!alive) return;
 
-        const result = await fetchSnapshotResult(t);
+        /* A token per attempt: the retries span ten seconds, and liveToken
+           never throws, where a bare getAccessToken() rejecting here would
+           have left server mode undecided for the whole session. */
+        const result = await fetchSnapshotResult(await liveToken());
         if (!alive) return;
 
         if (result.kind === "unconfigured") return; // local, correctly.
@@ -267,7 +243,7 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [authenticated, getAccessToken]);
+  }, [authenticated, liveToken]);
 
   /*
    * Re-read after a rule may have fired.
@@ -280,7 +256,10 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
     if (!server) return;
     const id = window.setInterval(() => {
       void liveToken().then(fetchSnapshot).then((snap) => {
-        if (snap?.account) commit(snap.account);
+        /* Still in server mode when it lands? A poll in flight across a
+           sign-out would otherwise commit the server ledger into local mode,
+           and the persist effect would save it to this browser. */
+        if (snap?.account && serverRef.current) commit(snap.account);
       });
     }, 5_000);
     return () => window.clearInterval(id);
@@ -318,7 +297,16 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
     if (serverRef.current) {
       const r = await tradeRemote(await liveToken(), input);
       if (!r) return { refusal: "Couldn't reach the server. Nothing happened." };
-      if ("refusal" in r) return r;
+      if ("refusal" in r) {
+        /* A 5xx may have booked the trade before failing. Re-read at once, so
+           the balance on screen is the truth before anyone clicks again. */
+        if (r.uncertain) {
+          void liveToken().then(fetchSnapshot).then((snap) => {
+            if (snap?.account && serverRef.current) commit(snap.account);
+          });
+        }
+        return { refusal: r.refusal };
+      }
       commit(r.account);
       return { fill: r.fill };
     }
@@ -338,7 +326,7 @@ export function PaperAccountProvider({ children }: { children: ReactNode }) {
   const reset = useCallback(() => {
     if (server) {
       void liveToken().then(resetRemote).then((a) => {
-        if (a) commit(a);
+        if (a && serverRef.current) commit(a);
       });
       return;
     }

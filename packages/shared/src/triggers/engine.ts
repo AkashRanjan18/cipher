@@ -246,6 +246,9 @@ export function bind(
   if (!rule || rule.state !== "unbound") return { state, fire: [], transitions };
 
   rule.entryPrice = entryPrice;
+  /* Bind time, kept: a "1 hour after" exit counts from here, and a retry has
+     to re-place it against this moment, not against the retry's. */
+  rule.armedAt = at;
   if (rule.trigger.kind === "trailingStop") rule.highWater = entryPrice;
 
   const resolved = resolve(rule.trigger, entryPrice, at);
@@ -271,6 +274,38 @@ function place(state: EngineState, rule: Rule, resolved: Resolved): void {
     at: resolved.at,
   }, resolved.direction === "above");
 }
+
+/**
+ * Put a rule back after a retry or a hold, WHERE IT ALREADY WAS.
+ *
+ * Re-resolving from the entry at the retry's timestamp reset two things it
+ * must not (review, 27 Sep 2026): a trailing stop fell from its high-water
+ * level back to the entry's — a 10% trail on a $100 entry that had reached
+ * $200 dropped from $180 to $90 — and a duration exit got a whole second
+ * duration, so a failed fire at hour 24 moved to hour 48.
+ */
+function replaceAfterAttempt(state: EngineState, rule: Rule, at: number): void {
+  if (rule.trigger.kind === "trailingStop" && rule.highWater !== null) {
+    place(state, rule, {
+      kind: "price",
+      at: rule.highWater * (1 - rule.trigger.percent / 100),
+      direction: "below",
+    });
+    return;
+  }
+  const resolved = resolve(rule.trigger, rule.entryPrice!, rule.armedAt);
+  if (resolved.kind === "time") {
+    /* Its deadline has already passed — that is why it fired. Put back AT
+       it, the clock re-fires it within a second, forever; a minute apart,
+       a retry is a retry and a hold is a wait. */
+    place(state, rule, { kind: "time", at: Math.max(resolved.at, at + RETRY_AFTER_MS) });
+    return;
+  }
+  place(state, rule, resolved);
+}
+
+/** How long a timed exit waits before it is tried again. */
+const RETRY_AFTER_MS = 60_000;
 
 function unplace(state: EngineState, rule: Rule): void {
   const index = state.markets[rule.market];
@@ -409,7 +444,10 @@ export function onFlat(state: EngineState, market: string, at: number): Step {
   const transitions: Transition[] = [];
   for (const rule of Object.values(state.rules)) {
     if (rule.market !== market || rule.side !== "sell") continue;
-    if (rule.state !== "armed" && rule.state !== "unbound") continue;
+    /* ARMED only: an unbound exit waits for a resting buy that has not filled
+       and belongs to the NEXT position — cancelling it here left that buy to
+       fill with no stop. Same rule as exitsOn() on the server. */
+    if (rule.state !== "armed") continue;
     unplace(state, rule);
     transitions.push(move(rule, "cancelled", at, "position closed"));
   }
@@ -461,7 +499,7 @@ export function onResult(
    */
   if (outcome.hold) {
     const transition = move(rule, "armed", at, `waiting: ${outcome.reason}`);
-    place(state, rule, resolve(rule.trigger, rule.entryPrice!, at));
+    replaceAfterAttempt(state, rule, at);
     return { state, fire: [], transitions: [transition] };
   }
 
@@ -476,7 +514,7 @@ export function onResult(
   }
 
   const transition = move(rule, "armed", at, `retry ${rule.attempts}: ${outcome.reason}`);
-  place(state, rule, resolve(rule.trigger, rule.entryPrice!, at));
+  replaceAfterAttempt(state, rule, at);
   return { state, fire: [], transitions: [transition] };
 }
 

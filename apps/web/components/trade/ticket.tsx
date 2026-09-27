@@ -261,7 +261,9 @@ export function Ticket({
      */
     if (resting) {
       const entryId = newId("t");
-      armEntry({
+      /* Awaited and checked. It was fired and forgotten, so a save that
+         failed still showed "Resting." for an order that did not exist. */
+      const saved = await armEntry({
         rule: {
           id: entryId,
           trigger: { kind: "priceAbsolute", value: limitPrice },
@@ -273,23 +275,28 @@ export function Ticket({
         referencePrice: price,
         side,
       });
-      /* The exits wait for THIS buy, and freeze to what it actually fills. */
-      if (buying && exitRules.length > 0) {
-        await armExits({ rules: exitRules, market: symbol, parentId: entryId });
+      if (!saved) {
+        setReceipt({ ok: false, text: "I couldn't save that order. Nothing was placed — try again." });
+        return;
       }
+      /* The exits wait for THIS buy, and freeze to what it actually fills. */
+      const exitsOk =
+        !(buying && exitRules.length > 0) ||
+        (await armExits({ rules: exitRules, market: symbol, parentId: entryId }));
       setSellAll(false);
       setAmount("");
       setStopStr("");
       setTargetStr("");
       setReceipt({
         ok: true,
-        text: `Resting. I'll ${side} when ${market} reaches ${usd(limitPrice)}.${exitsLine}`,
+        text:
+          `Resting. I'll ${side} when ${market} reaches ${usd(limitPrice)}.` +
+          (exitsOk ? exitsLine : " But the stop loss and target did NOT save — set them again."),
       });
       return;
     }
 
     const before = account.usdc;
-    const cash = q?.cashUsd ?? 0;
     if (!mint) return;
     const r = await trade({
       mint,
@@ -313,14 +320,18 @@ export function Ticket({
      */
     /* Exits on a market buy: sized to the tokens this fill delivered, bound
        to what was paid, parented to the fill so they read as targets. */
-    if (buying && exitRules.length > 0) {
-      await armExits({
+    const exitsOk =
+      !(buying && exitRules.length > 0) ||
+      (await armExits({
         rules: exitRules.map((x) => ({ ...x, amount: { kind: "tokens" as const, value: r.fill.qty } })),
         market: symbol,
         entryPrice: allInPrice(r.fill),
         parentId: r.fill.id,
-      });
-    }
+      }));
+    /* The cash that ACTUALLY moved, from the fill. The preview's figure was
+       priced before the route quote, and can differ from what was booked. */
+    const notional = r.fill.qty * r.fill.price;
+    const cash = buying ? notional + r.fill.feeUsd : notional - r.fill.feeUsd;
     setSellAll(false);
     setAmount("");
     setStopStr("");
@@ -333,7 +344,7 @@ export function Ticket({
         (buying
           ? ""
           : ` Booked ${r.fill.realisedUsd >= 0 ? "+" : "−"}${usd(Math.abs(r.fill.realisedUsd))}.`) +
-        exitsLine,
+        (exitsOk ? exitsLine : " But the stop loss and target did NOT save — you are holding this unprotected. Set them again."),
     });
   }
 

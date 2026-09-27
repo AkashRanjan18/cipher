@@ -103,39 +103,116 @@ export async function loadFills(userId: string, limit = 200): Promise<Fill[]> {
  * pooled driver when this stops being a paper ledger; it is a real edge and it
  * is worth naming rather than pretending.
  */
-export async function saveFill(userId: string, account: Account, fill: Fill): Promise<void> {
+/**
+ * Write a fill and the account it produced. Returns false, writing NOTHING,
+ * when `expectedUsdc` is given and the balance is no longer that.
+ *
+ * THE LOST UPDATE. Every writer here loads the account, computes the next one
+ * in paper.ts, and writes ABSOLUTE values back. Two writers for one user at
+ * the same moment — a double-clicked Buy, or a stop firing in the worker while
+ * the user trades — both start from the same balance, and the second write
+ * erases the first: one trade's cost vanishes, and a trade is free.
+ *
+ * The HTTP driver cannot hold a row lock across a read and a write, so this is
+ * a compare-and-set on the balance instead. It is a sound version number
+ * because every fill moves it: a buy spends, a sell pays out, and the fee
+ * makes a zero-change fill impossible. The update only lands if the balance is
+ * still the one the trade was priced against; if not, the caller re-reads and
+ * decides again with the truth.
+ *
+ * cipher: the balance round-trips through a JS number, which is exact while it
+ * stays under about $10M at 8 decimals. Past that, a `version` column is the
+ * upgrade, and it needs a migration on Neon.
+ */
+export async function saveFill(
+  userId: string,
+  account: Account,
+  fill: Fill,
+  expectedUsdc?: number,
+): Promise<boolean> {
+  /*
+   * ONE STATEMENT, so it is one transaction. The balance, the position and the
+   * fill used to be three separate writes, and the review of 27 Sep 2026 found
+   * the gap between them: a reader could see the new balance and the OLD
+   * position, pass the balance check with it, and write back a quantity that
+   * erased the other trade's tokens. Data-modifying CTEs all run in the same
+   * snapshot and commit together, and everything after `moved` only happens
+   * if the balance check passed.
+   *
+   * Every parameter is cast, because an INSERT ... SELECT does not infer its
+   * parameter types from the target columns the way INSERT ... VALUES does.
+   */
   const sql = db();
-  await sql`
-    update accounts set
-      usdc = ${account.usdc},
-      realised_usd = ${account.realisedUsd},
-      fees_usd = ${account.feesUsd},
-      updated_at = now()
-    where user_id = ${userId}
-  `;
-
+  const expected = expectedUsdc ?? null;
   const held = account.positions[fill.mint];
-  if (held) {
-    await sql`
-      insert into positions (user_id, mint, qty, cost_basis)
-      values (${userId}, ${fill.mint}, ${held.qty}, ${held.costBasis})
-      on conflict (user_id, mint) do update set
-        qty = excluded.qty,
-        cost_basis = excluded.cost_basis,
-        updated_at = now()
-    `;
-  } else {
-    /* Flat deletes the row. A zero row would mean every read has to filter
-       for it, forever, on every coin the user ever touched. */
-    await sql`delete from positions where user_id = ${userId} and mint = ${fill.mint}`;
-  }
+  const rows = held
+    ? await sql`
+        with moved as (
+          update accounts set
+            usdc = ${account.usdc}::numeric,
+            realised_usd = ${account.realisedUsd}::numeric,
+            fees_usd = ${account.feesUsd}::numeric,
+            updated_at = now()
+          where user_id = ${userId}
+            and (${expected}::numeric is null or usdc = ${expected}::numeric)
+          returning user_id
+        ),
+        pos as (
+          insert into positions (user_id, mint, qty, cost_basis)
+          select user_id, ${fill.mint}::text, ${held.qty}::numeric, ${held.costBasis}::numeric from moved
+          on conflict (user_id, mint) do update set
+            qty = excluded.qty,
+            cost_basis = excluded.cost_basis,
+            updated_at = now()
+        ),
+        f as (
+          insert into fills (id, user_id, ts, mint, side, qty, price, fee_usd, realised_usd, squawk, source)
+          select ${fill.id}::text, user_id, ${fill.ts}::bigint, ${fill.mint}::text, ${fill.side}::text,
+                 ${fill.qty}::numeric, ${fill.price}::numeric, ${fill.feeUsd}::numeric,
+                 ${fill.realisedUsd}::numeric, ${fill.squawk}::text, ${fill.source}::text
+          from moved
+          on conflict (id) do nothing
+        )
+        select count(*)::int as n from moved
+      `
+    : await sql`
+        with moved as (
+          update accounts set
+            usdc = ${account.usdc}::numeric,
+            realised_usd = ${account.realisedUsd}::numeric,
+            fees_usd = ${account.feesUsd}::numeric,
+            updated_at = now()
+          where user_id = ${userId}
+            and (${expected}::numeric is null or usdc = ${expected}::numeric)
+          returning user_id
+        ),
+        /* Flat deletes the row. A zero row would mean every read has to filter
+           for it, forever, on every coin the user ever touched. */
+        pos as (
+          delete from positions
+          where user_id = ${userId} and mint = ${fill.mint} and exists (select 1 from moved)
+        ),
+        f as (
+          insert into fills (id, user_id, ts, mint, side, qty, price, fee_usd, realised_usd, squawk, source)
+          select ${fill.id}::text, user_id, ${fill.ts}::bigint, ${fill.mint}::text, ${fill.side}::text,
+                 ${fill.qty}::numeric, ${fill.price}::numeric, ${fill.feeUsd}::numeric,
+                 ${fill.realisedUsd}::numeric, ${fill.squawk}::text, ${fill.source}::text
+          from moved
+          on conflict (id) do nothing
+        )
+        select count(*)::int as n from moved
+      `;
+  return num(rows[0]?.n) > 0;
+}
 
-  await sql`
-    insert into fills (id, user_id, ts, mint, side, qty, price, fee_usd, realised_usd, squawk, source)
-    values (${fill.id}, ${userId}, ${fill.ts}, ${fill.mint}, ${fill.side}, ${fill.qty},
-            ${fill.price}, ${fill.feeUsd}, ${fill.realisedUsd}, ${fill.squawk}, ${fill.source})
-    on conflict (id) do nothing
-  `;
+/**
+ * Did this fill land? For the one case where the answer is unknown: the
+ * database committed saveFill and the reply was lost on the way back.
+ * Retrying without asking would book the same trade twice.
+ */
+export async function fillExists(id: string): Promise<boolean> {
+  const rows = await db()`select 1 from fills where id = ${id}`;
+  return rows.length > 0;
 }
 
 export async function resetAccount(userId: string): Promise<void> {
@@ -152,16 +229,25 @@ export async function resetAccount(userId: string): Promise<void> {
    * Reset means the account is as it was on the first day. The basis every
    * return is measured from is part of that.
    */
+  /* One statement, one transaction: a stop firing between "cash reset" and
+     "positions deleted" would otherwise sell a position that was about to
+     stop existing, into an account that had just been zeroed.
+     Rules in 'firing' are cancelled too: one the worker claimed mid-reset
+     would otherwise lose its balance check, go back to armed, and trade the
+     pre-reset order into the freshly reset account on the next tick. */
   await sql`
-    update accounts set
-      usdc = ${opening.usdc},
-      realised_usd = ${opening.realisedUsd},
-      fees_usd = ${opening.feesUsd},
-      deposited_usd = ${opening.depositedUsd},
-      updated_at = now()
-    where user_id = ${userId}
+    with acct as (
+      update accounts set
+        usdc = ${opening.usdc}::numeric,
+        realised_usd = ${opening.realisedUsd}::numeric,
+        fees_usd = ${opening.feesUsd}::numeric,
+        deposited_usd = ${opening.depositedUsd}::numeric,
+        updated_at = now()
+      where user_id = ${userId}
+    ),
+    pos as (delete from positions where user_id = ${userId}),
+    f as (delete from fills where user_id = ${userId})
+    update rules set state = 'cancelled'
+    where user_id = ${userId} and state in ('unbound', 'armed', 'firing')
   `;
-  await sql`delete from positions where user_id = ${userId}`;
-  await sql`delete from fills where user_id = ${userId}`;
-  await sql`update rules set state = 'cancelled' where user_id = ${userId} and state in ('unbound', 'armed')`;
 }

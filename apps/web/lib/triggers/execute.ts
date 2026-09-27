@@ -110,8 +110,9 @@ function worseThanLimit(rule: Rule, price: number, quoted = false): string | nul
     const isStop = rule.side === "sell" && limit < reference;
     if (isStop) return null;
   }
-  /* A quoted price IS the fill — spread, impact and cipher's fee are already
-     inside it. Applying the model's spread on top would charge it twice. */
+  /* A quoted price IS the fill — spread and impact are already inside it.
+     Applying the model's spread on top would charge it twice. cipher's fee is
+     not in it (fill.ts asks for none); the ledger adds that once. */
   const fill = quoted ? price : fillPrice(price, rule.side);
   if (rule.side === "sell" && fill < limit) {
     return `would have filled at $${fill.toFixed(4)}, below your limit of $${limit}`;
@@ -294,6 +295,16 @@ export function fireRule(
    * Checking the model instead checks the wrong number: a limit sell at
    * $101.75 that the model prices at $101.70 and a real route prices at
    * $99.80 must refuse, and only one of those is true.
+   */
+  /*
+   * FAILED, deliberately, not hold. The trigger indexes are level-triggered:
+   * while the price sits past a limit whose fill lands a cent on the wrong
+   * side, the rule fires again every tick. As `hold` that looped forever —
+   * two quote calls and two audit rows a minute on the worker, several a
+   * second in the browser (review, 27 Sep 2026). Three attempts is the bound.
+   *
+   * cipher: a near-miss can kill a resting limit after three ticks. The fix
+   * is a cooldown on re-firing, not an unbounded hold.
    */
   const worse = worseThanLimit(rule, ctx.quoted?.price ?? ctx.mark, Boolean(ctx.quoted));
   if (worse) return { kind: "failed", reason: worse };

@@ -344,9 +344,10 @@ export function quote(
      * A REAL price for this exact size, from a real route.
      *
      * When present it replaces the model entirely — no spread, no first-order
-     * impact guess — because Jupiter has already priced the whole thing
-     * including cipher's fee and the pools it would cross. The model stays for
-     * the local paper account, which has no network.
+     * impact guess — because Jupiter has already priced the pools it would
+     * cross. It does NOT include cipher's fee (fill.ts asks for none), so
+     * feeFor() below is the one and only commission. The model stays for the
+     * local paper account, which has no network.
      */
     quoted?: { price: number; impactBps: number; route: string } | null;
   },

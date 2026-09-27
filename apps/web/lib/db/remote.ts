@@ -45,17 +45,27 @@ export async function fetchSnapshot(token: string | null): Promise<Snapshot | nu
 }
 
 export async function fetchSnapshotResult(token: string | null): Promise<SnapshotResult> {
-  if (!token) return { kind: "unconfigured" };
+  /* No token right now is "ask again", not "no server": Privy can answer null
+     for a moment while it refreshes, and treating that as permanent flipped a
+     signed-in tab into local mode — firing rules the worker also fires. A
+     real sign-out is handled by the stores' `authenticated` effects. */
+  if (!token) return { kind: "unavailable" };
   try {
     const res = await fetch("/api/rules", {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
     /*
-     * 503 is "no DATABASE_URL" and 401 is "this token is not a session" —
-     * neither improves by asking again in five seconds.
+     * 503 is "no DATABASE_URL", which does not improve by asking again.
+     *
+     * 401 IS NOT PERMANENT, and treating it as permanent was the dangerous
+     * half of the expired-token bug (27 Sep 2026). One 401 from a token that
+     * had just lapsed flipped the rules store into local mode for the rest of
+     * the tab — where it fires rules itself, while the worker fires the same
+     * rules in Postgres. Two writers, one ledger. A 401 with a token in hand
+     * is an expired token, and the next poll asks Privy for a fresh one.
      */
-    if (res.status === 503 || res.status === 401) return { kind: "unconfigured" };
+    if (res.status === 503) return { kind: "unconfigured" };
     if (!res.ok) return { kind: "unavailable" };
     const body = (await res.json()) as Snapshot;
     return {
@@ -114,7 +124,7 @@ export async function tradeRemote(
     depthUsd?: number | null;
     slippageBps?: number;
   },
-): Promise<{ fill: Fill; account: Account } | { refusal: string } | null> {
+): Promise<{ fill: Fill; account: Account } | { refusal: string; uncertain?: boolean } | null> {
   if (!token) return { refusal: "You're signed out. Sign in again — nothing happened." };
   try {
     const res = await fetch("/api/trade", {
@@ -129,6 +139,18 @@ export async function tradeRemote(
      * (the catch below) is "couldn't reach".
      */
     if (res.status === 401) return { refusal: "Your sign-in expired. Sign in again — nothing happened." };
+    /*
+     * ONLY A 4xx MEANS NOTHING HAPPENED. A 5xx can arrive after the trade was
+     * booked — the function timed out, or the gateway gave up, after saveFill
+     * ran — and "nothing happened" would invite a second click and a second
+     * fill. Say the outcome is unknown; the caller re-reads the account.
+     */
+    if (res.status >= 500) {
+      return {
+        refusal: `The server errored (${res.status}), so I can't tell whether that went through. Check your positions before trying again.`,
+        uncertain: true,
+      };
+    }
     if (!res.ok) return { refusal: `The server refused that (error ${res.status}). Nothing happened.` };
     const body = (await res.json()) as
       | { fill: Fill; account: Account }

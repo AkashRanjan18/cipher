@@ -1,16 +1,16 @@
-import { allInPrice, positionOf } from "../account/paper.ts";
+import { allInPrice, positionOf, type Account, type Fill } from "../account/paper.ts";
 import { fireRule, freezeAmount, plan } from "./execute.ts";
 import { quoteFill, type QuotedFill } from "../chain/fill.ts";
 import { QuoteError } from "../chain/jupiter.ts";
 import { DEFAULTS } from "@cipher/shared";
-import { loadAccount, saveFill } from "../db/accounts.ts";
+import { fillExists, loadAccount, saveFill } from "../db/accounts.ts";
 import {
   beat,
   childrenOf,
   claim,
+  cancelExitsOnClose,
   crossed,
   due,
-  exitsOn,
   lapsed,
   newHighs,
   record,
@@ -126,7 +126,7 @@ export async function tick(now: number = Date.now()): Promise<TickResult> {
      * stop triggered by the price going the right way.
      */
     for (const { rule } of await newHighs(market, price)) {
-      await replace({ ...rule, highWater: price });
+      await replace({ ...rule, highWater: price }, "armed");
     }
 
     for (const { rule, userId } of await crossed(market, price)) {
@@ -157,7 +157,7 @@ export async function tick(now: number = Date.now()): Promise<TickResult> {
    * became due. The other order silently drops an order that was owed.
    */
   for (const { rule, userId } of await lapsed(now)) {
-    await setState(rule.id, "expired");
+    await setState(rule.id, "expired", undefined, ["unbound", "armed"]);
     await record(userId, [
       {
         ruleId: rule.id,
@@ -199,7 +199,7 @@ async function giveUp(
 ): Promise<void> {
   const attempts = rule.attempts + 1;
   const done = attempts >= MAX_ATTEMPTS;
-  await setState(rule.id, done ? "failed" : "armed", { attempts });
+  await setState(rule.id, done ? "failed" : "armed", { attempts }, ["firing"]);
   transitions.push({
     ruleId: rule.id,
     from: "firing",
@@ -231,13 +231,70 @@ async function fire(
 ): Promise<boolean> {
   if (!(await claim(rule.id))) return false;
 
+  /*
+   * NOTHING MAY LEAVE A RULE IN `firing`.
+   *
+   * Every query that selects work — crossed, due, lapsed, cancelRule — looks
+   * only at unbound or armed. So a throw after claim() (a Neon blip on any of
+   * the writes below) left the rule in `firing` for good: a stop that never
+   * fires again, never expires and cannot be cancelled (review, 27 Sep 2026).
+   *
+   * What it goes back to depends on whether the money moved. saveFill is one
+   * statement now, so "booked" is a clean yes or no: booked means filled, and
+   * anything else is a failed attempt that retries on the next tick.
+   */
+  const progress: Progress = { booked: false };
+  try {
+    return await fireClaimed(rule, userId, price, now, decimals, progress);
+  } catch (e) {
+    console.error("[cipher] fire failed after claim:", rule.id, e);
+    try {
+      /* saveFill can commit and still throw — the reply lost on the way
+         back. Retrying without checking would book the same trade twice. */
+      if (!progress.booked && progress.fillId) progress.booked = await fillExists(progress.fillId);
+      /* Booked: the money moved, so what follows it MUST happen — a filled
+         entry whose exits never bind is a position with no stop. Every step
+         in there is guarded, so running it again is safe. */
+      if (progress.booked && progress.after) await progress.after();
+    } catch {
+      /* Still down. The rule is marked below either way. */
+    }
+    const attempts = rule.attempts + 1;
+    const next = progress.booked ? "filled" : attempts >= MAX_ATTEMPTS ? "failed" : "armed";
+    try {
+      await setState(rule.id, next, progress.booked ? undefined : { attempts }, ["firing"]);
+    } catch {
+      /* The database is down. The next tick's error is the one to read. */
+    }
+    return progress.booked;
+  }
+}
+
+/** How far a fire got, for the catch in fire(). */
+interface Progress {
+  booked: boolean;
+  /** Set just before saveFill, so a lost reply can be checked against the table. */
+  fillId?: string;
+  /** Everything a booked fill obliges: binding its exits, retiring stale ones. */
+  after?: () => Promise<void>;
+}
+
+async function fireClaimed(
+  rule: Rule,
+  userId: string,
+  price: number,
+  now: number,
+  decimals: number | undefined,
+  progress: Progress,
+): Promise<boolean> {
+
   const transitions: Transition[] = [
     { ruleId: rule.id, from: "armed", to: "firing", at: now, reason: "price crossed", price },
   ];
 
   const account = await loadAccount(userId, false);
   if (!account) {
-    await setState(rule.id, "failed");
+    await setState(rule.id, "failed", undefined, ["firing"]);
     transitions.push({
       ruleId: rule.id,
       from: "firing",
@@ -289,6 +346,18 @@ async function fire(
        * failure before it gives up loudly.
        */
       const why = e instanceof QuoteError ? e.message : "could not price that trade";
+      /*
+       * A RATE LIMIT IS NOT A VERDICT ON THE TRADE. Counted as a failure, a
+       * burst of 429s in a sell-off spent every stop's three attempts in three
+       * minutes and killed them at the moment they exist for. It waits, with
+       * attempts untouched, and asks again next tick.
+       */
+      if (e instanceof QuoteError && e.status === 429) {
+        await setState(rule.id, "armed", undefined, ["firing"]);
+        transitions.push({ ruleId: rule.id, from: "firing", to: "armed", at: now, reason: `waiting: ${why}` });
+        await record(userId, transitions);
+        return false;
+      }
       await giveUp(rule, userId, now, transitions, why);
       return false;
     }
@@ -301,8 +370,31 @@ async function fire(
   });
 
   if (outcome.kind === "filled") {
-    await saveFill(userId, outcome.account, outcome.fill);
-    await setState(rule.id, "filled");
+    /*
+     * Compare-and-set on the balance this fire was priced against. A user
+     * trading in the same second must not have their trade overwritten, or
+     * this fill's; losing the race costs one attempt, and the next tick
+     * re-reads the real account and decides again.
+     */
+    progress.fillId = outcome.fill.id;
+    if (!(await saveFill(userId, outcome.account, outcome.fill, account.usdc))) {
+      /* WAIT, not a failed attempt. Another trade landing in the same second
+         says nothing about this one; counted as a failure, an active trader
+         could burn a stop's three attempts in a sell-off. */
+      await setState(rule.id, "armed", undefined, ["firing"]);
+      transitions.push({
+        ruleId: rule.id,
+        from: "firing",
+        to: "armed",
+        at: now,
+        reason: "waiting: the account changed while this fired",
+      });
+      await record(userId, transitions);
+      return false;
+    }
+    progress.booked = true;
+    progress.after = () => afterFill(rule, userId, outcome.account, outcome.fill, now, transitions);
+    await setState(rule.id, "filled", undefined, ["firing"]);
     transitions.push({
       ruleId: rule.id,
       from: "firing",
@@ -311,64 +403,11 @@ async function fire(
       reason: "executed",
       price: allInPrice(outcome.fill),
     });
-
-    /*
-     * A SELL THAT EMPTIED THE POSITION kills every other exit on it.
-     *
-     * They all measure from an entry that no longer exists, and the damage
-     * lands on the re-entry: a stop at $71 from a $102 entry, still armed,
-     * sells a position bought back at $60 on the next tick. The browser does
-     * the same thing when it owns the rules; this is the half that runs while
-     * nobody is looking.
-     */
-    if (rule.side === "sell" && positionOf(outcome.account, rule.market).qty <= 0) {
-      for (const { rule: stale } of await exitsOn(rule.market, userId)) {
-        if (stale.id === rule.id) continue;
-        await setState(stale.id, "cancelled");
-        transitions.push({
-          ruleId: stale.id,
-          from: stale.state,
-          to: "cancelled",
-          at: now,
-          reason: "position closed",
-        });
-      }
-    }
-
-    /*
-     * A resting BUY that just filled is an entry, and the exits armed
-     * alongside it have been waiting for exactly this price. Only its own
-     * children — matching on market alone let the first entry to fill bind
-     * every waiting exit, including another order's.
-     */
-    if (rule.side === "buy") {
-      const paid = allInPrice(outcome.fill);
-      for (const { rule: child } of await childrenOf(rule.id)) {
-        /* A percentage becomes tokens HERE, against what this entry actually
-           received — the fill, not the sentence. "$500 of SOL at $90" types
-           as 5.556 and fills as 5.550; frozen early, a 100% stop would ask
-           for tokens that never arrived. */
-        await replace({
-          ...child,
-          amount: freezeAmount(child.amount, outcome.fill.qty),
-          entryPrice: paid,
-          highWater: paid,
-          state: "armed",
-        });
-        transitions.push({
-          ruleId: child.id,
-          from: "unbound",
-          to: "armed",
-          at: now,
-          reason: `bound to entry at ${paid}`,
-          price: paid,
-        });
-      }
-    }
+    await progress.after();
   } else if (outcome.kind === "hold") {
     /* A sell larger than the holding waits, attempts untouched — see the
        hold case in execute.ts. */
-    await setState(rule.id, "armed");
+    await setState(rule.id, "armed", undefined, ["firing"]);
     transitions.push({
       ruleId: rule.id,
       from: "firing",
@@ -377,7 +416,7 @@ async function fire(
       reason: `waiting: ${outcome.reason}`,
     });
   } else if (outcome.kind === "moot") {
-    await setState(rule.id, "cancelled");
+    await setState(rule.id, "cancelled", undefined, ["firing"]);
     transitions.push({
       ruleId: rule.id,
       from: "firing",
@@ -392,4 +431,72 @@ async function fire(
 
   await record(userId, transitions);
   return outcome.kind === "filled";
+}
+
+/**
+ * What a booked fill obliges, after the money has moved.
+ *
+ * Its own function so fire() can run it again if it threw part-way: every
+ * write in here is state-guarded (cancel only what is armed, bind only what is
+ * unbound), so a second run changes nothing the first already did.
+ */
+async function afterFill(
+  rule: Rule,
+  userId: string,
+  account: Account,
+  fill: Fill,
+  now: number,
+  transitions: Transition[],
+): Promise<void> {
+  /*
+   * A SELL THAT EMPTIED THE POSITION kills every other exit on it.
+   *
+   * They all measure from an entry that no longer exists, and the damage
+   * lands on the re-entry: a stop at $71 from a $102 entry, still armed,
+   * sells a position bought back at $60 on the next tick. The browser does
+   * the same thing when it owns the rules; this is the half that runs while
+   * nobody is looking.
+   */
+  if (rule.side === "sell" && positionOf(account, rule.market).qty <= 0) {
+    transitions.push(...(await cancelExitsOnClose(userId, rule.market, now, rule.id)));
+  }
+
+  /*
+   * A resting BUY that just filled is an entry, and the exits armed
+   * alongside it have been waiting for exactly this price. Only its own
+   * children — matching on market alone let the first entry to fill bind
+   * every waiting exit, including another order's.
+   */
+  if (rule.side === "buy") {
+    const paid = allInPrice(fill);
+    for (const { rule: child } of await childrenOf(rule.id)) {
+      /* A percentage becomes tokens HERE, against what this entry actually
+         received — the fill, not the sentence. "$500 of SOL at $90" types
+         as 5.556 and fills as 5.550; frozen early, a 100% stop would ask
+         for tokens that never arrived. */
+      /* armedAt is the BIND time: a "1 hour after" exit is an hour after
+         the fill, not after the moment the resting order was placed —
+         which could already be in the past, and sell minutes after the
+         buy. engine.bind() measures from bind time too. */
+      await replace(
+        {
+          ...child,
+          amount: freezeAmount(child.amount, fill.qty),
+          entryPrice: paid,
+          highWater: paid,
+          armedAt: now,
+          state: "armed",
+        },
+        "unbound",
+      );
+      transitions.push({
+        ruleId: child.id,
+        from: "unbound",
+        to: "armed",
+        at: now,
+        reason: `bound to entry at ${paid}`,
+        price: paid,
+      });
+    }
+  }
 }

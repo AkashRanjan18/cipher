@@ -7,6 +7,7 @@ import type { Compiled, CompileContext, ExitRule, Intent, Interval, OrderSpec } 
 import { freezeAmount } from "@/lib/triggers/execute";
 import { compile } from "@/lib/compiler/compile";
 import { compileWithModel } from "@/lib/compiler/model";
+import { useLiveToken } from "@/lib/auth/use-live-token";
 import { choose, needsModel, ORDERS_ONLY } from "@/lib/compiler/choose";
 import { resolveMarket, marketOf, namesToken, type Major } from "@/lib/market";
 import { validateOrder, blocks } from "@/lib/compiler/validate";
@@ -172,6 +173,7 @@ export function Sana({
   onCollapse?: () => void;
 }) {
   const { account, trade } = usePaperAccount();
+  const liveToken = useLiveToken();
   const { armExits, armEntry, armed, cancelRule, server } = useTriggers();
   /* The prop is named `price`; aliased so the answer helpers read plainly. */
   const livePrice = price;
@@ -571,7 +573,7 @@ export function Sana({
     const id = turnId.current++;
     setTurns((prev) => [...prev, { id, mine: false, text: "Reading your order…", thinking: true }]);
 
-    const answer = await compileWithModel(text, ctx, controller.signal);
+    const answer = await compileWithModel(text, ctx, controller.signal, await liveToken());
     if (controller.signal.aborted) return;
 
     setTurns((prev) => prev.filter((t) => t.id !== id));
@@ -833,11 +835,20 @@ export function Sana({
         side: entry.side,
       });
       if (!armed) return `${FAILED}I couldn't save that order. Nothing was placed — try again.`;
+      const at = usd((entry.trigger as { value: number }).value);
       /* parentId, so THIS entry's fill binds these exits and no other's. */
       if (spec.exits.length > 0) {
-        await armExits({ rules: spec.exits, market: symbol, parentId: entryId });
+        /* Checked, like the fill-now path below. This was ignored, so a failed
+           save still said "then arm the exits" — and the order would fill with
+           no stop behind it while the receipt claimed one. */
+        const exitsOk = await armExits({ rules: spec.exits, market: symbol, parentId: entryId });
+        if (!exitsOk) {
+          return (
+            `Resting: I'll ${entry.side} when ${market} reaches ${at}. But I could NOT save the ` +
+            `${spec.exits.length === 1 ? "exit" : "exits"}, so it would fill unprotected. Set them again, or cancel the order.`
+          );
+        }
       }
-      const at = usd((entry.trigger as { value: number }).value);
       return (
         `Resting. I'll ${entry.side} when ${market} reaches ${at}` +
         (spec.exits.length ? `, then arm the ${spec.exits.length === 1 ? "exit" : "exits"}.` : ".") +
