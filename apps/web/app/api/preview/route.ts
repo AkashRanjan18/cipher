@@ -45,7 +45,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
   }
 
-  const priced = (await fetchPrices([mint], { revalidate: 5 })).get(mint);
+  /* revalidate 0: uncached. The cache serves a stale price first and
+     refreshes after, and the preview values the trade against this price. */
+  const priced = (await fetchPrices([mint], { revalidate: 0 })).get(mint);
   if (!priced || !(priced.usd > 0)) {
     return NextResponse.json({ error: "no price for that token" }, { status: 404 });
   }

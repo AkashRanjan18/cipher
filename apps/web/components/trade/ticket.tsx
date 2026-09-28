@@ -9,7 +9,7 @@ import {
   fillPrice,
   maxBuyUsd,
   allInPrice,
-  positionOf, qtyForBudget } from "@/lib/account/paper";
+  positionOf, qtyForBudget, feeFor } from "@/lib/account/paper";
 import { usd, compactWords } from "@/lib/format";
 import { useTradePreview, COSTLY_PCT } from "./use-trade-preview";
 import { DEFAULTS, newId } from "@cipher/shared";
@@ -219,10 +219,19 @@ export function Ticket({
    * only $468". That number is knowable before the click, so it is shown
    * before the click. Not for a resting order: it fills later, at its price.
    */
+  /*
+   * THE SAME DOLLARS THE TRADE SENDS. place.ts turns this ticket's qty back
+   * into dollars at fillPrice(), so that is what is quoted here — not the
+   * local model's notional, which adds a modelled impact and drifts from it.
+   * The fee is feeFor() of the same number: $5,000 typed is $24.88 of fee and
+   * $4,975.12 into the pool, and the line below must say exactly that.
+   */
+  const intoPool = buying && price ? qty * fillPrice(price, "buy") : 0;
+  const cipherFee = buying ? feeFor(intoPool) : price ? feeFor(qty * price) : 0;
   const preview = useTradePreview(
     tradable && !resting && value > 0 ? mint : null,
     side,
-    buying ? (q?.notionalUsd ?? 0) : qty,
+    buying ? intoPool : qty,
   );
   const costly = preview !== null && preview.costPct >= COSTLY_PCT;
 
@@ -624,16 +633,26 @@ export function Ticket({
             costly ? "border-down/40 bg-down/10 text-champagne" : "border-line text-ash"
           }`}
         >
+          {/*
+            * EVERY DOLLAR ACCOUNTED FOR. cipher's 0.5% (or the $0.95 floor)
+            * comes off first; what is left goes to the pool, and the pool's
+            * cut is the gap to what the tokens are worth right now. The three
+            * add back up to what was typed — the user asked for exactly this,
+            * 28 Sep 2026.
+            */}
           {buying ? (
             <>
-              Your {usd(value)} buys ≈ {compactWords(preview.out)} {market}, worth{" "}
-              <b className="text-champagne">{usd(preview.worthNowUsd)}</b> at market
-              {preview.costPct >= 0.05 ? ` (−${preview.costPct.toFixed(1)}%)` : ""}.
+              Your {usd(value)} → ≈ {compactWords(preview.out)} {market}, worth{" "}
+              <b className="text-champagne">{usd(preview.worthNowUsd)}</b> right now. Where the{" "}
+              {usd(Math.max(0, value - preview.worthNowUsd))} goes: {usd(cipherFee)} cipher fee,{" "}
+              {usd(Math.max(0, preview.size - preview.worthNowUsd))} to the pool
+              {preview.costPct >= 0.05 ? ` (${preview.costPct.toFixed(1)}%)` : ""}.
             </>
           ) : (
             <>
-              Selling gets ≈ <b className="text-champagne">{usd(preview.out)}</b>
-              {preview.costPct >= 0.05 ? ` — ${preview.costPct.toFixed(1)}% under the market price` : ""}.
+              Selling gets ≈ <b className="text-champagne">{usd(Math.max(0, preview.out - cipherFee))}</b>{" "}
+              into your cash, after {usd(cipherFee)} cipher fee
+              {preview.costPct >= 0.05 ? ` — the pool pays ${preview.costPct.toFixed(1)}% under the price right now` : ""}.
             </>
           )}
           {costly && (

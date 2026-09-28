@@ -19,7 +19,7 @@ import { useSpeech } from "@/lib/voice/use-speech";
 import { normaliseSpeech } from "@/lib/voice/normalise";
 import { useRegistry } from "@/lib/market/use-registry";
 import { correctSentence, nearest, type RegistryToken } from "@/lib/market/registry";
-import { resolveQty, allInPrice,
+import { resolveQty, allInPrice, fillPrice, feeFor,
   positionOf,
   heldMints,
 } from "@/lib/account/paper";
@@ -805,14 +805,19 @@ export function Sana({
     const buyingNow = entry.side === "buy";
     const qty = resolveQty(entry.amount, entry.side, account, mint, price);
     if (qty === null || !(qty > 0)) return true;
-    const size = buyingNow ? qty * price : qty;
+    /* At fillPrice, as the trade itself does (place.ts): the dollars that
+       reach the pool after cipher's fee, to the cent. */
+    const size = buyingNow ? qty * fillPrice(price, "buy") : qty;
     const p = await fetchPreview(mint, entry.side, size);
     if (!p || p.costPct < COSTLY_PCT) return true;
 
-    const loss = `−${p.costPct.toFixed(1)}%`;
+    /* Every dollar accounted for, the same split as the ticket: cipher's fee
+       first, then what the pool takes at this size. */
+    const fee = feeFor(buyingNow ? size : size * price);
+    const pool = `${usd(Math.max(0, (buyingNow ? size : size * price) - p.worthNowUsd))} to the pool (${p.costPct.toFixed(1)}%)`;
     const question = buyingNow
-      ? `That buys ≈ ${usd(p.worthNowUsd)} of ${market} at market (${loss}) — the pool is thin for that size. Buy anyway, or wait for a better price?`
-      : `That sells for ≈ ${usd(p.out)}, ${loss} under the market — the pool is thin for that size. Sell anyway, or wait for a better price?`;
+      ? `That gets you ≈ ${usd(p.worthNowUsd)} of ${market} right now: ${usd(fee)} cipher fee, ${pool} — the pool is thin for that size. Buy anyway, or wait for a better price?`
+      : `That sells for ≈ ${usd(Math.max(0, p.out - fee))} into your cash after ${usd(fee)} cipher fee; ${pool} — the pool is thin for that size. Sell anyway, or wait for a better price?`;
     /* Waiting means a limit one percent the right side of the market, and it
        is only offered when there are no exits in the sentence: a rewritten
        sentence would drop them, and a question must never do that. */

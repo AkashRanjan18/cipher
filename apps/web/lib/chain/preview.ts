@@ -10,14 +10,14 @@ import { USDC_MINT, fromBaseUnits, quote, toBaseUnits } from "./jupiter.ts";
  * market price the position card will use. The gap is the pool's fee plus
  * this size's price impact. No model, no guess.
  *
+ * cipher's own 0.5% fee is taken BEFORE this: a buy's size here is the
+ * dollars that reach the pool, and the ticket shows the fee beside it.
+ *
  * NOT "what you would get selling straight back". That was the first
  * version, and its own test showed why it is wrong: both quotes are taken
  * against the pool as it is now, before the buy has moved it, so the return
  * trip counted the price impact twice and printed a number far below what an
  * immediate sell would really fetch.
- *
- * cipher's own fee is NOT in here. It is known exactly (feeFor in paper.ts)
- * and shown beside this, not buried in it.
  */
 
 const USDC_DECIMALS = 6;
@@ -38,9 +38,17 @@ export async function preview(req: {
   mint: string;
   decimals: number;
   side: "buy" | "sell";
-  /** DOLLARS for a buy, token units for a sell. */
+  /** DOLLARS for a buy (after cipher's fee), token units for a sell. */
   size: number;
-  /** Market price, USD per token. */
+  /**
+   * The market price, USD per token — FRESH. The route fetches it uncached:
+   * through Next's cache it came back stale first and refreshed after, and a
+   * $5,000 SOL buy was valued 0.42% low, "worth $4,953.85" for SOL that the
+   * same second's price made $4,974.70 (28 Sep 2026).
+   *
+   * Not a small reference quote instead: that pays the pool's own fee too,
+   * and would hide exactly the cost this exists to show.
+   */
   mark: number;
   signal?: AbortSignal;
 }): Promise<Preview> {
