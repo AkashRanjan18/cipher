@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import type { Preview } from "@/lib/chain/preview";
 
 /**
- * Above this loss the trade is worth pausing on: twice the dearest pool fee
- * we measured on any chain (1%, Robinhood Chain, 27 Sep 2026). Below it the
- * cost is ordinary fees and a little impact.
+ * Above this loss to the pool, the trade is shown and paused on; below it,
+ * nothing is said. The user's call, 28 Sep 2026: memecoin swaps routinely
+ * cost a few percent to the pool, and a line on every ordinary trade is
+ * noise that teaches people to ignore the one that matters.
  */
-export const COSTLY_PCT = 2;
+export const COSTLY_PCT = 3;
 
 /**
  * The before-you-trade quote, for the ticket: what the dollars (or tokens)

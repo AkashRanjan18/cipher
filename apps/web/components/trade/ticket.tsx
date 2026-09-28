@@ -627,7 +627,9 @@ export function Ticket({
         {available === null ? "—" : `${usd(available)} available`}
       </button>
 
-      {preview && !resting && value > 0 && (
+      {/* Only when it costs more than COSTLY_PCT (3%) to the pool — the
+          user's call: an ordinary trade needs no line. */}
+      {preview && costly && !resting && value > 0 && (
         <div
           className={`rounded-xl border px-3 py-2 font-sans text-[11.5px] leading-relaxed ${
             costly ? "border-down/40 bg-down/10 text-champagne" : "border-line text-ash"
