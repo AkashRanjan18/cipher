@@ -412,3 +412,18 @@ test("a $100 buy spends $100 in total, the $0.95 fee inside it", () => {
     assert.equal(r.fill.feeUsd, 0.95);
   }
 });
+
+test("warned means decided: with no tolerance passed, a costly buy goes through", () => {
+  /*
+   * The user's rule, 28 Sep 2026. The ticket and Sana show the pool's cost
+   * when it is over 3%; if the user buys anyway, the trade is sent WITHOUT a
+   * slippage tolerance and must fill at what the route gives. With the
+   * tolerance it is still refused — that is the unwarned path.
+   */
+  const a = openAccount(10_000);
+  const quoted = { price: 106, impactBps: 600, route: "thin" };
+  const guarded = quote(a, "MINT", "buy", 1, 100, { slippageBps: 300, quoted });
+  assert.match(guarded.refusal ?? "", /moves the price/);
+  const accepted = quote(a, "MINT", "buy", 1, 100, { quoted });
+  assert.equal(accepted.refusal, null);
+});

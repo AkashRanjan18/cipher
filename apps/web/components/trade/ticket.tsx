@@ -210,8 +210,6 @@ export function Ticket({
           .filter(Boolean)
           .join(" and ")} set.`;
 
-  const blocked = hydrated ? (resting ? null : (q?.refusal ?? null)) : null;
-
   /*
    * WHAT THIS IS WORTH THE MOMENT IT LANDS, from a real route quote at this
    * size (lib/chain/preview.ts). The fomo
@@ -233,7 +231,19 @@ export function Ticket({
     side,
     buying ? intoPool : qty,
   );
-  const costly = preview !== null && preview.costPct >= COSTLY_PCT;
+  const costly = preview !== null && preview.costPct > COSTLY_PCT;
+
+  /*
+   * WARNED MEANS DECIDED. The user's call, 28 Sep 2026: once the line above
+   * has said the pool takes more than 3%, pressing Buy is the answer — the
+   * trade goes through at what the pool gives, and cipher's slippage limit
+   * does not refuse it a second time. So when the warning is on screen the
+   * order is checked (cash, holdings) without the tolerance, and sent
+   * without it.
+   */
+  const qAccepted =
+    costly && price && mint ? quote(account, mint, side, qty, price, { depthUsd, symbol: market }) : null;
+  const blocked = hydrated ? (resting ? null : ((qAccepted ?? q)?.refusal ?? null)) : null;
 
   /* "Wait for a better price": the Limit tab, one percent the right side of
      the market, for the user to adjust. The order then rests and fills only
@@ -339,7 +349,8 @@ export function Ticket({
       mark: price,
       source: "ticket",
       depthUsd,
-      slippageBps,
+      /* Omitted once the user has been warned and bought anyway. */
+      slippageBps: costly ? undefined : slippageBps,
     });
     if ("refusal" in r) {
       setReceipt({ ok: false, text: r.refusal });

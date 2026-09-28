@@ -774,9 +774,14 @@ export function Sana({
     /* A refused order shows only its reason — no order summary under it,
        because nothing was placed (found live: "AFTER nothing" under a
        refusal). run() marks a failure with the FAILED prefix. */
-    void costCheck(spec, lastSentence.current).then((go) => {
+    const said = lastSentence.current;
+    void costCheck(spec, said).then((go) => {
       if (!go) return;
-      void run(spec).then((outcome) => {
+      /* "Anyway" is the answer to the cost warning, and warned means
+         decided: the trade goes through at what the pool gives, without
+         cipher's slippage limit refusing it a second time (the user's call,
+         28 Sep 2026). */
+      void run(spec, /\banyway\b/i.test(said)).then((outcome) => {
         if (outcome.startsWith(FAILED)) push({ mine: false, text: outcome.slice(FAILED.length) });
         else push({ mine: false, text: outcome, lines: readback(spec), warnings });
       });
@@ -809,7 +814,7 @@ export function Sana({
        reach the pool after cipher's fee, to the cent. */
     const size = buyingNow ? qty * fillPrice(price, "buy") : qty;
     const p = await fetchPreview(mint, entry.side, size);
-    if (!p || p.costPct < COSTLY_PCT) return true;
+    if (!p || p.costPct <= COSTLY_PCT) return true;
 
     /* Every dollar accounted for, the same split as the ticket: cipher's fee
        first, then what the pool takes at this size. */
@@ -851,7 +856,7 @@ export function Sana({
    *   an entry now      fills, then binds its exits to what it actually paid.
    *   exits only        binds to the position already held.
    */
-  async function run(spec: OrderSpec): Promise<string> {
+  async function run(spec: OrderSpec, acceptedCost = false): Promise<string> {
     const entry = spec.entry;
 
     /* ── exits against a position already held ── */
@@ -946,7 +951,8 @@ export function Sana({
       mark: price,
       source: "sana",
       depthUsd,
-      slippageBps: entry.slippageBps,
+      /* Omitted once the user has seen the cost and said "anyway". */
+      slippageBps: acceptedCost ? undefined : entry.slippageBps,
     });
     if ("refusal" in r) return `${FAILED}Not placed. ${r.refusal}`;
 
