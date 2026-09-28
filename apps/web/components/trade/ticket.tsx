@@ -10,7 +10,8 @@ import {
   maxBuyUsd,
   allInPrice,
   positionOf, qtyForBudget } from "@/lib/account/paper";
-import { usd } from "@/lib/format";
+import { usd, compactWords } from "@/lib/format";
+import { useTradePreview, COSTLY_PCT } from "./use-trade-preview";
 import { DEFAULTS, newId } from "@cipher/shared";
 
 /**
@@ -210,6 +211,29 @@ export function Ticket({
           .join(" and ")} set.`;
 
   const blocked = hydrated ? (resting ? null : (q?.refusal ?? null)) : null;
+
+  /*
+   * WHAT THIS IS WORTH THE MOMENT IT LANDS, from a real route quote at this
+   * size (lib/chain/preview.ts). The fomo
+   * complaint behind it: "$500 of a $4m robinhood token... ending up with
+   * only $468". That number is knowable before the click, so it is shown
+   * before the click. Not for a resting order: it fills later, at its price.
+   */
+  const preview = useTradePreview(
+    tradable && !resting && value > 0 ? mint : null,
+    side,
+    buying ? (q?.notionalUsd ?? 0) : qty,
+  );
+  const costly = preview !== null && preview.costPct >= COSTLY_PCT;
+
+  /* "Wait for a better price": the Limit tab, one percent the right side of
+     the market, for the user to adjust. The order then rests and fills only
+     at that price or better — minimum output from the limit, not the pool. */
+  function waitForPrice() {
+    if (!price) return;
+    setOrderType("limit");
+    setLimit(String(Number((price * (buying ? 0.99 : 1.01)).toPrecision(6))));
+  }
 
   /** What you can spend on a buy, what the position is worth on a sell. */
   const available =
@@ -593,6 +617,36 @@ export function Ticket({
       >
         {available === null ? "—" : `${usd(available)} available`}
       </button>
+
+      {preview && !resting && value > 0 && (
+        <div
+          className={`rounded-xl border px-3 py-2 font-sans text-[11.5px] leading-relaxed ${
+            costly ? "border-down/40 bg-down/10 text-champagne" : "border-line text-ash"
+          }`}
+        >
+          {buying ? (
+            <>
+              Your {usd(value)} buys ≈ {compactWords(preview.out)} {market}, worth{" "}
+              <b className="text-champagne">{usd(preview.worthNowUsd)}</b> at market
+              {preview.costPct >= 0.05 ? ` (−${preview.costPct.toFixed(1)}%)` : ""}.
+            </>
+          ) : (
+            <>
+              Selling gets ≈ <b className="text-champagne">{usd(preview.out)}</b>
+              {preview.costPct >= 0.05 ? ` — ${preview.costPct.toFixed(1)}% under the market price` : ""}.
+            </>
+          )}
+          {costly && (
+            <>
+              {" "}This pool is thin for that size.{" "}
+              <button onClick={waitForPrice} className="font-semibold text-action underline-offset-2 hover:underline">
+                Wait for a better price
+              </button>{" "}
+              or trade smaller.
+            </>
+          )}
+        </div>
+      )}
 
       {buying && (
         /* Optional exits on the buy: both are sell orders that wait in

@@ -8,6 +8,7 @@ import { freezeAmount } from "@/lib/triggers/execute";
 import { compile } from "@/lib/compiler/compile";
 import { compileWithModel } from "@/lib/compiler/model";
 import { useLiveToken } from "@/lib/auth/use-live-token";
+import { fetchPreview, COSTLY_PCT } from "./use-trade-preview";
 import { choose, needsModel, ORDERS_ONLY } from "@/lib/compiler/choose";
 import { resolveMarket, marketOf, namesToken, type Major } from "@/lib/market";
 import { validateOrder, blocks } from "@/lib/compiler/validate";
@@ -197,6 +198,7 @@ export function Sana({
    * Null for a Binance major, which has a chart and no market behind it.
    */
   const mint = mintFor(symbol);
+  const lastSentence = useRef("");
   const held = mint ? positionOf(account, mint) : { qty: 0, costBasis: 0 };
   /* The in-flight model request, so a new sentence can abandon the old one. */
   const pending = useRef<AbortController | null>(null);
@@ -419,6 +421,9 @@ export function Sana({
   function handle(raw: string) {
     const text = raw.trim();
     if (!text) return;
+    /* The words behind the order being handled, for the cost question below:
+       "Buy anyway" answers with this exact sentence, so nothing is lost. */
+    lastSentence.current = text;
     // Anything the user says reopens the stream — otherwise the reply lands
     // in a collapsed panel and looks like nothing happened.
     setOpen(true);
@@ -769,10 +774,66 @@ export function Sana({
     /* A refused order shows only its reason — no order summary under it,
        because nothing was placed (found live: "AFTER nothing" under a
        refusal). run() marks a failure with the FAILED prefix. */
-    void run(spec).then((outcome) => {
-      if (outcome.startsWith(FAILED)) push({ mine: false, text: outcome.slice(FAILED.length) });
-      else push({ mine: false, text: outcome, lines: readback(spec), warnings });
+    void costCheck(spec, lastSentence.current).then((go) => {
+      if (!go) return;
+      void run(spec).then((outcome) => {
+        if (outcome.startsWith(FAILED)) push({ mine: false, text: outcome.slice(FAILED.length) });
+        else push({ mine: false, text: outcome, lines: readback(spec), warnings });
+      });
     });
+  }
+
+  /**
+   * THE PRICE OF THE SIZE, BEFORE IT IS PAID.
+   *
+   * A market trade is quoted both ways first (lib/chain/preview.ts). If it
+   * would lose 2% or more to the pool, Sana asks instead of trading — the fomo
+   * case, "$500 … ending up with only $468", said before the money moves
+   * rather than discovered after. An ordinary trade passes straight through;
+   * the check is one request, and a failed check never blocks a trade.
+   *
+   * AMBIGUITY -> ASK is the CLAUDE.md boundary, and "did you mean to pay 6%
+   * for this size?" is exactly that. "Buy anyway" answers with the user's own
+   * sentence plus "anyway", which skips this — so the answer cannot lose the
+   * stop or target that came with the order.
+   */
+  async function costCheck(spec: OrderSpec, said: string): Promise<boolean> {
+    const entry = spec.entry;
+    if (!entry || entry.trigger || !mint || !price) return true;
+    if (/\banyway\b/i.test(said)) return true;
+
+    const buyingNow = entry.side === "buy";
+    const qty = resolveQty(entry.amount, entry.side, account, mint, price);
+    if (qty === null || !(qty > 0)) return true;
+    const size = buyingNow ? qty * price : qty;
+    const p = await fetchPreview(mint, entry.side, size);
+    if (!p || p.costPct < COSTLY_PCT) return true;
+
+    const loss = `−${p.costPct.toFixed(1)}%`;
+    const question = buyingNow
+      ? `That buys ≈ ${usd(p.worthNowUsd)} of ${market} at market (${loss}) — the pool is thin for that size. Buy anyway, or wait for a better price?`
+      : `That sells for ≈ ${usd(p.out)}, ${loss} under the market — the pool is thin for that size. Sell anyway, or wait for a better price?`;
+    /* Waiting means a limit one percent the right side of the market, and it
+       is only offered when there are no exits in the sentence: a rewritten
+       sentence would drop them, and a question must never do that. */
+    const wait = Number((price * (buyingNow ? 0.99 : 1.01)).toPrecision(6));
+    const options = [
+      { label: buyingNow ? "Buy anyway" : "Sell anyway", sentence: `${said} anyway` },
+      ...(spec.exits.length === 0 && entry.amount.kind !== "percentOfPosition"
+        ? [
+            {
+              label: `Wait for ${usd(wait)}`,
+              sentence:
+                entry.amount.kind === "usd"
+                  ? `${entry.side} $${entry.amount.value} of ${market} at $${wait}`
+                  : `${entry.side} ${entry.amount.value} tokens of ${market} at $${wait}`,
+            },
+          ]
+        : []),
+    ];
+    pendingFill.current = null;
+    push({ mine: false, text: question, choices: options });
+    return false;
   }
 
   /**
