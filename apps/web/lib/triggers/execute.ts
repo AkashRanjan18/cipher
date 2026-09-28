@@ -241,7 +241,10 @@ export function plan(account: Account, rule: Rule, mark: number): Plan {
    * not exactly — and the quote fixes that: it spends the dollars and returns
    * the tokens, which is what a real swap does and what the ledger then books.
    */
-  return { kind: "trade", side, qty: size, usd: size * mark };
+  /* At fillPrice(), the price resolveQty sized a dollar buy with — so the
+     dollars come back exactly and "$500" spends $500, fee included. The bare
+     mark left 0.1% of every resting dollar buy unspent. */
+  return { kind: "trade", side, qty: size, usd: side === "buy" ? size * fillPrice(mark, "buy") : size * mark };
 }
 
 export function fireRule(

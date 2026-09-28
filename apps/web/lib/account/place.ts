@@ -1,5 +1,5 @@
 import { DEFAULTS } from "@cipher/shared";
-import { execute, positionOf, type Account, type Fill } from "./paper.ts";
+import { execute, fillPrice, positionOf, type Account, type Fill } from "./paper.ts";
 import { quoteFill, type QuotedFill } from "../chain/fill.ts";
 import { QuoteError } from "../chain/jupiter.ts";
 import { fetchPrices } from "../chain/prices.ts";
@@ -76,8 +76,14 @@ export async function placeTrade(
        * and a Max buy was refused whenever the server's price sat a hair
        * higher. The client's number decides only how much is spent — what it
        * fills at is the quote's.
+       *
+       * AT fillPrice(), NOT the bare mark: the client sized qty with
+       * qtyForBudget(usd, fillPrice(mark)), and only the same price turns it
+       * back into the same dollars. At the bare mark a $5,000 buy put
+       * $4,970.15 in and charged $24.85 — $4,995 spent, $5 left behind
+       * (reported live, 28 Sep 2026). "$500 spends $500 in total" is the rule.
        */
-      size: side === "buy" ? qty * mark : qty,
+      size: side === "buy" ? qty * fillPrice(mark, "buy") : qty,
       mark: serverMark,
       slippageBps: input.slippageBps ?? DEFAULTS.slippageBps,
     });

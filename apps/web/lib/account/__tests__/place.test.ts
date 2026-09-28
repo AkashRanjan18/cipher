@@ -5,6 +5,7 @@ import { database, type Harness } from "../../db/__tests__/harness.ts";
 import { ensureUser, loadAccount } from "../../db/accounts.ts";
 import { insertRule } from "../../db/rules.ts";
 import { placeTrade } from "../place.ts";
+import { fillPrice, qtyForBudget } from "../paper.ts";
 
 /**
  * A person's trade, end to end against a real Postgres and a stubbed Jupiter.
@@ -83,17 +84,21 @@ test("a mint Jupiter cannot price is refused, and no money is made from it", asy
   assert.equal((await loadAccount(USER, false))!.usdc, 10_000);
 });
 
-test("a buy spends the dollars typed, and fills at the route's price, not the client's", async () => {
-  /* The client typed $500 while its chart showed $101; the route says $100.
-     The client sized 4.95 SOL of notional from its own price — the dollars
-     are what count, and the quote decides how much SOL they buy. */
-  const qty = 500 / 1.005 / 101;
+test("a buy spends exactly the dollars typed, fee included, and fills at the route's price", async () => {
+  /*
+   * Reported live, 28 Sep 2026: a $5,000 ticket buy spent $4,995 — $4,970.15
+   * into SOL and $24.85 of fee. The client sizes qty at fillPrice(mark), and
+   * the server turned it back into dollars at the bare mark. Here the client's
+   * chart shows $101 and the route says $100: the dollars are still exactly
+   * $5,000, and the quote decides how much SOL they buy.
+   */
+  const qty = qtyForBudget(5_000, fillPrice(101, "buy"));
   const r = await placeTrade(USER, { mint: SOL, side: "buy", qty, mark: 101 });
   assert.ok(r && "fill" in r, JSON.stringify(r));
   if (!r || !("fill" in r)) return;
   assert.ok(Math.abs(r.fill.price - 100) < 1e-6, `filled at ${r.fill.price}`);
   const spent = 10_000 - (await loadAccount(USER, false))!.usdc;
-  assert.ok(Math.abs(spent - 500) < 0.5, `spent ${spent}`);
+  assert.ok(Math.abs(spent - 5_000) < 0.01, `spent ${spent}`);
 });
 
 test("selling the whole position retires its armed exits, and leaves ones waiting on a resting buy", async () => {
