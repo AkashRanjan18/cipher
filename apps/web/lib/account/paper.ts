@@ -138,50 +138,92 @@ export function heldMints(a: Account): string[] {
 }
 
 /**
- * The commission, exactly as CLAUDE.md states it: 0.50% with a referral code,
- * floored at $0.95 under 200 USDC.
+ * cipher's fee: fomo's published schedule, exactly (the user's call, 29 Sep
+ * 2026). From fomo's help centre, "Trading fees on fomo":
  *
- * The floor is not greed and the UI should never apologise for it — the
- * priority fee and the Jito tip are fixed per transaction, so under about
- * $190 of notional the percentage does not cover the cost of submitting the
- * trade. Charging it here means a $20 order looks as expensive as it really
- * is (4.75%), which is worth learning on paper rather than live.
+ *   under 5 USDC          a flat 0.10 USDC
+ *   5 to 47.50 USDC       2% of the order value
+ *   47.50 to 190 USDC     a flat 0.95 USDC
+ *   190 USDC and above    0.50% per trade
+ *
+ *   select major tokens   0.05% per trade; "orders under 1,000 USDC are
+ *                         charged a flat minimum fee of no more than 0.50
+ *                         USDC" — read here as the ordinary band, capped
+ *                         at $0.50, which meets 0.05% exactly at $1,000
+ *
+ * The bands meet at their edges (5 × 2% = 0.10, 47.50 × 2% = 0.95, 190 ×
+ * 0.5% = 0.95), so the fee never jumps as an order grows by a cent — and the
+ * total cost of a trade rises smoothly with its size, which is what lets
+ * notionalForBudget() solve "$500 spends $500" on any band.
+ *
+ * This replaced "$0.95 under $200, 0.5% above" (19 Sep 2026), which CLAUDE.md
+ * described as matching fomo and did not: a $5 buy cost $0.95 here and $0.10
+ * there, and SOL paid 0.5% here and 0.05% there.
  */
-export function feeFor(notionalUsd: number): number {
-  return notionalUsd < FEE_FLOOR_BELOW ? FEE_FLOOR : notionalUsd * FEE_RATE;
+export function feeFor(notionalUsd: number, mint?: string): number {
+  const n = notionalUsd;
+  if (!(n > 0)) return 0;
+  const regular = n < 5 ? 0.1 : n < 47.5 ? n * 0.02 : n < 190 ? 0.95 : n * FEE_RATE;
+  if (mint !== undefined && MAJOR_MINTS.has(mint)) {
+    return n >= 1_000 ? n * MAJOR_FEE_RATE : Math.min(0.5, regular);
+  }
+  return regular;
 }
+
+/**
+ * The majors fomo charges 0.05% on. fomo's page says "select major tokens"
+ * without naming them; the user saw Bitcoin, Ethereum and Solana, and these
+ * are those three as cipher trades them on Solana — native SOL and the
+ * Portal-bridged BTC and ETH listed in lib/chain/markets.ts. Written out
+ * rather than imported: this file stays free of network code by design.
+ */
+export const MAJOR_MINTS = new Set([
+  "So11111111111111111111111111111111111111112", // SOL
+  "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh", // BTC (Portal WBTC)
+  "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs", // ETH (Portal WETH)
+]);
+export const MAJOR_FEE_RATE = 0.0005;
 
 /** An invitee's discount, and the referrer's share of what the invitee pays. CLAUDE.md. */
 export const REFERRAL_DISCOUNT = 0.1;
 export const REFERRER_SHARE = 0.25;
 
 /** The fee this account actually pays: feeFor(), less any referral discount. */
-export function feeForAccount(a: Pick<Account, "feeDiscount">, notionalUsd: number): number {
-  return feeFor(notionalUsd) * (1 - (a.feeDiscount ?? 0));
+export function feeForAccount(a: Pick<Account, "feeDiscount">, notionalUsd: number, mint?: string): number {
+  return feeFor(notionalUsd, mint) * (1 - (a.feeDiscount ?? 0));
 }
 
-/** Under $200 of trade, a flat $0.95 — the user's call, 19 Sep 2026 (again). */
-export const FEE_FLOOR = 0.95;
-export const FEE_FLOOR_BELOW = 200;
-
-/**
- * cipher's fee: $0.95 under $200 of trade, 0.5% from $200 up. Network and
- * pool costs are already inside the execution price; this is cipher's cut
- * and nothing else.
- */
+/** 0.50% from 190 USDC up, on everything that is not a major. */
 export const FEE_RATE = 0.005;
 
 /**
- * Tokens a dollar budget buys WITH the fee inside it: "$500" spends $500 in
- * total ($497.51 into the trade, $2.49 fee); "$100" spends $100 ($99.05 in,
- * $0.95 fee) — never the amount plus the fee.
+ * How much of a dollar budget reaches the trade, WITH the fee inside it:
+ * "$500" spends $500 in total — never the amount plus the fee.
+ *
+ * Solved by bisection because the fee has four bands (and two more for the
+ * majors), each needing its own algebra. The total — notional plus fee —
+ * rises strictly with the notional on every band and is continuous across
+ * their edges, so the largest notional whose total fits the budget is found
+ * to well under a cent in sixty halvings, whatever band it lands in.
  */
-export function qtyForBudget(usd: number, px: number, feeDiscount = 0): number {
-  /* The discount shrinks the fee, so more of the budget reaches the trade —
-     "$500" still spends exactly $500 for someone paying 10% less. */
+export function notionalForBudget(usd: number, feeDiscount = 0, mint?: string): number {
+  if (!(usd > 0)) return 0;
   const keep = 1 - feeDiscount;
-  const atRate = usd / (1 + FEE_RATE * keep);
-  const notional = atRate >= FEE_FLOOR_BELOW ? atRate : usd - FEE_FLOOR * keep;
+  const total = (n: number) => n + feeFor(n, mint) * keep;
+  if (total(0) >= usd) return 0;
+  let lo = 0;
+  let hi = usd;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (total(mid) <= usd) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Tokens a dollar budget buys, fee inside it. See notionalForBudget(). */
+export function qtyForBudget(usd: number, px: number, feeDiscount = 0, mint?: string): number {
+  const notional = notionalForBudget(usd, feeDiscount, mint);
   return notional > 0 ? notional / px : 0;
 }
 
@@ -298,7 +340,7 @@ export function resolveQty(
   switch (amount.kind) {
     case "usd":
       /* A buy's dollars are the whole budget, fee included. */
-      return side === "buy" ? qtyForBudget(amount.value, px, a.feeDiscount ?? 0) : amount.value / px;
+      return side === "buy" ? qtyForBudget(amount.value, px, a.feeDiscount ?? 0, mint) : amount.value / px;
     case "tokens":
       return amount.value;
     case "percentOfPosition":
@@ -376,7 +418,7 @@ export function quote(
   const impact = q ? q.impactBps : impactBps(gross, opts?.depthUsd ?? null);
   const price = q ? q.price : fillPrice(mark, side, impact);
   const notionalUsd = qty * price;
-  const feeUsd = feeForAccount(a, notionalUsd);
+  const feeUsd = feeForAccount(a, notionalUsd, mint);
   const cashUsd = side === "buy" ? notionalUsd + feeUsd : notionalUsd - feeUsd;
 
   let refusal: string | null = null;
@@ -547,22 +589,19 @@ export function execute(
 }
 
 /**
- * The largest buy the balance supports, solved rather than guessed.
- *
- * Spending the whole balance always refuses, because the fee is charged on
- * top of the notional. Above the floor the fee is proportional, so the answer
- * is usdc / 1.005; below it the fee is a flat $0.95 and the answer is
- * usdc − 0.95. Compute the proportional one and fall back when it is not in
- * its own valid range.
+ * The largest buy the balance supports, solved rather than guessed — the
+ * notional whose total with the fee fits the cash (notionalForBudget), for
+ * the market being bought, because a major pays a different fee.
  *
  * Rounded DOWN to the cent, which a test insisted on: the exact limit becomes
  * a quantity and then a notional again, and that round trip lands a fraction
  * of a cent over the balance. A Max button that is always refused by floating
  * point is worse than no Max button.
  */
-export function maxBuyUsd(a: Account): number {
-  const keep = 1 - (a.feeDiscount ?? 0);
-  const proportional = a.usdc / (1 + FEE_RATE * keep);
-  const raw = proportional >= FEE_FLOOR_BELOW ? proportional : a.usdc - FEE_FLOOR * keep;
-  return Math.max(0, Math.floor(raw * 100) / 100);
+export function maxBuyUsd(a: Account, mint?: string): number {
+  const raw = notionalForBudget(a.usdc, a.feeDiscount ?? 0, mint);
+  /* Strictly below an exact limit: bisection can land ON it ($0.50 of cash is
+     exactly $0.40 + $0.10), and the round trip through a quantity then lands a
+     hair over — refused, which is the case the rounding exists to prevent. */
+  return Math.max(0, Math.floor(raw * 100 - 1e-6) / 100);
 }

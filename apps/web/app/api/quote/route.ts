@@ -109,7 +109,7 @@ export async function GET(request: Request) {
            cannot quote different commissions. A flat percentage here would
            also have under-reported every order below $200, where the real
            charge is the $0.95 floor rather than half a percent of nothing. */
-        feeUsd: feeFor(usd),
+        feeUsd: feeFor(usd, t.mint),
         slippageBps: q.slippageBps,
       },
     });

@@ -24,7 +24,9 @@ import {
  * The helpers below keep them readable: MINT is the market under test, and
  * `sol()`/`basis()` read the position the old `sol(account)` used to be.
  */
-const MINT = "So11111111111111111111111111111111111111112";
+/* An ordinary token, not a major: these tests are about the ledger, and a
+   major pays 0.05% (see "the majors pay 0.05%" below). */
+const MINT = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
 const OTHER = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 
 /** Units held in the market under test. */
@@ -64,12 +66,26 @@ test("the deposit is the whole account until something happens", () => {
   assert.equal(unrealised(a, MINT, 103), 0);
 });
 
-test("the fee is $0.95 under $200 and 0.5% from $200 up", () => {
-  assert.equal(feeFor(20), 0.95);
-  assert.equal(feeFor(199), 0.95);
-  assert.equal(feeFor(1_000), 5);
-  // The floor and the rate cross at $190; nothing between them is cheaper than both.
-  assert.ok(feeFor(199) < feeFor(200));
+test("the fee is fomo's published schedule, band by band", () => {
+  /* help.fomo.family, "Trading fees on fomo" (the user's call, 29 Sep 2026). */
+  assert.equal(feeFor(3), 0.1, "under 5 USDC: a flat 0.10");
+  assert.ok(Math.abs(feeFor(20) - 0.4) < 1e-12, "5 to 47.50: 2%");
+  assert.equal(feeFor(100), 0.95, "47.50 to 190: a flat 0.95");
+  assert.equal(feeFor(1_000), 5, "190 and above: 0.50%");
+  /* The bands meet at their edges, so no order gets cheaper by growing. */
+  for (const edge of [5, 47.5, 190]) {
+    assert.ok(Math.abs(feeFor(edge - 1e-9) - feeFor(edge)) < 1e-6, `jump at $${edge}`);
+  }
+});
+
+test("the majors pay 0.05% from $1,000, and never more than $0.50 below it", () => {
+  const SOL = "So11111111111111111111111111111111111111112";
+  const BTC = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh";
+  assert.equal(feeFor(5_000, SOL), 2.5, "a $5,000 SOL buy: $2.50, not $25");
+  assert.equal(feeFor(1_000, BTC), 0.5);
+  assert.equal(feeFor(500, SOL), 0.5, "under $1,000: capped at $0.50");
+  assert.equal(feeFor(3, SOL), 0.1, "and never above the ordinary band");
+  assert.equal(feeFor(5_000, MINT), 25, "an ordinary token still pays 0.50%");
 });
 
 test("the spread is charged against the trader in both directions", () => {
@@ -162,10 +178,11 @@ test("it refuses rather than short-selling", () => {
   assert.match((r as { refusal: string }).refusal, /you hold/i);
 });
 
-test("a small sale pays the $0.95 fee", () => {
+test("a small sale pays the small-order band, not the percentage", () => {
   const a = openAccount(10_000);
   const { account: b } = fill(a, "buy", 10, 100);
-  const r = execute(b, { mint: MINT, side: "sell", qty: 0.1, mark: 100, ts: 1 });
+  /* ~$100 of sale: the flat $0.95 band (47.50 to 190). */
+  const r = execute(b, { mint: MINT, side: "sell", qty: 1, mark: 100, ts: 1 });
   assert.ok(!("refusal" in r));
   if (!("refusal" in r)) assert.equal(r.fill.feeUsd, 0.95);
 });

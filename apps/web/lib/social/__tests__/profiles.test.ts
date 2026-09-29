@@ -123,9 +123,9 @@ test("a referral: once, not your own, only before the first trade — and 10% of
   const acct = (await loadAccount(BOB, false))!;
   assert.equal(acct.feeDiscount, 0.1);
   const q = quote({ ...acct, usdc: 10_000 }, SOL, "buy", 5, 100, {});
-  assert.ok(Math.abs(q.feeUsd - feeFor(q.notionalUsd) * 0.9) < 1e-9, `fee ${q.feeUsd}`);
+  assert.ok(Math.abs(q.feeUsd - feeFor(q.notionalUsd, SOL) * 0.9) < 1e-9, `fee ${q.feeUsd}`);
   /* "$500" still spends exactly $500 with the discount. */
-  const qty = qtyForBudget(500, 100, 0.1);
+  const qty = qtyForBudget(500, 100, 0.1, SOL);
   const q2 = quote({ ...acct, usdc: 10_000 }, SOL, "buy", qty, 100, { quoted: { price: 100, impactBps: 0, route: "" } });
   assert.ok(Math.abs(q2.cashUsd - 500) < 1e-6, `spent ${q2.cashUsd}`);
 

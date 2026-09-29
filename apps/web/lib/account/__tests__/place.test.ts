@@ -92,7 +92,8 @@ test("a buy spends exactly the dollars typed, fee included, and fills at the rou
    * chart shows $101 and the route says $100: the dollars are still exactly
    * $5,000, and the quote decides how much SOL they buy.
    */
-  const qty = qtyForBudget(5_000, fillPrice(101, "buy"));
+  /* SOL is a major: the client sizes with its mint, as the ticket does. */
+  const qty = qtyForBudget(5_000, fillPrice(101, "buy"), 0, SOL);
   const r = await placeTrade(USER, { mint: SOL, side: "buy", qty, mark: 101 });
   assert.ok(r && "fill" in r, JSON.stringify(r));
   if (!r || !("fill" in r)) return;

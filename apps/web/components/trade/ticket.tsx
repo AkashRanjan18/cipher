@@ -9,7 +9,7 @@ import {
   fillPrice,
   maxBuyUsd,
   allInPrice,
-  positionOf, qtyForBudget, feeForAccount } from "@/lib/account/paper";
+  positionOf, qtyForBudget, feeForAccount, MAJOR_MINTS } from "@/lib/account/paper";
 import { usd, compactWords } from "@/lib/format";
 import { useTradePreview, COSTLY_PCT } from "./use-trade-preview";
 import { DEFAULTS, newId } from "@cipher/shared";
@@ -162,7 +162,7 @@ export function Ticket({
     : sellAll && !buying
       ? held
       : buying
-        ? qtyForBudget(value, fillPrice(price, side), account.feeDiscount ?? 0)
+        ? qtyForBudget(value, fillPrice(price, side), account.feeDiscount ?? 0, mint ?? undefined)
         : value / fillPrice(price, side);
   const q =
     price && mint
@@ -226,7 +226,12 @@ export function Ticket({
    */
   const intoPool = buying && price ? qty * fillPrice(price, "buy") : 0;
   /* feeForAccount: a referred account pays 10% less, and the line must say so. */
-  const cipherFee = buying ? feeForAccount(account, intoPool) : price ? feeForAccount(account, qty * price) : 0;
+  const feeMint = mint ?? undefined;
+  const cipherFee = buying
+    ? feeForAccount(account, intoPool, feeMint)
+    : price
+      ? feeForAccount(account, qty * price, feeMint)
+      : 0;
   const preview = useTradePreview(
     tradable && !resting && value > 0 ? mint : null,
     side,
@@ -260,7 +265,7 @@ export function Ticket({
     !hydrated || !price
       ? null
       : buying
-        ? maxBuyUsd(account)
+        ? maxBuyUsd(account, mint ?? undefined)
         : held * fillPrice(price, "sell");
 
   function edit(v: string) {
@@ -758,11 +763,16 @@ export function Ticket({
       <div className="-mt-0.5 flex items-center gap-2 px-1.5">
         <span className="text-[13px]">🏷</span>
         <span className="text-[13px] font-semibold text-action">
-          0.50% fee <span className="font-normal text-ash">· 10% off with a referral code</span>
+          {mint && MAJOR_MINTS.has(mint) ? "0.05% fee" : "0.50% fee"}{" "}
+          <span className="font-normal text-ash">· 10% off with a referral code</span>
         </span>
         <span
           className="ml-auto cursor-help font-mono text-[15px] text-ash"
-          title={`Charged on the notional, floored at $0.95 under $200 — the priority fee and the Jito tip are fixed per trade, so under about $190 the percentage does not cover submitting it. A referral code takes 10% off it.`}
+          title={
+            mint && MAJOR_MINTS.has(mint)
+              ? "SOL, BTC and ETH: 0.05% from $1,000; under $1,000 the usual fee, capped at $0.50. A referral code takes 10% off."
+              : "Under $5: $0.10 · $5–$47.50: 2% · $47.50–$190: $0.95 · $190 and up: 0.50%. A referral code takes 10% off."
+          }
         >
           ⓘ
         </span>

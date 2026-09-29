@@ -818,7 +818,7 @@ export function Sana({
 
     /* Every dollar accounted for, the same split as the ticket: cipher's fee
        first, then what the pool takes at this size. */
-    const fee = feeForAccount(account, buyingNow ? size : size * price);
+    const fee = feeForAccount(account, buyingNow ? size : size * price, mint);
     const pool = `${usd(Math.max(0, (buyingNow ? size : size * price) - p.worthNowUsd))} to the pool (${p.costPct.toFixed(1)}%)`;
     const question = buyingNow
       ? `That gets you ≈ ${usd(p.worthNowUsd)} of ${market} right now: ${usd(fee)} cipher fee, ${pool} — the pool is thin for that size. Buy anyway, or wait for a better price?`
