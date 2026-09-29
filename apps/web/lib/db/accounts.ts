@@ -1,4 +1,4 @@
-import { openAccount, type Account, type Fill, type Position } from "../account/paper.ts";
+import { openAccount, REFERRAL_DISCOUNT, type Account, type Fill, type Position } from "../account/paper.ts";
 import { db, num } from "./client.ts";
 import { OPENING_DEPOSIT } from "@cipher/shared";
 
@@ -30,6 +30,8 @@ function toAccount(r: Row, positions: Record<string, Position>, fills: Fill[]): 
     feesUsd: num(r.fees_usd),
     depositedUsd: num(r.deposited_usd),
     fills,
+    /* Signed up with someone's code: 10% off every fee, for good. */
+    ...(r.referred_by ? { feeDiscount: REFERRAL_DISCOUNT } : {}),
   };
 }
 
@@ -46,7 +48,11 @@ export async function ensureUser(userId: string): Promise<void> {
 }
 
 export async function loadAccount(userId: string, withFills = true): Promise<Account | null> {
-  const rows = (await db()`select * from accounts where user_id = ${userId}`) as Row[];
+  const rows = (await db()`
+    select a.*, p.referred_by from accounts a
+    left join profiles p on p.user_id = a.user_id
+    where a.user_id = ${userId}
+  `) as Row[];
   if (!rows[0]) return null;
   const positions = await loadPositions(userId);
   const fills = withFills ? await loadFills(userId) : [];

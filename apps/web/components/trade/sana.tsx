@@ -19,7 +19,7 @@ import { useSpeech } from "@/lib/voice/use-speech";
 import { normaliseSpeech } from "@/lib/voice/normalise";
 import { useRegistry } from "@/lib/market/use-registry";
 import { correctSentence, nearest, type RegistryToken } from "@/lib/market/registry";
-import { resolveQty, allInPrice, fillPrice, feeFor,
+import { resolveQty, allInPrice, fillPrice, feeForAccount,
   positionOf,
   heldMints,
 } from "@/lib/account/paper";
@@ -781,7 +781,7 @@ export function Sana({
          decided: the trade goes through at what the pool gives, without
          cipher's slippage limit refusing it a second time (the user's call,
          28 Sep 2026). */
-      void run(spec, /\banyway\b/i.test(said)).then((outcome) => {
+      void run(spec, /\banyway\b/i.test(said), said).then((outcome) => {
         if (outcome.startsWith(FAILED)) push({ mine: false, text: outcome.slice(FAILED.length) });
         else push({ mine: false, text: outcome, lines: readback(spec), warnings });
       });
@@ -818,7 +818,7 @@ export function Sana({
 
     /* Every dollar accounted for, the same split as the ticket: cipher's fee
        first, then what the pool takes at this size. */
-    const fee = feeFor(buyingNow ? size : size * price);
+    const fee = feeForAccount(account, buyingNow ? size : size * price);
     const pool = `${usd(Math.max(0, (buyingNow ? size : size * price) - p.worthNowUsd))} to the pool (${p.costPct.toFixed(1)}%)`;
     const question = buyingNow
       ? `That gets you ≈ ${usd(p.worthNowUsd)} of ${market} right now: ${usd(fee)} cipher fee, ${pool} — the pool is thin for that size. Buy anyway, or wait for a better price?`
@@ -856,7 +856,7 @@ export function Sana({
    *   an entry now      fills, then binds its exits to what it actually paid.
    *   exits only        binds to the position already held.
    */
-  async function run(spec: OrderSpec, acceptedCost = false): Promise<string> {
+  async function run(spec: OrderSpec, acceptedCost = false, sentence = ""): Promise<string> {
     const entry = spec.entry;
 
     /* ── exits against a position already held ── */
@@ -950,6 +950,9 @@ export function Sana({
       qty,
       mark: price,
       source: "sana",
+      /* The words that placed it — what the social feed shows beside the
+         trade. "anyway" is the answer to a cost question, not the order. */
+      squawk: sentence.replace(/\s*\banyway\b\s*$/i, "").slice(0, 280),
       depthUsd,
       /* Omitted once the user has seen the cost and said "anyway". */
       slippageBps: acceptedCost ? undefined : entry.slippageBps,

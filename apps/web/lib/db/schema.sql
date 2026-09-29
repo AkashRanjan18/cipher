@@ -149,6 +149,42 @@ create table if not exists heartbeat (
 );
 insert into heartbeat (id, beat_at) values (1, now()) on conflict (id) do nothing;
 
+-- ── Social ──────────────────────────────────────────────────────────────────
+--
+-- A person as others see them. One row per user, created on first need with a
+-- generated handle the user can change.
+--
+-- EVERYTHING IS PUBLIC BY DEFAULT, amounts included — the user's call, 28 Sep
+-- 2026. `hide_amounts` is theirs to turn on: then others see what was traded,
+-- the price and the percentage, never the size or the dollars.
+--
+-- Referrals live here rather than in their own table because each user has
+-- exactly one code and at most one referrer, and the fee discount is read on
+-- every trade — one row, one lookup. What a referrer has earned is not stored
+-- at all: it is 25% of the fees their invitees paid, summed from `fills`, so
+-- there is no second ledger to drift from the first.
+create table if not exists profiles (
+  user_id       text primary key references users(id) on delete cascade,
+  handle        text not null unique check (handle ~ '^[a-z0-9_]{3,20}$'),
+  display_name  text check (char_length(display_name) <= 40),
+  hide_amounts  boolean not null default false,
+  referral_code text not null unique,
+  referred_by   text references users(id) on delete set null,
+  referred_at   timestamptz,
+  created_at    timestamptz not null default now(),
+  check (referred_by is null or referred_by <> user_id)
+);
+create index if not exists profiles_by_referrer on profiles (referred_by);
+
+create table if not exists follows (
+  follower_id text not null references users(id) on delete cascade,
+  followee_id text not null references users(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (follower_id, followee_id),
+  check (follower_id <> followee_id)
+);
+create index if not exists follows_by_followee on follows (followee_id);
+
 -- ── Markets and prices ──────────────────────────────────────────────────────
 --
 -- The mint is the identity, not the symbol. Anyone can mint a token called BONK

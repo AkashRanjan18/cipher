@@ -98,6 +98,13 @@ export interface Account {
   fills: Fill[];
   /** What was paid in, so return-on-deposit survives any number of trades. */
   depositedUsd: number;
+  /**
+   * Taken off every fee: REFERRAL_DISCOUNT when this account signed up with
+   * someone's code, absent otherwise. Carried ON the account so the ticket's
+   * preview, Sana, the server and the worker all charge the same fee without
+   * each looking it up.
+   */
+  feeDiscount?: number;
 }
 
 export function openAccount(depositUsd: number): Account {
@@ -144,6 +151,15 @@ export function feeFor(notionalUsd: number): number {
   return notionalUsd < FEE_FLOOR_BELOW ? FEE_FLOOR : notionalUsd * FEE_RATE;
 }
 
+/** An invitee's discount, and the referrer's share of what the invitee pays. CLAUDE.md. */
+export const REFERRAL_DISCOUNT = 0.1;
+export const REFERRER_SHARE = 0.25;
+
+/** The fee this account actually pays: feeFor(), less any referral discount. */
+export function feeForAccount(a: Pick<Account, "feeDiscount">, notionalUsd: number): number {
+  return feeFor(notionalUsd) * (1 - (a.feeDiscount ?? 0));
+}
+
 /** Under $200 of trade, a flat $0.95 — the user's call, 19 Sep 2026 (again). */
 export const FEE_FLOOR = 0.95;
 export const FEE_FLOOR_BELOW = 200;
@@ -160,9 +176,12 @@ export const FEE_RATE = 0.005;
  * total ($497.51 into the trade, $2.49 fee); "$100" spends $100 ($99.05 in,
  * $0.95 fee) — never the amount plus the fee.
  */
-export function qtyForBudget(usd: number, px: number): number {
-  const atRate = usd / (1 + FEE_RATE);
-  const notional = atRate >= FEE_FLOOR_BELOW ? atRate : usd - FEE_FLOOR;
+export function qtyForBudget(usd: number, px: number, feeDiscount = 0): number {
+  /* The discount shrinks the fee, so more of the budget reaches the trade —
+     "$500" still spends exactly $500 for someone paying 10% less. */
+  const keep = 1 - feeDiscount;
+  const atRate = usd / (1 + FEE_RATE * keep);
+  const notional = atRate >= FEE_FLOOR_BELOW ? atRate : usd - FEE_FLOOR * keep;
   return notional > 0 ? notional / px : 0;
 }
 
@@ -279,7 +298,7 @@ export function resolveQty(
   switch (amount.kind) {
     case "usd":
       /* A buy's dollars are the whole budget, fee included. */
-      return side === "buy" ? qtyForBudget(amount.value, px) : amount.value / px;
+      return side === "buy" ? qtyForBudget(amount.value, px, a.feeDiscount ?? 0) : amount.value / px;
     case "tokens":
       return amount.value;
     case "percentOfPosition":
@@ -357,7 +376,7 @@ export function quote(
   const impact = q ? q.impactBps : impactBps(gross, opts?.depthUsd ?? null);
   const price = q ? q.price : fillPrice(mark, side, impact);
   const notionalUsd = qty * price;
-  const feeUsd = feeFor(notionalUsd);
+  const feeUsd = feeForAccount(a, notionalUsd);
   const cashUsd = side === "buy" ? notionalUsd + feeUsd : notionalUsd - feeUsd;
 
   let refusal: string | null = null;
@@ -542,7 +561,8 @@ export function execute(
  * point is worse than no Max button.
  */
 export function maxBuyUsd(a: Account): number {
-  const proportional = a.usdc / 1.005;
-  const raw = proportional >= 200 ? proportional : a.usdc - 0.95;
+  const keep = 1 - (a.feeDiscount ?? 0);
+  const proportional = a.usdc / (1 + FEE_RATE * keep);
+  const raw = proportional >= FEE_FLOOR_BELOW ? proportional : a.usdc - FEE_FLOOR * keep;
   return Math.max(0, Math.floor(raw * 100) / 100);
 }

@@ -176,7 +176,7 @@ export function SidePanel({
           <div className="promo shrink-0">
             <span className="text-[13px]">🏷</span>
             <span>
-              <b>0.50% fees</b> with a referral code
+              <b>0.50% fees</b> · 10% off with a referral code
             </span>
           </div>
         </>

@@ -4,7 +4,6 @@ import type { Major } from "@/lib/market";
 import { CoinMark } from "./coin-mark";
 import { MARKETS } from "@/lib/market";
 import { usd, pct } from "@/lib/format";
-import { STRIP_ITEMS } from "@/lib/social/mock";
 
 /**
  * The bar along the bottom, as fomo has it: live prices on the left, service
@@ -15,9 +14,9 @@ import { STRIP_ITEMS } from "@/lib/social/mock";
  * is doing — which is what stops you from buying into a chart that is green
  * on a day everything else is red.
  *
- * cipher's social ticker was its own bar above this one. Two full-width strips
- * for one row of information each is 60px of chrome, so they are merged: their
- * prices, then our tape, in one scroller.
+ * cipher's social ticker was its own bar above this one; the two were merged
+ * into one scroller, and the social half was then removed as invented (28 Sep
+ * 2026). What is left is prices.
  */
 
 /** Only the majors everyone watches. Fourteen rows down here is a list, not a strip. */
@@ -62,14 +61,11 @@ export function StatusBar({
           );
         })}
 
-        {/* cipher's tape, continuing in the same scroller. */}
-        {STRIP_ITEMS.map((html) => (
-          <span
-            key={html}
-            className="shrink-0 whitespace-nowrap border-r border-hairline px-3.5 font-sans text-[11px] text-ash [&_b]:font-bold [&_b]:text-champagne"
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        ))}
+        {/* The social tape that followed the prices here was invented —
+            "@vex sold the bottom again", people who did not exist. Removed on
+            the user's call, 28 Sep 2026 (CLAUDE.md: never render invented
+            social proof). Real public trades can fill this once the feed
+            exists; until then the strip is prices, which are real. */}
       </div>
 
       {/* Right side never scrolls. Status and the legal links have to be

@@ -9,7 +9,7 @@ import {
   fillPrice,
   maxBuyUsd,
   allInPrice,
-  positionOf, qtyForBudget, feeFor } from "@/lib/account/paper";
+  positionOf, qtyForBudget, feeForAccount } from "@/lib/account/paper";
 import { usd, compactWords } from "@/lib/format";
 import { useTradePreview, COSTLY_PCT } from "./use-trade-preview";
 import { DEFAULTS, newId } from "@cipher/shared";
@@ -162,7 +162,7 @@ export function Ticket({
     : sellAll && !buying
       ? held
       : buying
-        ? qtyForBudget(value, fillPrice(price, side))
+        ? qtyForBudget(value, fillPrice(price, side), account.feeDiscount ?? 0)
         : value / fillPrice(price, side);
   const q =
     price && mint
@@ -225,7 +225,8 @@ export function Ticket({
    * $4,975.12 into the pool, and the line below must say exactly that.
    */
   const intoPool = buying && price ? qty * fillPrice(price, "buy") : 0;
-  const cipherFee = buying ? feeFor(intoPool) : price ? feeFor(qty * price) : 0;
+  /* feeForAccount: a referred account pays 10% less, and the line must say so. */
+  const cipherFee = buying ? feeForAccount(account, intoPool) : price ? feeForAccount(account, qty * price) : 0;
   const preview = useTradePreview(
     tradable && !resting && value > 0 ? mint : null,
     side,
@@ -757,11 +758,11 @@ export function Ticket({
       <div className="-mt-0.5 flex items-center gap-2 px-1.5">
         <span className="text-[13px]">🏷</span>
         <span className="text-[13px] font-semibold text-action">
-          0.50% fee <span className="font-normal text-ash">with a referral code</span>
+          0.50% fee <span className="font-normal text-ash">· 10% off with a referral code</span>
         </span>
         <span
           className="ml-auto cursor-help font-mono text-[15px] text-ash"
-          title={`Charged on the notional, floored at $0.95 under $200 — the priority fee and the Jito tip are fixed per trade, so under about $190 the percentage does not cover submitting it. Without a referral code the rate is 1.00%.`}
+          title={`Charged on the notional, floored at $0.95 under $200 — the priority fee and the Jito tip are fixed per trade, so under about $190 the percentage does not cover submitting it. A referral code takes 10% off it.`}
         >
           ⓘ
         </span>

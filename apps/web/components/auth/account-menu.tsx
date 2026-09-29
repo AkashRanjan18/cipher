@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { useLoginModal } from "./login-modal";
+import { useLiveToken } from "@/lib/auth/use-live-token";
+import { fetchMe } from "@/lib/social/client";
 
 /**
  * Who you are, and the way out.
@@ -51,6 +53,18 @@ export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const liveToken = useLiveToken();
+  /* Your handle, fetched the first time the menu opens — the profile row is
+     created then too, so a new user has a page to be followed at. */
+  const [handle, setHandle] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || handle || !authenticated) return;
+    void liveToken()
+      .then(fetchMe)
+      .then((m) => {
+        if (m) setHandle(m.profile.handle);
+      });
+  }, [open, handle, authenticated, liveToken]);
 
   // Clicking anywhere else closes it. On the document, because the click that
   // needs to close this is precisely the one that never reaches it.
@@ -181,6 +195,21 @@ export function AccountMenu() {
               </p>
             )}
           </div>
+
+          <button
+            onClick={() => {
+              setOpen(false);
+              if (handle) router.push(`/u/${handle}`);
+            }}
+            disabled={!handle}
+            role="menuitem"
+            className="w-full border-t border-hairline px-3 py-2.5 text-left font-sans text-[12px] font-bold text-champagne transition-colors hover:bg-slate disabled:text-mute"
+          >
+            {handle ? `Your profile · @${handle}` : "Your profile…"}
+            <span className="block font-normal text-[10.5px] text-ash">
+              Handle, privacy and your referral link
+            </span>
+          </button>
 
           <button
             onClick={async () => {

@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import { Privy } from "./providers/privy";
 import { LoginModalProvider } from "@/components/auth/login-modal";
 import { EnsureWallet } from "@/components/auth/ensure-wallet";
+import { ReferralCapture } from "@/components/auth/referral-capture";
 import "./globals.css";
 
 /*
@@ -57,6 +58,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             {/* Renders nothing. Present on every page because the page a
                 new user lands on after Google is "/", not the terminal. */}
             <EnsureWallet />
+            {/* Renders nothing: remembers a ?ref= code and applies it on
+                sign-in, whichever page the visitor signs in from. */}
+            <ReferralCapture />
             {children}
           </LoginModalProvider>
         </Privy>

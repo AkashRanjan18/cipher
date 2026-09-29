@@ -1,4 +1,4 @@
-import { hueOf, initials } from "@/lib/social/mock";
+import { hueOf, initials } from "@/lib/social/identity";
 
 /**
  * A person, drawn rather than lettered.
