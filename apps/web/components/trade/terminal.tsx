@@ -26,6 +26,7 @@ import { Positions } from "./positions";
 import { factor, scaleCandles, supplyOf, type Denom } from "@/lib/chain/denom";
 import { browserZone } from "@/lib/tz";
 import { Sana, SanaMark } from "./sana";
+import { SAY_EVENT, sayInSana, sayOf } from "@/lib/social/say";
 
 /**
  * The terminal shell.
@@ -125,6 +126,33 @@ function TerminalBody({
    */
   const [sanaFolded, setSanaFolded] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  /*
+   * "Use this order" (lib/social/say.ts). The terminal's half is the layout:
+   * open that coin and unfold the bar. Sana's half is the words.
+   *
+   * It also arrives by URL — /trade?m=<mint>&say=<sentence> — from a profile,
+   * which is another page. Read once on arrival, re-sent as the same event,
+   * then removed from the address so a refresh does not say it again.
+   */
+  useEffect(() => {
+    const onSay = (e: Event) => {
+      const say = sayOf(e);
+      if (!say) return;
+      if (looksLikeMint(say.mint)) setSymbol(say.mint);
+      setSanaFolded(false);
+    };
+    window.addEventListener(SAY_EVENT, onSay);
+
+    const q = new URLSearchParams(window.location.search);
+    const sentence = q.get("say");
+    const mint = q.get("m");
+    if (sentence && mint) {
+      window.history.replaceState(null, "", window.location.pathname);
+      sayInSana({ sentence: sentence.slice(0, 300), mint });
+    }
+    return () => window.removeEventListener(SAY_EVENT, onSay);
+  }, []);
 
   /*
    * THE OPEN MARKET IS NOW EITHER A BINANCE PAIR OR A SOLANA MINT.

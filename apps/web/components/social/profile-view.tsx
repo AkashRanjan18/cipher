@@ -109,7 +109,7 @@ export function ProfileView({ handle }: { handle: string }) {
         {trades.length === 0 ? (
           <p className="p-4 font-sans text-[12px] text-ash">No trades yet.</p>
         ) : (
-          trades.map((t) => <TradeRow key={t.id} t={t} meta={meta[t.mint]} now={now} showWho={false} />)
+          trades.map((t) => <TradeRow key={t.id} t={t} meta={meta[t.mint]} now={now} showWho={false} use="link" />)
         )}
       </section>
       {note && <p className="font-sans text-[12px] text-down">{note}</p>}

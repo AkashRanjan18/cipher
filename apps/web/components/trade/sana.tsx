@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SAY_EVENT, sayOf, takeSay } from "@/lib/social/say";
 import { baseSymbol, mintFor } from "@/lib/chain/markets";
 import { newId } from "@cipher/shared";
 import type { Compiled, CompileContext, ExitRule, Intent, Interval, OrderSpec } from "@cipher/shared";
@@ -244,6 +245,28 @@ export function Sana({
   /** Whether the conversation is showing. The input bar stays. */
   const [open, setOpen] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /*
+   * "Use this order" from the feed or a profile (lib/social/say.ts): the
+   * sentence goes in the bar and waits. It is deliberately NOT sent — see that
+   * file for why a stranger's sentence must never be a one-click trade.
+   */
+  useEffect(() => {
+    const take = () => {
+      const say = takeSay();
+      if (!say) return;
+      setInput(say.sentence);
+      setOpen(true);
+      inputRef.current?.focus();
+    };
+    const onSay = (e: Event) => {
+      if (sayOf(e)) take();
+    };
+    window.addEventListener(SAY_EVENT, onSay);
+    /* One may have been said before this bar existed — see takeSay. */
+    take();
+    return () => window.removeEventListener(SAY_EVENT, onSay);
+  }, []);
 
   /**
    * Dictation submits itself.

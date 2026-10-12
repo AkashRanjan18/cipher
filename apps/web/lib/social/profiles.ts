@@ -1,5 +1,6 @@
 import { db, num } from "../db/client.ts";
 import { REFERRER_SHARE } from "../account/paper.ts";
+import { isReceipt } from "../chain/receipts.ts";
 
 /**
  * The social layer: who someone is, what they traded, who follows whom, and
@@ -142,6 +143,12 @@ export interface PublicTrade {
   source: string;
   handle: string;
   displayName: string | null;
+  /**
+   * The signature of this fill's receipt on Solana devnet, once it is written
+   * (lib/chain/receipts.ts). Safe to show for anyone: the receipt itself
+   * leaves the amounts out when the trader hides them.
+   */
+  receipt: string | null;
 }
 
 /**
@@ -176,6 +183,7 @@ export function toPublicTrade(r: Row): PublicTrade {
     source: String(r.source),
     handle: String(r.handle),
     displayName: r.display_name == null ? null : String(r.display_name),
+    receipt: isReceipt(r.receipt_sig) ? r.receipt_sig : null,
   };
 }
 
@@ -269,6 +277,30 @@ export async function feedFor(userId: string, limit = 50): Promise<PublicTrade[]
     join fills f on f.user_id = w.followee_id
     join profiles p on p.user_id = f.user_id
     where w.follower_id = ${userId}
+    order by f.ts desc, f.id desc
+    limit ${limit}
+  `) as Row[];
+  return rows.map(toPublicTrade);
+}
+
+/**
+ * Everyone's trades, newest first — the public tape of cipher.
+ *
+ * WHY IT EXISTS. The following feed is empty until you follow someone, and
+ * there was no way to find someone to follow except knowing their handle. This
+ * is where people are found: every row is a real fill by a real profile, and
+ * the name on it opens their page.
+ *
+ * NOT A RANKING. Ordered by time and nothing else. A list ordered by profit
+ * is a leaderboard of own P&L, which cipher does not have (CLAUDE.md).
+ *
+ * `exclude` drops the viewer's own trades: you know what you did.
+ */
+export async function everyoneFeed(limit = 50, exclude: string | null = null): Promise<PublicTrade[]> {
+  const rows = (await db()`
+    select f.*, p.handle, p.display_name, p.hide_amounts
+    from fills f join profiles p on p.user_id = f.user_id
+    where (${exclude}::text is null or f.user_id <> ${exclude}::text)
     order by f.ts desc, f.id desc
     limit ${limit}
   `) as Row[];

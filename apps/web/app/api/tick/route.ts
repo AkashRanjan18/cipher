@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hasDb } from "@/lib/db/client";
 import { tick } from "@/lib/triggers/worker";
+import { attestPending } from "@/lib/chain/receipts";
 
 /**
  * The worker's front door. This is the whole point of the database.
@@ -58,7 +59,12 @@ async function run(request: Request) {
   }
 
   try {
-    return NextResponse.json({ ok: true, ...(await tick()) });
+    const result = await tick();
+    /* After the rules, never before: a stop must not wait on a receipt.
+       attestPending cannot throw and gives up on devnet after five seconds a
+       call, so the worst it does to a tick is make it slower. */
+    const receipts = await attestPending();
+    return NextResponse.json({ ok: true, ...result, receipts });
   } catch (e) {
     console.error("[cipher] tick failed:", e);
     return NextResponse.json({ error: "tick failed" }, { status: 500 });

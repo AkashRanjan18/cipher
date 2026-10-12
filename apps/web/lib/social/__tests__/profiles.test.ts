@@ -6,6 +6,7 @@ import { quote, qtyForBudget, feeFor } from "../../account/paper.ts";
 import {
   applyReferral,
   ensureProfile,
+  everyoneFeed,
   feedFor,
   maskAmounts,
   publicTrades,
@@ -108,6 +109,31 @@ test("the feed is the trades of people you follow, and only theirs", async () =>
   assert.ok("error" in (await setFollow(ALICE, a.handle, true)), "not yourself");
   await setFollow(BOB, a.handle, false);
   assert.deepEqual(await feedFor(BOB), []);
+});
+
+test("everyone's feed is every public trade, newest first, minus your own", async () => {
+  await ensureProfile(ALICE);
+  await ensureProfile(BOB);
+  await fill(ALICE, "f1", "buy", 1, 100, 0.95, 0, "buy $100 of sol");
+  await fill(BOB, "f2", "buy", 2, 100, 0.95);
+  await fill(ALICE, "f3", "sell", 1, 110, 0.95, 8.1);
+
+  assert.deepEqual((await everyoneFeed()).map((t) => t.id), ["f3", "f2", "f1"], "by time, not by profit");
+  assert.deepEqual((await everyoneFeed(50, ALICE)).map((t) => t.id), ["f2"], "you know what you did");
+  assert.equal((await everyoneFeed(1)).length, 1);
+
+  /* The same hide-amounts rule as everywhere else: it is enforced in one place. */
+  await updateProfile(ALICE, { hideAmounts: true });
+  const [hidden] = (await everyoneFeed()).filter((t) => t.id === "f1");
+  assert.equal(hidden.qty, null);
+  assert.equal(hidden.sentence, "buy $••• of sol");
+});
+
+test("someone with no profile yet is not in the public feed", async () => {
+  await ensureProfile(ALICE);
+  await fill(ALICE, "f1", "buy", 1, 100, 0.95);
+  await fill(BOB, "f2", "buy", 1, 100, 0.95);
+  assert.deepEqual((await everyoneFeed()).map((t) => t.id), ["f1"]);
 });
 
 test("a referral: once, not your own, only before the first trade — and 10% off every fee", async () => {

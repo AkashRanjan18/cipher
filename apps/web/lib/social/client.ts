@@ -81,10 +81,20 @@ export async function follow(token: string | null, handle: string, on: boolean):
   }
 }
 
-export async function fetchFeed(token: string | null): Promise<PublicTrade[] | null> {
-  if (!token) return null;
+/**
+ * "following" needs a token and is null without one. "everyone" is public:
+ * the token is sent when there is one only so your own trades are left out.
+ */
+export async function fetchFeed(
+  token: string | null,
+  scope: "following" | "everyone" = "following",
+): Promise<PublicTrade[] | null> {
+  if (!token && scope === "following") return null;
   try {
-    const res = await fetch("/api/social/feed", { headers: authed(token), cache: "no-store" });
+    const res = await fetch(scope === "everyone" ? "/api/social/feed?scope=everyone" : "/api/social/feed", {
+      headers: authed(token),
+      cache: "no-store",
+    });
     return res.ok ? ((await res.json()) as { trades: PublicTrade[] }).trades : null;
   } catch {
     return null;

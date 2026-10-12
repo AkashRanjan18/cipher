@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { hasDb } from "@/lib/db/client";
 import { ensureUser, loadAccount, resetAccount } from "@/lib/db/accounts";
 import { placeTrade } from "@/lib/account/place";
+import { attestPending } from "@/lib/chain/receipts";
 
 /**
  * A trade, placed by a person rather than by a rule.
@@ -79,6 +80,16 @@ export async function POST(request: Request) {
     slippageBps: typeof body.slippageBps === "number" ? body.slippageBps : undefined,
   });
   if (!result) return NextResponse.json({ error: "no account" }, { status: 404 });
+
+  /*
+   * The receipt on devnet, AFTER the response. `after` keeps the function
+   * alive to write it without making the trader wait on a second network; if
+   * it fails, the worker's next tick writes it instead.
+   */
+  if ("fill" in result) {
+    const userId = session.userId;
+    after(() => attestPending({ userId, limit: 3 }).then(() => undefined));
+  }
 
   /*
    * A refusal is a 200, not a 400.

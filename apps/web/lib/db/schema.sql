@@ -67,6 +67,15 @@ create table if not exists fills (
   squawk       text,
   source       text not null
 );
+-- The devnet receipt for this fill: the signature of a Memo transaction that
+-- carries the fill's own figures (lib/chain/receipts.ts). Null until written;
+-- `pending:<ms>` while a function holds the claim to write it.
+--
+-- `alter ... add column if not exists` and not a column in the create above,
+-- because this file is re-run against the live database and `create table if
+-- not exists` does nothing to a table that already exists.
+alter table fills add column if not exists receipt_sig text;
+create index if not exists fills_unattested on fills (ts desc) where receipt_sig is null;
 create index if not exists fills_by_user on fills (user_id, ts desc);
 create index if not exists fills_by_market on fills (user_id, mint, ts desc);
 
