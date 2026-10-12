@@ -112,7 +112,7 @@ cipher adds nothing on top.
     Solana devnet (Memo program) for receipts, over plain JSON-RPC
     lightweight-charts · Vercel + cron-job.org
 
-    486 tests, no test framework dependency
+    488 tests, no test framework dependency
     (node --experimental-strip-types --test)
 
 ## Layout
