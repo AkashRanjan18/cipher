@@ -242,3 +242,50 @@ create table if not exists price_ticks (
   primary key (mint, bucket)
 );
 create index if not exists ticks_by_mint on price_ticks (mint, bucket desc);
+
+-- ── The prompt log ──────────────────────────────────────────────────────────
+--
+-- Every sentence typed or spoken at Sana, what it compiled to, and what
+-- happened next. Three jobs, and only the first is obvious:
+--
+--   1. IT IS HOW THE PARSER IMPROVES. The grammar covers what we imagined
+--      people would type; this records what they actually type. The sentences
+--      that end in `refused` are next month's grammar rules, and the ones the
+--      model answered are the ones a rule would make free and instant.
+--   2. It is the traction number. "74% of sentences produced a valid order,
+--      31% carried an exit" is a fact about the product; signups are not.
+--   3. It is the audit trail's missing half. rule_transitions says what the
+--      engine did; this says what the person asked for, in their words, which
+--      is the evidence for "I never said sell".
+--
+-- `user_id` is null for a signed-out visitor: the sentence is still worth
+-- having and there is nobody to attach it to. No other identifier is stored.
+create table if not exists prompts (
+  id        bigserial primary key,
+  user_id   text,
+  at        bigint not null,
+  -- The sentence as typed. Capped on the way in, not here, so a long one is
+  -- refused by the route rather than silently truncated by Postgres.
+  text      text   not null,
+  -- grammar | model | none — which reader produced the answer. The ratio is
+  -- the cost control: every sentence the grammar wins back is a request we
+  -- stop paying for.
+  reader    text   not null,
+  provider  text,
+  -- The Intent kind: order | clarify | refusal | query | screen | rules | ui
+  kind      text   not null,
+  reason    text,
+  -- The compiled OrderSpec, when there was one. jsonb so the exits can be
+  -- counted without parsing text: "how many orders carried a stop" is the
+  -- question this product lives or dies on.
+  spec      jsonb,
+  -- executed | asked | refused | failed — what the person ended up with.
+  outcome   text   not null,
+  market    text,
+  ms        int
+);
+-- Newest first, and id breaks the tie: two sentences can share a millisecond,
+-- and an audit trail that reorders itself is worth nothing (see the
+-- rule_transitions note in CLAUDE.md).
+create index if not exists prompts_by_time on prompts (at desc, id desc);
+create index if not exists prompts_by_user on prompts (user_id, at desc);

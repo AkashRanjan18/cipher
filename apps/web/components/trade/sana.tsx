@@ -11,6 +11,7 @@ import { compileWithModel } from "@/lib/compiler/model";
 import { useLiveToken } from "@/lib/auth/use-live-token";
 import { fetchPreview, COSTLY_PCT } from "./use-trade-preview";
 import { choose, needsModel, ORDERS_ONLY } from "@/lib/compiler/choose";
+import { logPrompt } from "@/lib/compiler/log";
 import { resolveMarket, marketOf, namesToken, type Major } from "@/lib/market";
 import { validateOrder, blocks } from "@/lib/compiler/validate";
 import { readback, type ReadbackLine } from "@/lib/compiler/readback";
@@ -611,6 +612,20 @@ export function Sana({
   function dispatch(compiled: Compiled) {
     const intent = compiled.intent;
 
+    /*
+     * EVERY SENTENCE IS LOGGED, except an order — that one waits for its
+     * outcome below, because "compiled into a buy" and "the buy happened" are
+     * different facts and only the second one is worth counting.
+     */
+    if (intent.kind !== "order") {
+      logPrompt(
+        lastSentence.current,
+        compiled,
+        intent.kind === "refusal" ? "refused" : intent.kind === "clarify" ? "asked" : "executed",
+        { market: symbol },
+      );
+    }
+
     switch (intent.kind) {
       case "refusal":
         /* Out of scope is ONE fixed sentence whoever refused it. The
@@ -770,13 +785,14 @@ export function Sana({
     });
 
     if (blocks(problems)) {
-      push({
-        mine: false,
-        text: problems
-          .filter((p) => p.severity === "error")
-          .map((p) => p.message)
-          .join(" "),
-      });
+      const why = problems
+        .filter((p) => p.severity === "error")
+        .map((p) => p.message)
+        .join(" ");
+      push({ mine: false, text: why });
+      /* A sentence the VALIDATOR stopped, which is a different lesson from one
+         the parser could not read: it parsed fine and the order was wrong. */
+      logPrompt(lastSentence.current, compiled, "refused", { market: symbol });
       return;
     }
 
@@ -805,8 +821,13 @@ export function Sana({
          cipher's slippage limit refusing it a second time (the user's call,
          28 Sep 2026). */
       void run(spec, /\banyway\b/i.test(said), said).then((outcome) => {
-        if (outcome.startsWith(FAILED)) push({ mine: false, text: outcome.slice(FAILED.length) });
+        const refused = outcome.startsWith(FAILED);
+        if (refused) push({ mine: false, text: outcome.slice(FAILED.length) });
         else push({ mine: false, text: outcome, lines: readback(spec), warnings });
+        /* The log learns the TRUTH, not the parse: an order that compiled
+           perfectly and then found no route is a different lesson from one
+           that filled. Logged after the fact for exactly that reason. */
+        logPrompt(said, compiled, refused ? "failed" : "executed", { market: symbol });
       });
     });
   }

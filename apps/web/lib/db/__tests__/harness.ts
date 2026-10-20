@@ -44,7 +44,7 @@ export async function database(): Promise<Harness> {
     async reset() {
       await pg.exec(`
         truncate rule_transitions, rules, fills, accounts, users,
-                 market_prices, price_ticks, markets restart identity cascade;
+                 market_prices, price_ticks, markets, prompts restart identity cascade;
       `);
     },
     async close() {
