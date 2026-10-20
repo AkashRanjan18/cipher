@@ -13,6 +13,7 @@ import {
 import { usd, compactWords } from "@/lib/format";
 import { useTradePreview, COSTLY_PCT } from "./use-trade-preview";
 import { DEFAULTS, newId } from "@cipher/shared";
+import { parseRows, EMPTY_ROW, ROW_LABEL, type Row, type RowKind } from "@/lib/triggers/rows";
 
 /**
  * The trade ticket. Buy, sell, position. Nothing else.
@@ -101,8 +102,15 @@ export function Ticket({
   const [limit, setLimit] = useState("");
   const [amount, setAmount] = useState("");
   /* Optional exits on a buy, market or limit — the user's call, 19 Sep 2026. */
-  const [stopStr, setStopStr] = useState("");
-  const [targetStr, setTargetStr] = useState("");
+  /*
+   * The exit rows, Axiom's shape: a stop, a trailing stop or a target, each
+   * with its own slice, stacked with Add. Empty until the user opens them, so
+   * a plain market buy still costs one tap. See lib/triggers/rows.ts.
+   */
+  const [rows, setRows] = useState<Row[]>([]);
+  /** One field of one row, kept immutable so React sees the change. */
+  const setRow = (i: number, patch: Partial<Row>) =>
+    setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const [receipt, setReceipt] = useState<{ ok: boolean; text: string } | null>(null);
   /*
    * Set only by the 100% preset. "Sell everything" is a quantity instruction,
@@ -186,29 +194,9 @@ export function Ticket({
    * rests, the market when it fills now. A stop above that or a target below
    * it would fire the moment the buy lands — refused here, not armed.
    */
-  const stopPrice = buying ? parseFloat(stopStr.replace(/,/g, "")) || 0 : 0;
-  const targetPrice = buying ? parseFloat(targetStr.replace(/,/g, "")) || 0 : 0;
   const entryRef = resting ? limitPrice : (price ?? 0);
-  const exitProblem =
-    stopPrice > 0 && entryRef > 0 && stopPrice >= entryRef
-      ? `Stop loss must be below ${usd(entryRef)}.`
-      : targetPrice > 0 && entryRef > 0 && targetPrice <= entryRef
-        ? `Target price must be above ${usd(entryRef)}.`
-        : null;
-  const exitRules = [
-    ...(stopPrice > 0 ? [stopPrice] : []),
-    ...(targetPrice > 0 ? [targetPrice] : []),
-  ].map((value) => ({
-    id: newId("r"),
-    trigger: { kind: "priceAbsolute" as const, value },
-    amount: { kind: "percentOfPosition" as const, value: 100 },
-  }));
-  const exitsLine =
-    exitRules.length === 0
-      ? ""
-      : ` ${[stopPrice > 0 ? `Stop loss ${usd(stopPrice)}` : "", targetPrice > 0 ? `target ${usd(targetPrice)}` : ""]
-          .filter(Boolean)
-          .join(" and ")} set.`;
+  const parsedExits = parseRows(buying ? rows : [], entryRef);
+  const { rules: exitRules, problem: exitProblem, summary: exitsLine } = parsedExits;
 
   /*
    * WHAT THIS IS WORTH THE MOMENT IT LANDS, from a real route quote at this
@@ -334,8 +322,7 @@ export function Ticket({
         (await armExits({ rules: exitRules, market: symbol, parentId: entryId }));
       setSellAll(false);
       setAmount("");
-      setStopStr("");
-      setTargetStr("");
+      setRows([]);
       setReceipt({
         ok: true,
         text:
@@ -384,8 +371,7 @@ export function Ticket({
     const cash = buying ? notional + r.fill.feeUsd : notional - r.fill.feeUsd;
     setSellAll(false);
     setAmount("");
-    setStopStr("");
-    setTargetStr("");
+    setRows([]);
     setReceipt({
       ok: true,
       text:
@@ -687,33 +673,96 @@ export function Ticket({
       )}
 
       {buying && (
-        /* Optional exits on the buy: both are sell orders that wait in
-           Pending until their trigger price. Left empty, nothing is set. */
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { label: "Stop loss", value: stopStr, set: setStopStr },
-            { label: "Target price", value: targetStr, set: setTargetStr },
-          ].map((f) => (
-            <label
-              key={f.label}
-              className="flex flex-col gap-1 rounded-xl border border-line bg-slate px-3 py-2 focus-within:border-action"
+        /*
+         * THE EXITS, STACKABLE — the user's call, 21 Oct 2026, from Axiom's
+         * ticket. Each row is a sell that waits in Pending; Add makes a
+         * ladder. Collapsed to one line until asked for, because a market buy
+         * must stay one tap for the people who want nothing else.
+         */
+        <div className="flex flex-col gap-2">
+          {rows.length === 0 ? (
+            <button
+              onClick={() => setRows([{ ...EMPTY_ROW }])}
+              className="flex items-center justify-between rounded-xl border border-dashed border-line px-3 py-2 font-sans text-[12px] text-ash transition-colors hover:border-action hover:text-champagne"
             >
-              <span className="font-sans text-[10.5px] font-semibold text-mute">{f.label}</span>
-              <span className="flex items-center gap-1 font-sans text-[15px] font-bold text-champagne">
-                <span className="text-mute">$</span>
-                <input
-                  value={f.value}
-                  onChange={(e) => f.set(e.target.value.replace(/[^\d.,]/g, ""))}
-                  inputMode="decimal"
-                  placeholder="Optional"
-                  aria-label={f.label}
-                  className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[12px] placeholder:font-medium placeholder:text-mute"
-                />
-              </span>
-            </label>
-          ))}
+              <span>Set a stop loss or target</span>
+              <span className="text-[15px] leading-none text-mute">+</span>
+            </button>
+          ) : (
+            <>
+              {rows.map((row, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  {/* The kind. Three words, not a dropdown: a dropdown hides
+                      two of the three things this panel is for. */}
+                  <div className="flex shrink-0 overflow-hidden rounded-lg border border-line">
+                    {(["sl", "tp", "tsl"] as RowKind[]).map((k) => (
+                      <button
+                        key={k}
+                        onClick={() => setRow(i, { kind: k })}
+                        aria-pressed={row.kind === k}
+                        className={`px-2 py-1.5 font-sans text-[10.5px] font-bold uppercase tracking-wide transition-colors ${
+                          row.kind === k
+                            ? k === "tp"
+                              ? "bg-up/15 text-up"
+                              : "bg-down/15 text-down"
+                            : "text-mute hover:text-ash"
+                        }`}
+                      >
+                        {k}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Percent unless you type a $. Said in the placeholder, so
+                      the rule is visible rather than remembered. */}
+                  <label className="flex min-w-0 flex-1 items-center gap-1 rounded-lg border border-line bg-slate px-2 py-1.5 focus-within:border-action">
+                    <input
+                      value={row.value}
+                      onChange={(e) => setRow(i, { value: e.target.value.replace(/[^\d.,$]/g, "") })}
+                      inputMode="decimal"
+                      placeholder={row.kind === "tp" ? "+50% or $120" : "10% or $90"}
+                      aria-label={`${ROW_LABEL[row.kind]} level`}
+                      className="min-w-0 flex-1 bg-transparent font-sans text-[13px] font-bold text-champagne outline-none placeholder:text-[11.5px] placeholder:font-medium placeholder:text-mute"
+                    />
+                  </label>
+
+                  {/* How much of the position this rung sells. Blank is all. */}
+                  <label className="flex w-[72px] shrink-0 items-center gap-0.5 rounded-lg border border-line bg-slate px-2 py-1.5 focus-within:border-action">
+                    <input
+                      value={row.amount}
+                      onChange={(e) => setRow(i, { amount: e.target.value.replace(/[^\d.]/g, "") })}
+                      inputMode="decimal"
+                      placeholder="100"
+                      aria-label={`${ROW_LABEL[row.kind]} amount, percent of position`}
+                      className="min-w-0 flex-1 bg-transparent font-sans text-[13px] font-bold text-champagne outline-none placeholder:font-medium placeholder:text-mute"
+                    />
+                    <span className="font-sans text-[11px] text-mute">%</span>
+                  </label>
+
+                  <button
+                    onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                    aria-label={`Remove ${ROW_LABEL[row.kind]}`}
+                    className="shrink-0 px-1.5 py-1.5 font-sans text-[13px] text-mute transition-colors hover:text-down"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+
+              <button
+                onClick={() => setRows([...rows, { ...EMPTY_ROW, kind: "tp" }])}
+                className="self-start font-sans text-[11.5px] font-semibold text-action transition-opacity hover:opacity-80"
+              >
+                + Add another
+              </button>
+            </>
+          )}
+
           {exitProblem && (
-            <p className="col-span-2 font-sans text-[11px] font-semibold text-down">{exitProblem}</p>
+            <p className="font-sans text-[11px] font-semibold text-down">{exitProblem}</p>
+          )}
+          {!exitProblem && parsedExits.warning && (
+            <p className="font-sans text-[11px] font-semibold text-accent">{parsedExits.warning}</p>
           )}
         </div>
       )}
