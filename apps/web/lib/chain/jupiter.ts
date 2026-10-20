@@ -62,7 +62,29 @@ export interface QuoteRequest {
   slippageBps: number;
   /** Omit to quote without cipher's fee — useful for comparing. */
   platformFeeBps?: number;
+  /**
+   * The wallet that would sign this swap. REQUIRED BY V2, even to quote.
+   *
+   * It decides which token accounts exist and therefore what setup the swap
+   * needs, so a quote taken against the wrong taker can miss the rent for a
+   * first-time token account. Every path that can know the wallet passes it;
+   * QUOTE_TAKER stands in for the ones that cannot — a preview on the landing
+   * page, a signed-out visitor, the impact audit.
+   */
+  taker?: string;
+  /** The token account cipher's fee lands in. Needed only when fee > 0. */
+  feeAccount?: string;
 }
+
+/**
+ * The stand-in taker for a quote nobody will sign.
+ *
+ * cipher's own devnet signer, which exists on mainnet as an address and holds
+ * nothing. A quote needs *a* wallet to reason about token accounts; using one
+ * address consistently keeps those quotes comparable with each other, which
+ * matters for the impact audit more than for any single number on screen.
+ */
+export const QUOTE_TAKER = "CptjnLFeUDNaUdXKoHVGKTVidyPqTKmmWuZtKQ2tF7aK";
 
 export class QuoteError extends Error {
   /*
@@ -102,11 +124,27 @@ export async function quote(req: QuoteRequest, signal?: AbortSignal): Promise<Qu
     amount: req.amount,
     slippageBps: String(req.slippageBps),
     swapMode: "ExactIn",
+    taker: req.taker ?? QUOTE_TAKER,
   });
   if (req.platformFeeBps) params.set("platformFeeBps", String(req.platformFeeBps));
+  if (req.feeAccount) params.set("feeAccount", req.feeAccount);
 
   const { base, headers } = host();
-  const res = await fetch(`${base}/swap/v1/quote?${params}`, { headers, signal });
+  /*
+   * SWAP V2 /build — the Router path, and the cheap one.
+   *
+   * V2 offers two doors and they do not cost the same. `/order` hands back a
+   * finished transaction and is less code, but it adds Jupiter's own platform
+   * fee on top of cipher's: 10 bps on an ordinary pair and FIFTY on a token
+   * less than a day old, which is the only kind of token this product is
+   * really for. `/build` charges no Jupiter swap fee and takes cipher's
+   * platformFeeBps straight, at the price of assembling the transaction here.
+   * The user's rule (least total cost, 19 Sep 2026) decides it.
+   *
+   * It also returns what the signing path needs — instructions, the lookup
+   * tables and a blockhash — so one call serves both the quote and the trade.
+   */
+  const res = await fetch(`${base}/swap/v2/build?${params}`, { headers, signal });
 
   if (!res.ok) {
     /*
@@ -135,10 +173,15 @@ export async function quote(req: QuoteRequest, signal?: AbortSignal): Promise<Qu
     priceImpactPct: String(raw.priceImpactPct ?? "0"),
     slippageBps: typeof raw.slippageBps === "number" ? raw.slippageBps : req.slippageBps,
     route: plan.map((step) => {
-      const info = (step as Record<string, unknown>).swapInfo as Record<string, unknown> | undefined;
+      const s = step as Record<string, unknown>;
+      const info = s.swapInfo as Record<string, unknown> | undefined;
+      /* V2 reports a split as `bps` where V1 said `percent`. Both are read
+         here because a route that silently showed 0% everywhere would look
+         like a broken display rather than a changed field. */
+      const bps = s.bps === undefined ? null : Number(s.bps);
       return {
         label: String(info?.label ?? "pool"),
-        percent: Number((step as Record<string, unknown>).percent ?? 0),
+        percent: bps === null ? Number(s.percent ?? 0) : bps / 100,
       };
     }),
     raw,

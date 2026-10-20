@@ -30,7 +30,7 @@ before(async () => {
   h = await database();
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
-    if (url.pathname.includes("/swap/v1/quote")) {
+    if (url.pathname.includes("/swap/v2/build")) {
       const inputMint = url.searchParams.get("inputMint") ?? "";
       const outputMint = url.searchParams.get("outputMint") ?? "";
       const amount = Number(url.searchParams.get("amount") ?? "0");

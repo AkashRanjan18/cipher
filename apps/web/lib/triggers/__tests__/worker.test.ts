@@ -89,7 +89,7 @@ before(async () => {
      * what this change removes; baking them into the stub would test the thing
      * that was deleted.
      */
-    if (url.pathname.includes("/swap/v1/quote")) {
+    if (url.pathname.includes("/swap/v2/build")) {
       const inputMint = url.searchParams.get("inputMint") ?? "";
       const outputMint = url.searchParams.get("outputMint") ?? "";
       const amount = Number(url.searchParams.get("amount") ?? "0");
