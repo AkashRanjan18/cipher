@@ -562,13 +562,39 @@ export function PriceChart({
     if (drawnSeries.current === identity && drawnThrough.current > 0) {
       /*
        * THE SAME SERIES, EXTENDED. Only bars at or after the right edge can
-       * have changed — the forming one, and any that opened since. update()
-       * requires exactly that ordering, which `clean` already guarantees.
+       * have changed — the forming one, and any that opened since.
+       *
+       * THE FLOOR IS NOT NEGOTIABLE, and ignoring it took the whole terminal
+       * down. update() throws "Cannot update oldest data" for any time before
+       * the series' newest, and a throw inside a passive effect is not a
+       * dropped frame: React unwinds the commit and every effect below it is
+       * lost, so the candle poll and the shared price poll both stop. The
+       * chart freezes, and the page behind it is dead rather than slow.
+       *
+       * It fires on a clock boundary, not on a rare race. The TICK effect
+       * below opens the next bar the moment the bucket rolls over — seconds
+       * before the server has a candle for it — so the drawn series is
+       * routinely one bar AHEAD of the newest bar the poll returns.
        */
+      let floor = drawnThrough.current;
       for (const d of shown) {
-        if (d.time < drawnThrough.current) continue;
+        if (d.time < floor) continue;
         price.update(d as never);
         volume.update(bar(d) as never);
+        floor = d.time;
+      }
+      drawnThrough.current = floor;
+
+      /*
+       * The forming bar may not step backwards either, for the same reason:
+       * the tick folds live prices into whatever this points at and pushes
+       * the result, so aiming it at an older server bar re-opens the fault
+       * one tick later instead of now.
+       */
+      const newest = shown[shown.length - 1];
+      if (newest && (!forming.current || newest.time >= forming.current.time)) {
+        forming.current = newest;
+        setLegend(newest);
       }
     } else {
       price.setData(shown as never);
@@ -577,14 +603,15 @@ export function PriceChart({
          what made every candle a hairline. */
       resetView();
       drawnSeries.current = identity;
+      drawnThrough.current = shown[shown.length - 1]?.time ?? 0;
+
+      /* The newest bar becomes the one live prices extend — the SHIFTED one,
+         so update() lands on the bar setData actually drew. Stepping back is
+         safe here and only here: setData replaced the series, so nothing
+         newer survives to be contradicted. */
+      forming.current = shown[shown.length - 1] ?? null;
+      setLegend(forming.current);
     }
-
-    drawnThrough.current = shown[shown.length - 1]?.time ?? 0;
-
-    /* The newest bar becomes the one live prices extend — the SHIFTED one,
-       so update() lands on the bar setData actually drew. */
-    forming.current = shown[shown.length - 1] ?? null;
-    setLegend(forming.current);
   }, [candles, generation, resetView, zone, seriesKey]);
 
   /* The same reset, asked for from outside. Skips the first run so mounting
@@ -623,6 +650,13 @@ export function PriceChart({
 
     forming.current = next;
     price.update(next as never);
+
+    /* The drawn series now ends HERE, which the load effect has to know: on a
+       rollover this is a bar the server has not produced yet, and this line
+       is the only thing standing between the next poll and the throw
+       described above. */
+    drawnThrough.current = Math.max(drawnThrough.current, next.time);
+
     setLegend(next);
   }, [livePrice, barSeconds, zone]);
 
