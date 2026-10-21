@@ -278,29 +278,37 @@ function TerminalBody({
    * and the second pass does the thing the flag existed to prevent. Keying on
    * the market instead is idempotent: running it ten times fetches nothing new.
    */
-  /* Read on the first render only — both uses below are initialisers. An
-     out-of-date payload is drawn as stale and refetched at once. */
-  const drawn = current(initial, initialInterval) ? `${initialSymbol}|${initialInterval}` : "";
-  const loaded = useRef(drawn);
-
   /*
-   * THE SAME KEY, IN STATE, BECAUSE THE LIVE PRICE HAS TO SEE IT.
+   * Read on the first render only — both uses below are initialisers.
    *
-   * `loaded` is a ref — right for an idempotence check, useless for deciding
-   * what to render, because writing it does not re-render anything. The chart
-   * needs the answer during render, so it is kept twice.
+   * THE TWO ARE NOT THE SAME QUESTION, and conflating them cost a flash of
+   * "Loading" over a perfectly drawable chart. "Is this payload old?" decides
+   * whether to refetch THIS SECOND; "which market do these bars belong to?"
+   * decides whether they may be shown at all. The server's payload is always
+   * for the market the page opened on, however many minutes old it is.
    */
-  const [drawnKey, setDrawnKey] = useState(drawn);
+  const loaded = useRef(
+    current(initial, initialInterval) ? `${initialSymbol}|${initialInterval}` : "",
+  );
 
   /*
-   * THE CHART IS SHOWING SOMEBODY ELSE'S SERIES.
+   * WHICH MARKET THE BARS IN `candles` CAME FROM — in state, because both the
+   * chart and the live price have to see it during render.
+   *
+   * `loaded` is a ref: right for an idempotence check, useless for deciding
+   * what to draw, because writing it re-renders nothing. So it is kept twice.
+   */
+  const [drawnKey, setDrawnKey] = useState(`${initialSymbol}|${initialInterval}`);
+
+  /*
+   * THE CHART IS HOLDING SOMEBODY ELSE'S SERIES.
    *
    * `pending` is useTransition's, and it ends when React finishes the render
-   * — which is long before the candles land, so fading on it flickered back
-   * to full strength while the old coin was still drawn. This is the exact
-   * condition: the bars on screen belong to a market that is no longer open.
+   * — long before the candles land — so fading on it flickered back to full
+   * strength while the old coin was still drawn. This is the exact condition:
+   * the bars in hand belong to a market that is no longer open.
    */
-  const staleSeries = drawnKey !== `${symbol}|${interval}`;
+  const otherMarket = drawnKey !== `${symbol}|${interval}`;
 
   useEffect(() => {
     const key = `${symbol}|${interval}`;
@@ -898,33 +906,55 @@ function TerminalBody({
           <div
             data-wheel-lock
             className={`h-[55vh] min-h-[320px] transition-opacity ${
-              staleSeries ? "opacity-[0.45] duration-150" : "opacity-100 duration-300"
+              otherMarket ? "opacity-[0.45] duration-150" : "opacity-100 duration-300"
             } ease-out`}
           >
             <PriceChart
               resetSignal={chartReset}
-              candles={shownCandles}
-              /* Market, bar size AND denomination: switching Price to MCap
-                 multiplies every bar, so it is a different series even though
-                 the timestamps are identical. */
-              seriesKey={`${symbol}|${interval}|${denom}`}
               /*
-                * NO LIVE PRICE WHILE THE DRAWN SERIES IS SOMEBODY ELSE'S.
+                * NEVER ANOTHER TOKEN'S BARS. This was the opposite rule, and
+                * the reasoning behind it was sound and the result was not: an
+                * empty chart looks broken, so the previous coin's series was
+                * held and faded until the new one landed.
                 *
-                * Candles are deliberately kept across a market change — an
-                * empty chart is indistinguishable from a broken app — so for
-                * the second before the new ones land, the series on screen
-                * belongs to the previous token while `live` is already the
-                * new one's. The chart folded one into the other and drew a
-                * single bar from $0.00253 to $0.02122: PAID opening at
-                * +738% on wifout's history, for about a second, every time
-                * you clicked a coin.
-                *
-                * Undefined simply stops the fold. The stale chart holds
-                * still, which is what it is there for, and the real series
-                * replaces it when it arrives.
+                * What it actually produced was USDC's header, USDC's legend
+                * reading O/H/L/C 0.99974, and SOL's candles underneath on a
+                * price axis reading 100 to 110 — with the right-hand scale
+                * still quoting the last token's dollars for one at $0.0005.
+                * A faded chart is not read as "loading", it is read as the
+                * price of the thing named above it. Being briefly blank is a
+                * smaller lie than being briefly wrong.
                 */
-              livePrice={staleSeries || live === undefined ? undefined : live * mult}
+              candles={otherMarket ? [] : shownCandles}
+              pending={otherMarket}
+              /*
+                * THE KEY NAMES THE MARKET THE BARS CAME FROM, not the row
+                * that is highlighted.
+                *
+                * Those differ for the second between a click and its
+                * response, and this is where the two screenshots came from.
+                * The key changed on the click, so the chart decided it was
+                * looking at a new series and ran setData — with the OLD
+                * candles, the only ones in hand — and then recorded USDC's
+                * key as the identity of SOL's bars. When USDC's series did
+                * arrive the key matched, so it took the update() path and
+                * appended USDC's $1 bars to SOL's $108 history. One series,
+                * two assets, autoscaled from -60 to 140, which is the flat
+                * line in the screenshot.
+                *
+                * Keyed on the data's own market, the two can never disagree.
+                */
+              seriesKey={`${drawnKey}|${denom}`}
+              /*
+                * NO LIVE PRICE INTO A SERIES THAT IS NOT THIS MARKET'S.
+                *
+                * Redundant now that foreign bars are never drawn, and kept
+                * because it is the second lock on the same door: the chart
+                * once folded one token's price into another's history and
+                * drew a single bar from $0.00253 to $0.02122 — PAID opening
+                * at +738% on wifout's history, every time you clicked a coin.
+                */
+              livePrice={otherMarket || live === undefined ? undefined : live * mult}
               barSeconds={intervalSeconds(interval)}
               /* The token's NAME, not its ticker — "Solana" reads as a market
                  and "SOL" reads as the thing beside it in the header. */

@@ -284,10 +284,20 @@ export function PriceChart({
   name,
   interval,
   seriesKey,
+  pending = false,
   resetSignal = 0,
   zone,
 }: {
   candles: Candle[];
+  /**
+   * The series for THIS market has not arrived yet.
+   *
+   * Only changes what an empty chart says. "No price history for this pool"
+   * is a statement about the token and it was being shown while the token's
+   * history was still in flight, which is a different thing and reads as a
+   * dead market.
+   */
+  pending?: boolean;
   /**
    * WHAT THE SERIES *IS* — the market, the bar size and the denomination.
    *
@@ -331,6 +341,15 @@ export function PriceChart({
   const forming = useRef<Candle | null>(null);
 
   /** The identity and the right edge of what is currently drawn. */
+  /**
+   * Decimal places on the price axis, taken from the span of the data.
+   *
+   * A ref because the formatter is handed to createChart once and then called
+   * by the library on every repaint — it reads this at the moment it draws,
+   * so the LOAD effect can change it without rebuilding the chart.
+   */
+  const axisPlaces = useRef(2);
+
   const drawnSeries = useRef("");
   const drawnThrough = useRef(0);
 
@@ -402,12 +421,25 @@ export function PriceChart({
          * "310000000.00" — technically correct and unreadable at a glance,
          * which is the only way an axis is ever read.
          */
+        /*
+         * DECIMALS COME FROM THE SPAN, NOT THE PRICE, and the difference is
+         * the whole axis on a stablecoin.
+         *
+         * The rule was magnitude-based — two places at or above a dollar,
+         * three significant figures below — which is right for SOL and prints
+         * USDC's thirteen gridlines as eight ticks reading 1.00 and five
+         * reading 0.999. Every level on the chart had the same label, so the
+         * axis said nothing at all.
+         *
+         * What separates two ticks is the distance between them. A series
+         * spanning nine dollars needs cents; one spanning a thousandth of a
+         * cent needs five more places, whatever the number in front.
+         */
         priceFormatter: (p: number) => {
           if (p >= 1_000_000_000) return `${(p / 1_000_000_000).toFixed(2)}B`;
           if (p >= 1_000_000) return `${(p / 1_000_000).toFixed(1)}M`;
           if (p >= 1_000) return `${(p / 1_000).toFixed(1)}k`;
-          if (p >= 1) return p.toFixed(2);
-          return p.toPrecision(3);
+          return p.toFixed(axisPlaces.current);
         },
       },
       rightPriceScale: { borderColor: LINE },
@@ -538,7 +570,22 @@ export function PriceChart({
      * that copies nothing when it holds.
      */
     const clean = ascending(candles);
-    if (clean.length === 0) return;
+
+    /*
+     * NOTHING TO DRAW MEANS DRAW NOTHING. Returning early here left the
+     * previous market's bars on the canvas under the new token's header,
+     * which is the bug this whole pass is about — the series has to be
+     * emptied, not merely left alone.
+     */
+    if (clean.length === 0) {
+      price.setData([]);
+      volume.setData([]);
+      drawnSeries.current = "";
+      drawnThrough.current = 0;
+      forming.current = null;
+      setLegend(null);
+      return;
+    }
 
     /*
      * Reapply the format before the data. Switching Price -> MCap moves the
@@ -549,6 +596,19 @@ export function PriceChart({
     price.applyOptions({
       priceFormat: { type: "price", precision: p, minMove: 10 ** -p },
     });
+
+    /* How far apart the ticks will be, which is what decides how many places
+       it takes to tell them apart. Clamped: a token at 1e-12 would otherwise
+       ask for an axis wider than the pane. */
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const d of clean) {
+      if (d.low < lo) lo = d.low;
+      if (d.high > hi) hi = d.high;
+    }
+    const span = hi - lo;
+    axisPlaces.current =
+      span > 0 ? Math.min(12, Math.max(2, 2 - Math.floor(Math.log10(span)))) : 2;
 
     const shown = toLocal(clean, tzOffsetSeconds(zone ?? null));
     const up = token("--color-up", "#21c95e");
@@ -637,6 +697,17 @@ export function PriceChart({
     const last = forming.current;
     if (!price || !last || livePrice === undefined || livePrice <= 0) return;
 
+    /*
+     * ONLY INTO THE SERIES THIS PRICE BELONGS TO.
+     *
+     * `drawnSeries` names the market whose bars are on the canvas right now.
+     * If it is not this one, the bars are the previous token's and folding
+     * today's price into them invents a candle out of two different assets —
+     * USDC's $1.00 welded onto the end of SOL's $108 history, which is what
+     * flattened the chart into a line between -60 and 140.
+     */
+    if (drawnSeries.current !== `${seriesKey}|${zone ?? ""}`) return;
+
     /* Shifted `now`, because `last.time` is shifted: foldLivePrice asks
        whether the clock has crossed into the next bucket, and comparing a
        local-frame bar against a UTC-frame clock would leave the forming bar
@@ -658,27 +729,40 @@ export function PriceChart({
     drawnThrough.current = Math.max(drawnThrough.current, next.time);
 
     setLegend(next);
-  }, [livePrice, barSeconds, zone]);
+  }, [livePrice, barSeconds, zone, seriesKey]);
 
-  if (candles.length === 0) {
-    return (
-      <div className="flex h-full min-h-[240px] items-center justify-center rounded-2xl border border-line bg-panel">
-        <p className="font-sans text-sm text-ash">
-          No price history for this pool.
-        </p>
-      </div>
-    );
-  }
+  /*
+   * THE CANVAS IS NEVER UNMOUNTED, and this cost an empty chart to learn.
+   *
+   * This used to `return` a message instead of the chart whenever there were
+   * no candles. That takes `box` out of the DOM — and CREATE runs on an empty
+   * dependency list, so it does not run again when the div comes back. The
+   * chart stayed bound to a div that no longer existed: data arrived, the
+   * legend filled in with the right numbers, and the canvas was blank.
+   *
+   * So the message is a layer over the chart rather than a replacement for
+   * it. Emptiness is a state of the series, which the load effect clears, not
+   * a reason to take the chart away.
+   */
+  const empty = candles.length === 0;
 
   return (
     <div className="relative h-full w-full">
       <div ref={box} className="h-full w-full" />
 
+      {empty && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-2xl border border-line bg-panel">
+          <p className="font-sans text-sm text-ash">
+            {pending ? `Loading ${name}…` : "No price history for this pool."}
+          </p>
+        </div>
+      )}
+
       {/*
         pointer-events-none on the layer: it covers the whole canvas, and
         swallowing the mouse would kill the crosshair and the drag-to-pan.
       */}
-      {legend && (
+      {legend && !empty && (
         /* pointer-events-none: the legend sits over the canvas, and swallowing
            the mouse there would kill the crosshair that feeds it. */
         <Legend bar={legend} name={name} interval={interval} candles={candles} />
