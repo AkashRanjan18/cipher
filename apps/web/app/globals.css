@@ -444,15 +444,23 @@ body {
 /*
  * Two scrims, not one. The radial darkens the middle so the wordmark has
  * something to sit on; the linear weights the top and bottom so the nav and
- * the buttons stay legible over whatever the street is doing behind them.
+ * the buttons stay legible over whatever is happening behind them.
+ *
+ * RETUNED WHEN THE BACKGROUND BECAME A DARK VIDEO. The numbers here were set
+ * against a bright SVG street and the middle was 84% opaque — correct then,
+ * and over near-black footage it left a black rectangle with a wordmark on
+ * it. Paying 1.7MB for a video and then painting over it is the worst of
+ * both. The colour moved to cipher's own ground (#06070a) at the same time:
+ * the old #080d18 is blue, which over cool-grey liquid read as a tint rather
+ * than as shade.
  */
 .landing-scrim {
   position: absolute;
   inset: 0;
   z-index: 1;
   background:
-    radial-gradient(72% 60% at 50% 38%, rgba(8, 13, 24, 0.84) 0%, rgba(8, 13, 24, 0.4) 58%, rgba(8, 13, 24, 0) 100%),
-    linear-gradient(180deg, rgba(8, 13, 24, 0.62) 0%, rgba(8, 13, 24, 0.06) 30%, rgba(8, 13, 24, 0) 55%, rgba(10, 14, 24, 0.46) 100%);
+    radial-gradient(76% 62% at 50% 40%, rgba(6, 7, 10, 0.58) 0%, rgba(6, 7, 10, 0.26) 58%, rgba(6, 7, 10, 0) 100%),
+    linear-gradient(180deg, rgba(6, 7, 10, 0.5) 0%, rgba(6, 7, 10, 0.04) 32%, rgba(6, 7, 10, 0) 56%, rgba(6, 7, 10, 0.42) 100%);
 }
 
 .landing-serif {
@@ -483,6 +491,122 @@ body {
 
 .landing-sub {
   text-shadow: 0 1px 18px rgba(8, 13, 24, 0.95);
+}
+
+/* ───────────────────────── the hero video ───────────────────────────────
+ *
+ * It went back to being an mp4, and the objection written above — "a video
+ * that has to download before it means anything" — is answered rather than
+ * ignored. The POSTER is a 16KB jpeg of the first frame, so the page is
+ * complete before a byte of video arrives and the clip only ever replaces
+ * something that already looks right. The file itself is 1.7MB for twelve
+ * seconds, which is smaller than the SVG street was after gzip once the
+ * street had a hundred and fifty buildings in it.
+ *
+ * MUTED IS NOT A PREFERENCE, it is the condition of autoplay: every browser
+ * refuses to start a clip with sound. The track is stripped from the file as
+ * well, so there is nothing to unmute by accident.
+ */
+.landing-video {
+  /* Paints under the first decoded frame, so there is never a black box. */
+  background: #06070a url("/hero/hero-poster.jpg") center / cover no-repeat;
+}
+
+/* ───────────────────────── the prompt reel ──────────────────────────────
+ *
+ * Built to look like the bar at the bottom of the terminal, because it IS
+ * that bar — a visitor who signs up should recognise the control they were
+ * shown. Same chip, same rounding, same send button.
+ *
+ * `min-height` and a fixed line box, so a sentence growing a character at a
+ * time never moves the buttons underneath it. A hero that reflows while you
+ * read it is the one thing worse than a static one.
+ */
+.landing-reel {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 1.4vw, 16px);
+  width: min(620px, 92vw);
+  min-height: 60px;
+  padding: 0 14px 0 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(243, 233, 216, 0.14);
+  background: rgba(6, 7, 10, 0.62);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.landing-reel-chip {
+  flex: none;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(243, 233, 216, 0.08);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #9aa1b1;
+}
+
+/*
+ * The sentence. Left-aligned and clipped rather than wrapped: these lines are
+ * written to fit, and a hero that grows a second row on the longest one makes
+ * the whole block jump every nine seconds.
+ */
+.landing-reel-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: left;
+  font-family: var(--font-mono), monospace;
+  font-size: clamp(12px, 2.6vw, 14.5px);
+  line-height: 1.2;
+  color: #f3e9d8;
+}
+
+.landing-reel-go {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #f3e9d8;
+  color: #06070a;
+  font-size: 15px;
+  line-height: 1;
+}
+
+/*
+ * A caret that blinks on a STEP, not a fade. A fading block reads as a
+ * loading shimmer; a hard on/off reads as a cursor, which is the whole point
+ * of putting one there.
+ */
+.landing-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #e2a445;
+  animation: landing-blink 1.06s steps(1, end) infinite;
+}
+
+@keyframes landing-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-caret {
+    animation: none;
+  }
 }
 
 /* ───────────────────────── the position P&L card ────────────────────────

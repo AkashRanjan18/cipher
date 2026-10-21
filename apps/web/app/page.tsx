@@ -1,6 +1,7 @@
 import { AuthButton } from "@/components/auth/auth-button";
 import { DownloadButton } from "@/components/download-button";
 import { SignInHandoff } from "@/components/auth/sign-in-handoff";
+import { PromptReel } from "@/components/landing/prompt-reel";
 
 /*
  * Reading searchParams makes this route dynamic, which a static marketing page
@@ -44,19 +45,47 @@ export default async function Home({
       />
 
       {/*
-        * THE STREET, as one file rather than as markup.
+        * THE HERO IS FOOTAGE AGAIN — dark liquid, moving, silent.
         *
-        * It is 155KB of SVG — a hundred and fifty buildings, lamps and leaves —
-        * and inlining that into the component would put every coordinate into
-        * the HTML of a page whose job is to load fast. As an <img> it is a
-        * separate, cacheable, gzip-friendly request that the browser can paint
-        * independently, and the file stays readable as a file.
+        * It replaced an SVG street, which had replaced an mp4. The objection
+        * that retired the first video was real: a clip that has to download
+        * before it means anything, on a page whose job is to be understood in
+        * one second. `poster` answers it. The browser paints a 16KB jpeg of
+        * the first frame immediately, so the page is COMPLETE before any video
+        * arrives and the clip only ever replaces something already correct.
+        * Nothing below it waits, and a visitor on a bad connection gets a
+        * still hero rather than a hole.
         *
-        * `alt=""` because it is decoration: the page says what cipher is in
-        * words directly underneath, and a screen reader narrating a streetscape
-        * would only get in the way of that.
+        * Why liquid and not a rocket, a city or a chart: the words in front of
+        * this have to be readable, and footage with a SUBJECT competes with
+        * them. This is near-black with slow highlights — weather rather than
+        * subject — and it is the one kind of shot that carries text at any
+        * size without a scrim thick enough to make the video pointless.
+        *
+        * `muted` IS THE CONDITION OF AUTOPLAY, not a courtesy: every browser
+        * refuses to start a clip with sound. The audio track is stripped from
+        * the file as well, so there is nothing to unmute by accident.
+        *
+        * `playsInline` stops iOS taking the clip fullscreen the moment it
+        * plays, which is what it does by default and which would hand a
+        * visitor a video player instead of a homepage.
+        *
+        * Two cuts. The landscape file is 16:9 and wasted on a phone — cover
+        * -fitting it to a tall viewport throws away most of the frame — so a
+        * 9:16 crop at 0.8MB serves anything under 768px.
         */}
-      <img src="/hero.svg" alt="" className="landing-scene" />
+      <video
+        className="landing-scene landing-video"
+        poster="/hero/hero-poster.jpg"
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+      >
+        <source src="/hero/hero-portrait.mp4" media="(max-width: 767px)" type="video/mp4" />
+        <source src="/hero/hero-1920.mp4" type="video/mp4" />
+      </video>
       <div className="landing-scrim" />
 
       <nav className="absolute inset-x-0 top-[clamp(18px,3vh,30px)] z-10 flex items-center justify-between px-[clamp(18px,3.2vw,46px)]">
@@ -79,7 +108,27 @@ export default async function Home({
           Type what you want. We&rsquo;ll handle the rest — and so will your friends.
         </p>
 
-        <div className="mt-[38px] flex flex-col items-center gap-3.5 sm:flex-row">
+        {/*
+          * THE CLAIM, DEMONSTRATED.
+          *
+          * Everything above this line is a promise. This is the product: the
+          * terminal's own prompt bar, writing orders cipher genuinely takes —
+          * a stop, a ladder, a trailing stop, a resting buy, a partial sell.
+          * Each of those is four screens of settings on Photon or BullX and
+          * one sentence here, which is the entire pitch and is not a pitch
+          * anybody believes until they watch it typed.
+          *
+          * A client component for the typing and nothing else; the page around
+          * it stays a server render.
+          */}
+        <div className="mt-[30px] flex flex-col items-center">
+          <PromptReel />
+          <p className="mt-3 font-mono text-[10.5px] uppercase tracking-[0.16em] text-[#8d94a5]">
+            One sentence. Entry, exits and size together.
+          </p>
+        </div>
+
+        <div className="mt-[34px] flex flex-col items-center gap-3.5 sm:flex-row">
           <AuthButton
             variant="primary"
             label="Start trading"
