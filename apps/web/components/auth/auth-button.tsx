@@ -1,10 +1,19 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { AFTER_LOGIN, useLoginModal } from "./login-modal";
 
 type Variant = "ghost" | "primary";
+
+/**
+ * How long the reserved space is allowed to stand in for the button.
+ *
+ * Privy is ready in a few hundred milliseconds when it is going to be ready
+ * at all. Past that the hold has stopped buying anything.
+ */
+const GRACE_MS = 2_000;
 
 /**
  * Every button that opens Privy's modal.
@@ -38,6 +47,30 @@ export function AuthButton({
   const { open } = useLoginModal();
   const router = useRouter();
 
+  /*
+   * THE WAIT IS BOUNDED, and that is the whole point of this state.
+   *
+   * `ready` is Privy's, and Privy sets it after its API answers. When that
+   * call fails — a domain missing from the app's allowlist, a blocked
+   * request, an outage — `ready` stays false FOREVER, and the guard below
+   * went on returning reserved space for the rest of the page's life. The
+   * homepage then has no login button at all: not greyed out, not explaining
+   * itself, simply absent, which reads as a product with no way in.
+   *
+   * On localhost it is absent every single time, because the Privy app
+   * allowlists the Vercel domain and not this one.
+   *
+   * So the placeholder gets GRACE_MS and no more. It exists to stop the
+   * button appearing a moment after the hero and nudging the layout; after
+   * two seconds nobody is being spared a layout shift, and a button that
+   * might fail is strictly better than no button.
+   */
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setWaited(true), GRACE_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   // Inlined at build time, so a client component can read it.
   const configured = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
 
@@ -52,8 +85,9 @@ export function AuthButton({
 
   // Without an app id Privy never becomes ready, so gating on `ready` alone
   // hides the button forever and the page looks like it has no login at all.
-  // Only reserve space when Privy is actually configured and loading.
-  if (configured && !ready) {
+  // Only reserve space when Privy is actually configured and still inside
+  // the grace period above.
+  if (configured && !ready && !waited) {
     return (
       <div
         aria-hidden

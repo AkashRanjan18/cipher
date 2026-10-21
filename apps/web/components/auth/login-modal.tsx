@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useLoginWithOAuth } from "@privy-io/react-auth";
+import { useLoginWithOAuth, usePrivy } from "@privy-io/react-auth";
 import { GoogleIcon } from "./google-icon";
 
 /**
@@ -69,6 +69,13 @@ export function LoginModalProvider({ children }: { children: ReactNode }) {
   // say so rather than letting the button fail silently.
   const configured = Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID);
 
+  /*
+   * Whether Privy ever answered. The button that opens this dialog no longer
+   * waits indefinitely for that (see auth-button.tsx), so the dialog has to
+   * be the place that says what is wrong when it never happened.
+   */
+  const { ready } = usePrivy();
+
   const { initOAuth, loading } = useLoginWithOAuth({
     onError: (code) => {
       /*
@@ -94,6 +101,23 @@ export function LoginModalProvider({ children }: { children: ReactNode }) {
       setError("Auth isn't connected yet — set NEXT_PUBLIC_PRIVY_APP_ID.");
       return;
     }
+    /*
+     * CONFIGURED BUT NEVER READY. There is no flow to start, so starting one
+     * would throw into the generic "Couldn't reach Google" below — a message
+     * that sends the reader after a network problem they do not have.
+     *
+     * Named honestly instead, and the origin goes to the console because the
+     * cause is almost always that this one is not on the Privy app's allowed
+     * domains. That is the localhost case exactly.
+     */
+    if (!ready) {
+      console.error(
+        `[cipher] Privy never became ready, so there is no sign-in flow to start. ` +
+          `Usually this origin is missing from the Privy app's allowed domains: ${window.location.origin}`,
+      );
+      setError("Sign-in isn't reachable from here right now.");
+      return;
+    }
     try {
       await initOAuth({ provider: "google" });
     } catch (e) {
@@ -109,7 +133,7 @@ export function LoginModalProvider({ children }: { children: ReactNode }) {
       console.error("[cipher] Google sign-in failed:", e);
       setError("Couldn't reach Google. Try again.");
     }
-  }, [configured, initOAuth]);
+  }, [configured, ready, initOAuth]);
 
   return (
     <LoginModalContext.Provider value={{ open, signInWithGoogle, loading, error }}>
