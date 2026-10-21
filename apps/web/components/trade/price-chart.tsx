@@ -283,10 +283,24 @@ export function PriceChart({
   barSeconds,
   name,
   interval,
+  seriesKey,
   resetSignal = 0,
   zone,
 }: {
   candles: Candle[];
+  /**
+   * WHAT THE SERIES *IS* — the market, the bar size and the denomination.
+   *
+   * Without it the chart could not tell "a different token" from "the same
+   * token, one bar later", so it did the safe thing for both: replace every
+   * bar and reframe the view. That is right once and intolerable on a poll —
+   * it would throw away the zoom and the scroll position every twenty
+   * seconds, which is worse than the stale chart it was meant to cure.
+   *
+   * Same key means the series only grew, and growth is applied with update()
+   * — one bar touched, the view untouched.
+   */
+  seriesKey: string;
   /** What the series is OF. "Solana", "Bonk" — the token, not the ticker. */
   name: string;
   /** Which bar size, for the legend. "1h", "15m". */
@@ -315,6 +329,10 @@ export function PriceChart({
    * would re-render React for a pixel change the canvas already made.
    */
   const forming = useRef<Candle | null>(null);
+
+  /** The identity and the right edge of what is currently drawn. */
+  const drawnSeries = useRef("");
+  const drawnThrough = useRef(0);
 
   /** Whatever the crosshair is over, or the last bar when it is off the chart. */
   const [legend, setLegend] = useState<Candle | null>(null);
@@ -465,6 +483,10 @@ export function PriceChart({
     chart.current = c;
     priceSeries.current = price;
     volumeSeries.current = volume;
+    /* A new canvas holds nothing, so the next load must be a full one however
+       familiar the series looks. */
+    drawnSeries.current = "";
+    drawnThrough.current = 0;
     // Tells LOAD there is a new, empty chart waiting for data.
     setGeneration((n) => n + 1);
 
@@ -478,9 +500,20 @@ export function PriceChart({
   }, []);
 
   /*
-   * LOAD. Runs when the server hands over a different series — a token change
-   * or an interval switch. setData replaces the whole set; fitContent frames
-   * it, which is right here and wrong on a tick.
+   * LOAD, AND THE TWO THINGS IT HAS TO TELL APART.
+   *
+   * A DIFFERENT SERIES — another token, another bar size, price against market
+   * cap — replaces every bar and reframes the view. THE SAME SERIES, LONGER —
+   * which is what a refetch brings back twenty seconds later — must leave the
+   * view exactly where the user put it and only touch the bars that changed.
+   *
+   * It used to do the first for both, because `candles` arriving was the only
+   * signal it had. That was survivable while the series was fetched once; the
+   * moment it is polled, reframing on every response means the chart snatches
+   * itself back from your zoom four times a minute.
+   *
+   * update() is the library's own answer: it rewrites one bar and leaves the
+   * time scale, the crosshair and the scroll position alone.
    */
   useEffect(() => {
     const price = priceSeries.current;
@@ -518,28 +551,41 @@ export function PriceChart({
     });
 
     const shown = toLocal(clean, tzOffsetSeconds(zone ?? null));
+    const up = token("--color-up", "#21c95e");
+    const down = token("--color-down", "#ff622e");
+    const bar = (d: Candle) => ({ time: d.time, value: d.volume, color: volumeColor(d, up, down) });
 
-    price.setData(shown as never);
-    volume.setData(
-      shown.map((d) => ({
-        time: d.time,
-        value: d.volume,
-        color: volumeColor(
-          d,
-          token("--color-up", "#21c95e"),
-          token("--color-down", "#ff622e"),
-        ),
-      })) as never,
-    );
-    /* Not fitContent(). See DEFAULT_BAR_SPACING — framing a thousand bars is
-       what made every candle a hairline. */
-    resetView();
+    /* The ZONE belongs in the identity: changing it moves every timestamp, so
+       the bars on screen are no longer the bars in hand. */
+    const identity = `${seriesKey}|${zone ?? ""}`;
+
+    if (drawnSeries.current === identity && drawnThrough.current > 0) {
+      /*
+       * THE SAME SERIES, EXTENDED. Only bars at or after the right edge can
+       * have changed — the forming one, and any that opened since. update()
+       * requires exactly that ordering, which `clean` already guarantees.
+       */
+      for (const d of shown) {
+        if (d.time < drawnThrough.current) continue;
+        price.update(d as never);
+        volume.update(bar(d) as never);
+      }
+    } else {
+      price.setData(shown as never);
+      volume.setData(shown.map(bar) as never);
+      /* Not fitContent(). See DEFAULT_BAR_SPACING — framing a thousand bars is
+         what made every candle a hairline. */
+      resetView();
+      drawnSeries.current = identity;
+    }
+
+    drawnThrough.current = shown[shown.length - 1]?.time ?? 0;
 
     /* The newest bar becomes the one live prices extend — the SHIFTED one,
        so update() lands on the bar setData actually drew. */
     forming.current = shown[shown.length - 1] ?? null;
     setLegend(forming.current);
-  }, [candles, generation, resetView, zone]);
+  }, [candles, generation, resetView, zone, seriesKey]);
 
   /* The same reset, asked for from outside. Skips the first run so mounting
      does not count as a request. */

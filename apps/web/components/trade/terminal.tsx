@@ -66,6 +66,23 @@ import { SAY_EVENT, sayInSana, sayOf } from "@/lib/social/say";
  * bucket yet — costs exactly one request, which is the right side to be
  * wrong on.
  */
+/**
+ * HOW OFTEN THE SERIES IS ASKED FOR AGAIN.
+ *
+ * It was never asked for again. The chart fetched its candles on mount and
+ * that was the last request it ever made — so an open terminal drew the same
+ * bars for as long as it stayed open, and the only moving thing on the whole
+ * pane was the forming bar's close, nudged by the five-second price poll.
+ * That is a candle a few pixels tall changing by cents: on screen,
+ * indistinguishable from frozen. Refreshing the page looked like it "fixed"
+ * the chart because a refresh was the only way new bars had ever arrived.
+ *
+ * Twenty seconds matches the server's candle cache exactly, so between two
+ * polls there is nothing new upstream to ask for — the request is collapsed
+ * before it leaves the deployment.
+ */
+const SERIES_EVERY_MS = 20_000;
+
 function current(candles: Candle[], interval: Interval): boolean {
   const newest = candles[candles.length - 1]?.time ?? 0;
   if (!newest) return false;
@@ -287,13 +304,17 @@ function TerminalBody({
 
   useEffect(() => {
     const key = `${symbol}|${interval}`;
-    /* Already on screen, and still current. The escape hatch moved into the
-       seed of `loaded` — an empty or out-of-date server payload never claims
-       to be drawn, so this one comparison covers both. */
-    if (loaded.current === key) return;
-
     let alive = true;
     let attempt = 0;
+    let timer = 0;
+
+    /* The next ask. Chained off each completed load rather than set on an
+       interval, so a slow response delays the following request instead of
+       stacking a second one behind it. */
+    const again = () => {
+      if (!alive) return;
+      timer = window.setTimeout(() => void load(), SERIES_EVERY_MS);
+    };
 
     const load = async () => {
       try {
@@ -316,17 +337,21 @@ function TerminalBody({
          */
         if (next.length === 0) {
           setCandles((prev) => (prev.length > 0 ? prev : next));
-          if (retry()) return;
+          if (!retry()) again();
           return;
         }
         setCandles(next);
         loaded.current = key;
         setDrawnKey(key);
+        attempt = 0;
+        again();
       } catch {
         /* Keep whatever is drawn and try again. The upstreams here fail
            transiently — a 429 from GeckoTerminal's free tier, a DNS blip —
-           and both are gone by the next attempt. */
-        retry();
+           and both are gone by the next attempt. Once the three quick goes
+           are spent the slow poll takes over, so a chart that failed to load
+           still repairs itself without a refresh. */
+        if (!retry()) again();
       }
     };
 
@@ -341,12 +366,33 @@ function TerminalBody({
       return true;
     }
 
+    /*
+     * ALREADY ON SCREEN, AND STILL CURRENT — so nothing is fetched now. The
+     * poll above still runs: what the server drew is right for this second
+     * and wrong for the next minute.
+     *
+     * IT SITS HERE, NOT AT THE TOP OF THE EFFECT, and that is not tidiness.
+     * `load` is a const, so returning before its declaration leaves it in the
+     * temporal dead zone for the life of the closure — the timer then fired
+     * twenty seconds later into "Cannot access 'load' before initialization",
+     * once, silently, and the chart went back to never refetching. Every path
+     * out of this effect has to pass the declarations it scheduled.
+     */
+    if (loaded.current === key) {
+      again();
+      return () => {
+        alive = false;
+        window.clearTimeout(timer);
+      };
+    }
+
     startTransition(() => {
       void load();
     });
 
     return () => {
       alive = false;
+      window.clearTimeout(timer);
     };
     // `initial` is intentionally absent — see above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -858,6 +904,10 @@ function TerminalBody({
             <PriceChart
               resetSignal={chartReset}
               candles={shownCandles}
+              /* Market, bar size AND denomination: switching Price to MCap
+                 multiplies every bar, so it is a different series even though
+                 the timestamps are identical. */
+              seriesKey={`${symbol}|${interval}|${denom}`}
               /*
                 * NO LIVE PRICE WHILE THE DRAWN SERIES IS SOMEBODY ELSE'S.
                 *
