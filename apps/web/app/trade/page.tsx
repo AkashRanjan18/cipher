@@ -21,6 +21,24 @@ import { Terminal } from "@/components/trade/terminal";
  * product exists to remove. Auth is required to ARM an order, which is where
  * something real happens.
  */
+/**
+ * NEVER CACHED, BECAUSE THE PAYLOAD IS A PRICE SERIES.
+ *
+ * Every fetch in this page carries `revalidate: 20`, which made Next treat
+ * the PAGE as revalidating too — so /trade went into the full route cache and
+ * was served stale-while-revalidate. On a site with steady traffic that is
+ * invisible. On this one it meant the first visitor after a quiet spell got
+ * the copy rendered at the last deploy: measured on 21 Oct 2026, a page whose
+ * newest candle was 18 Oct 17:00 — seventy-four hours of missing bars, with a
+ * live price label floating six dollars above a dead series.
+ *
+ * A chart that is a few seconds behind is a chart. A chart that is three days
+ * behind is a picture of a chart, and nothing on screen says which one you are
+ * looking at. The inner fetch keeps its 20-second data cache, so this costs
+ * one render per request and at most one upstream call per twenty seconds.
+ */
+export const dynamic = "force-dynamic";
+
 export default async function Trade() {
   /*
    * Empty rather than throwing if GeckoTerminal is unreachable or rate

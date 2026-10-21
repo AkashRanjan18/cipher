@@ -47,6 +47,31 @@ import { SAY_EVENT, sayInSana, sayOf } from "@/lib/social/say";
  * all read it — a panel owning it would have to push it up through three
  * components on every click.
  */
+/**
+ * IS THE SERVER'S SERIES STILL THE CURRENT ONE?
+ *
+ * The page is server-rendered so the chart arrives already drawn, and the
+ * client then refused to refetch what the server had just sent — reasonable,
+ * until the thing that sent it is a CDN. /trade sat in Vercel's route cache
+ * and a visitor on 21 Oct was handed the copy built on 18 Oct: seventy-four
+ * hours of bars that were never requested, because the client believed a
+ * payload it had no way to date. The only moving thing on screen was the live
+ * price, folded onto a bar from three days earlier and floating six dollars
+ * above the series it belonged to.
+ *
+ * So the payload is dated rather than trusted. The newest bar is the one
+ * still forming, so under normal service it is less than one interval old;
+ * anything past that means a bar is missing and the series is refetched. A
+ * false positive — a token so quiet the provider has not opened the new
+ * bucket yet — costs exactly one request, which is the right side to be
+ * wrong on.
+ */
+function current(candles: Candle[], interval: Interval): boolean {
+  const newest = candles[candles.length - 1]?.time ?? 0;
+  if (!newest) return false;
+  return Date.now() / 1000 - newest <= intervalSeconds(interval);
+}
+
 export function Terminal(props: {
   initial: Candle[];
   initialInterval: Interval;
@@ -236,7 +261,10 @@ function TerminalBody({
    * and the second pass does the thing the flag existed to prevent. Keying on
    * the market instead is idempotent: running it ten times fetches nothing new.
    */
-  const loaded = useRef(`${initialSymbol}|${initialInterval}`);
+  /* Read on the first render only — both uses below are initialisers. An
+     out-of-date payload is drawn as stale and refetched at once. */
+  const drawn = current(initial, initialInterval) ? `${initialSymbol}|${initialInterval}` : "";
+  const loaded = useRef(drawn);
 
   /*
    * THE SAME KEY, IN STATE, BECAUSE THE LIVE PRICE HAS TO SEE IT.
@@ -245,7 +273,7 @@ function TerminalBody({
    * what to render, because writing it does not re-render anything. The chart
    * needs the answer during render, so it is kept twice.
    */
-  const [drawnKey, setDrawnKey] = useState(`${initialSymbol}|${initialInterval}`);
+  const [drawnKey, setDrawnKey] = useState(drawn);
 
   /*
    * THE CHART IS SHOWING SOMEBODY ELSE'S SERIES.
@@ -259,9 +287,10 @@ function TerminalBody({
 
   useEffect(() => {
     const key = `${symbol}|${interval}`;
-    /* Already on screen. `initial.length` is the escape hatch: a failed server
-       render leaves nothing to show, and then the client must go and get it. */
-    if (loaded.current === key && initial.length > 0) return;
+    /* Already on screen, and still current. The escape hatch moved into the
+       seed of `loaded` — an empty or out-of-date server payload never claims
+       to be drawn, so this one comparison covers both. */
+    if (loaded.current === key) return;
 
     let alive = true;
     let attempt = 0;
